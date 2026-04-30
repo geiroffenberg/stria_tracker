@@ -1,0 +1,87 @@
+import 'package:flutter/material.dart';
+import '../state/app_state.dart';
+import '../theme/app_theme.dart';
+import '../widgets/transport_bar.dart';
+import 'song_screen.dart';
+import 'pattern_screen.dart';
+import 'instrument_screen.dart';
+import 'mixer_screen.dart';
+
+/// Root scaffold with top navigation tabs and a global bottom transport bar.
+class MainScreen extends StatefulWidget {
+  const MainScreen({super.key});
+
+  @override
+  State<MainScreen> createState() => _MainScreenState();
+}
+
+class _MainScreenState extends State<MainScreen> {
+  int _tabIndex = 1; // start on Pattern view
+
+  static const _tabs = ['SONG', 'PATTERN', 'INST', 'MIXER'];
+
+  @override
+  Widget build(BuildContext context) {
+    AppStateScope.of(context); // subscribe to app state
+
+    return Scaffold(
+      backgroundColor: kBgColor,
+      body: SafeArea(
+        child: Column(
+          children: [
+            _buildTopNav(),
+            Expanded(
+              child: IndexedStack(
+                index: _tabIndex,
+                children: const [
+                  SongScreen(),
+                  PatternScreen(),
+                  InstrumentScreen(),
+                  MixerScreen(),
+                ],
+              ),
+            ),
+            const TransportBar(),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTopNav() {
+    return Container(
+      height: 38,
+      color:  kBgTrackHeader,
+      child: Row(
+        children: List.generate(_tabs.length, (i) {
+          final active = i == _tabIndex;
+          return Expanded(
+            child: GestureDetector(
+              onTap: () => setState(() => _tabIndex = i),
+              child: Container(
+                decoration: BoxDecoration(
+                  border: Border(
+                    bottom: BorderSide(
+                      color:  active ? kColAccent : Colors.transparent,
+                      width:  2,
+                    ),
+                  ),
+                ),
+                alignment: Alignment.center,
+                child: Text(
+                  _tabs[i],
+                  style: kStyleBase.copyWith(
+                    fontSize: 11,
+                    letterSpacing: 1.5,
+                    color: active ? kColAccent : kColHeader,
+                    fontWeight: active ? FontWeight.w700 : FontWeight.normal,
+                  ),
+                ),
+              ),
+            ),
+          );
+        }),
+      ),
+    );
+  }
+}
