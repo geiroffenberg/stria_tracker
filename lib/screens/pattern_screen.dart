@@ -56,11 +56,11 @@ class _PatternScreenState extends State<PatternScreen> {
           child: state.collapsedView
               ? const CollapsedTracksWidget()
               : PageView.builder(
-                  controller:    _pageCtrl,
-                  itemCount:     state.trackCount,
-                  physics:       const PageScrollPhysics(),
+                  controller: _pageCtrl,
+                  itemCount: state.trackCount,
+                  physics: const PageScrollPhysics(),
                   onPageChanged: (i) => state.selectTrack(i),
-                  itemBuilder:   (_, i) {
+                  itemBuilder: (_, i) {
                     final track = state.currentPattern.tracks[i];
                     return TrackPageWidget(track: track, trackIndex: i);
                   },
@@ -71,19 +71,19 @@ class _PatternScreenState extends State<PatternScreen> {
   }
 
   Widget _buildTrackHeader(BuildContext context, AppState state) {
-    final track    = state.currentTrack;
     final trackIdx = state.currentTrackIndex;
-    final total    = state.trackCount;
-    final pat      = state.currentPattern;
+    final pat = state.currentPattern;
 
     return Container(
       height: 44,
-      color:  kBgTrackHeader,
+      color: kBgTrackHeader,
       padding: const EdgeInsets.symmetric(horizontal: 8),
       child: Row(
         children: [
-          Text(pat.name,
-              style: kStyleBase.copyWith(color: kColHeader, fontSize: 12)),
+          Text(
+            pat.name,
+            style: kStyleBase.copyWith(color: kColHeader, fontSize: 12),
+          ),
           const SizedBox(width: 8),
           const Text('│', style: TextStyle(color: Color(0xFF333333))),
           const SizedBox(width: 8),
@@ -97,7 +97,7 @@ class _PatternScreenState extends State<PatternScreen> {
               width: 110,
               child: Center(
                 child: Text(
-                  '${track.name}  ${(trackIdx + 1).toString().padLeft(2, '0')}/$total',
+                  'TRACK ${(trackIdx + 1).toString().padLeft(2, '0')}',
                   style: kStyleLabel.copyWith(fontSize: 13),
                 ),
               ),
@@ -105,12 +105,12 @@ class _PatternScreenState extends State<PatternScreen> {
             _NavBtn(
               icon: Icons.chevron_right,
               onTap: () => _goToTrack(state, trackIdx + 1),
-              enabled: trackIdx < total - 1,
+              enabled: trackIdx < state.trackCount - 1,
             ),
           ] else ...[
             Expanded(
               child: Text(
-                'ALL TRACKS  ($total)',
+                'ALL TRACKS  (${state.trackCount})',
                 style: kStyleLabel.copyWith(fontSize: 13),
                 textAlign: TextAlign.center,
               ),
@@ -133,7 +133,7 @@ class _PatternScreenState extends State<PatternScreen> {
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
               decoration: BoxDecoration(
-                color:  state.collapsedView
+                color: state.collapsedView
                     ? kColActive.withAlpha(50)
                     : Colors.transparent,
                 border: Border.all(
@@ -145,7 +145,7 @@ class _PatternScreenState extends State<PatternScreen> {
                 state.collapsedView ? 'EXPAND' : 'COLLAPSE',
                 style: kStyleBase.copyWith(
                   fontSize: 11,
-                  color:    state.collapsedView ? kColActive : kColHeader,
+                  color: state.collapsedView ? kColActive : kColHeader,
                 ),
               ),
             ),
@@ -171,11 +171,7 @@ class _NavBtn extends StatelessWidget {
   Widget build(BuildContext context) {
     return GestureDetector(
       onTap: enabled ? onTap : null,
-      child: Icon(
-        icon,
-        color: enabled ? kColAccent : kColInactive,
-        size: 26,
-      ),
+      child: Icon(icon, color: enabled ? kColAccent : kColInactive, size: 26),
     );
   }
 }

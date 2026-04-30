@@ -19,8 +19,8 @@ import 'cell_widget.dart';
 class CollapsedTracksWidget extends StatefulWidget {
   const CollapsedTracksWidget({super.key});
 
-  static const double wNote     = 38.0;
-  static const double wInst     = 26.0;
+  static const double wNote = 38.0;
+  static const double wInst = 26.0;
   static const double wTrackGap = 6.0;
 
   static double get trackWidth => wNote + wInst + wTrackGap;
@@ -38,9 +38,9 @@ class _CollapsedTracksWidgetState extends State<CollapsedTracksWidget> {
   void initState() {
     super.initState();
     _hHeader = ScrollController();
-    _hBody   = ScrollController();
+    _hBody = ScrollController();
     _hHeader.addListener(() => _sync(_hHeader, _hBody));
-    _hBody.addListener(()   => _sync(_hBody,   _hHeader));
+    _hBody.addListener(() => _sync(_hBody, _hHeader));
   }
 
   void _sync(ScrollController src, ScrollController dst) {
@@ -63,8 +63,8 @@ class _CollapsedTracksWidgetState extends State<CollapsedTracksWidget> {
 
   @override
   Widget build(BuildContext context) {
-    final state   = AppStateScope.of(context);
-    final tracks  = state.currentPattern.tracks;
+    final state = AppStateScope.of(context);
+    final tracks = state.currentPattern.tracks;
 
     final tracksWidth = tracks.length * CollapsedTracksWidget.trackWidth;
     const leftColWidth = kWRow + 2; // row# + tick
@@ -82,7 +82,7 @@ class _CollapsedTracksWidgetState extends State<CollapsedTracksWidget> {
               ),
               Expanded(
                 child: SingleChildScrollView(
-                  controller:      _hHeader,
+                  controller: _hHeader,
                   scrollDirection: Axis.horizontal,
                   child: SizedBox(
                     width: tracksWidth,
@@ -103,7 +103,7 @@ class _CollapsedTracksWidgetState extends State<CollapsedTracksWidget> {
               SizedBox(
                 width: leftColWidth,
                 child: ListView.builder(
-                  itemCount:  kRowsPerPattern,
+                  itemCount: kRowsPerPattern,
                   itemExtent: kRowHeight,
                   controller: _rowNumCtrl,
                   itemBuilder: (_, row) => _buildRowNumber(state, row),
@@ -112,12 +112,12 @@ class _CollapsedTracksWidgetState extends State<CollapsedTracksWidget> {
               // Horizontally + vertically scrollable cell area
               Expanded(
                 child: SingleChildScrollView(
-                  controller:      _hBody,
+                  controller: _hBody,
                   scrollDirection: Axis.horizontal,
                   child: SizedBox(
                     width: tracksWidth,
                     child: ListView.builder(
-                      itemCount:  kRowsPerPattern,
+                      itemCount: kRowsPerPattern,
                       itemExtent: kRowHeight,
                       controller: _vBodyCtrl,
                       itemBuilder: (_, row) =>
@@ -145,10 +145,12 @@ class _CollapsedTracksWidgetState extends State<CollapsedTracksWidget> {
     if (!dst.hasClients) return;
     if (dst.offset == src.offset) return;
     _vSyncing = true;
-    dst.jumpTo(src.offset.clamp(
-      dst.position.minScrollExtent,
-      dst.position.maxScrollExtent,
-    ));
+    dst.jumpTo(
+      src.offset.clamp(
+        dst.position.minScrollExtent,
+        dst.position.maxScrollExtent,
+      ),
+    );
     _vSyncing = false;
   }
 
@@ -161,12 +163,20 @@ class _CollapsedTracksWidgetState extends State<CollapsedTracksWidget> {
         children: [
           for (int i = 0; i < tracks.length; i++) ...[
             SizedBox(
-              width: CollapsedTracksWidget.wNote +
-                     CollapsedTracksWidget.wInst,
-              child: Text(
-                'T${(i + 1).toString().padLeft(2, '0')}',
-                style: kStyleHeader.copyWith(color: kColAccent),
-                textAlign: TextAlign.center,
+              width: CollapsedTracksWidget.wNote + CollapsedTracksWidget.wInst,
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: () {
+                  final state = AppStateScope.of(context);
+                  state.selectTrack(i);
+                  state.toggleCollapsedView();
+                },
+                child: Center(
+                  child: Text(
+                    'T${(i + 1).toString().padLeft(2, '0')}',
+                    style: kStyleHeader.copyWith(color: kColAccent),
+                  ),
+                ),
               ),
             ),
             _trackDivider(),
@@ -181,10 +191,7 @@ class _CollapsedTracksWidgetState extends State<CollapsedTracksWidget> {
     return SizedBox(
       width: CollapsedTracksWidget.wTrackGap,
       child: Center(
-        child: Container(
-          width: 1,
-          color: kColAccent.withAlpha(60),
-        ),
+        child: Container(width: 1, color: kColAccent.withAlpha(60)),
       ),
     );
   }
@@ -193,8 +200,8 @@ class _CollapsedTracksWidgetState extends State<CollapsedTracksWidget> {
 
   Widget _buildRowNumber(AppState state, int row) {
     final isPlayhead = state.isPlaying && row == state.playheadRow;
-    final rowSel     = state.selectedCell?.row == row;
-    final bg         = rowBgColor(row, rowSel, isPlayhead);
+    final rowSel = state.selectedCell?.row == row;
+    final bg = rowBgColor(row, rowSel, isPlayhead);
 
     return Container(
       color: bg,
@@ -204,10 +211,7 @@ class _CollapsedTracksWidgetState extends State<CollapsedTracksWidget> {
             width: kWRow,
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 2),
-              child: Text(
-                row.toString().padLeft(2, '0'),
-                style: kStyleRowNum,
-              ),
+              child: Text(row.toString().padLeft(2, '0'), style: kStyleRowNum),
             ),
           ),
           Container(
@@ -215,8 +219,8 @@ class _CollapsedTracksWidgetState extends State<CollapsedTracksWidget> {
             color: row % 16 == 0
                 ? kColAccent.withAlpha(180)
                 : row % 4 == 0
-                    ? kColAccent.withAlpha(60)
-                    : Colors.transparent,
+                ? kColAccent.withAlpha(60)
+                : Colors.transparent,
           ),
         ],
       ),
@@ -227,8 +231,8 @@ class _CollapsedTracksWidgetState extends State<CollapsedTracksWidget> {
 
   Widget _buildCellRow(AppState state, List<TrackModel> tracks, int row) {
     final isPlayhead = state.isPlaying && row == state.playheadRow;
-    final rowSel     = state.selectedCell?.row == row;
-    final bg         = rowBgColor(row, rowSel, isPlayhead);
+    final rowSel = state.selectedCell?.row == row;
+    final bg = rowBgColor(row, rowSel, isPlayhead);
 
     return Container(
       color: bg,
@@ -242,50 +246,49 @@ class _CollapsedTracksWidgetState extends State<CollapsedTracksWidget> {
   }
 
   List<Widget> _buildMiniTrack(
-    AppState   state,
+    AppState state,
     TrackModel track,
-    int        trackIndex,
-    int        row,
+    int trackIndex,
+    int row,
   ) {
-    final cell           = track.cells[row];
-    final sel            = state.selectedCell;
+    final cell = track.cells[row];
+    final sel = state.selectedCell;
     final isCurrentTrack = trackIndex == state.currentTrackIndex;
 
     return [
       SizedBox(
-        width:  CollapsedTracksWidget.wNote,
+        width: CollapsedTracksWidget.wNote,
         height: kRowHeight,
         child: _MiniCell(
           cell: cell,
           column: CellColumn.note,
           row: row,
           trackIndex: trackIndex,
-          isSelected: isCurrentTrack &&
-                      sel?.row    == row &&
-                      sel?.column == CellColumn.note,
+          isSelected:
+              isCurrentTrack &&
+              sel?.row == row &&
+              sel?.column == CellColumn.note,
         ),
       ),
       SizedBox(
-        width:  CollapsedTracksWidget.wInst,
+        width: CollapsedTracksWidget.wInst,
         height: kRowHeight,
         child: _MiniCell(
           cell: cell,
           column: CellColumn.instrument,
           row: row,
           trackIndex: trackIndex,
-          isSelected: isCurrentTrack &&
-                      sel?.row    == row &&
-                      sel?.column == CellColumn.instrument,
+          isSelected:
+              isCurrentTrack &&
+              sel?.row == row &&
+              sel?.column == CellColumn.instrument,
         ),
       ),
       SizedBox(
         width: CollapsedTracksWidget.wTrackGap,
         height: kRowHeight,
         child: Center(
-          child: Container(
-            width: 1,
-            color: kColAccent.withAlpha(40),
-          ),
+          child: Container(width: 1, color: kColAccent.withAlpha(40)),
         ),
       ),
     ];
@@ -295,10 +298,10 @@ class _CollapsedTracksWidgetState extends State<CollapsedTracksWidget> {
 /// Cell tile in the multi-track collapsed grid.
 class _MiniCell extends StatefulWidget {
   final TrackerCell cell;
-  final CellColumn  column;
-  final int         row;
-  final int         trackIndex;
-  final bool        isSelected;
+  final CellColumn column;
+  final int row;
+  final int trackIndex;
+  final bool isSelected;
 
   const _MiniCell({
     required this.cell,
@@ -326,7 +329,7 @@ class _MiniCellState extends State<_MiniCell> {
 
   @override
   Widget build(BuildContext context) {
-    final text  = cellDisplay(widget.column, widget.cell);
+    final text = cellDisplay(widget.column, widget.cell);
     final empty = cellIsEmpty(widget.column, widget.cell);
     final style = empty ? kStyleEmpty : columnStyle(widget.column);
 
@@ -342,8 +345,7 @@ class _MiniCellState extends State<_MiniCell> {
         final steps = (_dragAccum / _pixelsPerStep).truncate();
         if (steps != 0) {
           _dragAccum -= steps * _pixelsPerStep;
-          AppStateScope.of(context)
-              .nudgeCell(widget.row, widget.column, steps);
+          AppStateScope.of(context).nudgeCell(widget.row, widget.column, steps);
         }
       },
       child: Container(
