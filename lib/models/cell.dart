@@ -22,8 +22,43 @@ class FxSlot {
       v == null ? '--' : v.toRadixString(16).toUpperCase().padLeft(2, '0');
 
   /// 2-digit decimal display for FX values (00–99), always shows 00 if empty.
-  static String fxValueDisplay(int? v) =>
-      ((v ?? 0) % 100).toString().padLeft(2, '0');
+    /// 2-digit decimal display for FX values (00–99), or '--' if empty.
+    static String fxValueDisplay(int? v) =>
+      v == null ? '--' : (v % 100).toString().padLeft(2, '0');
+}
+
+/// 3-letter display names for FX command bytes.
+/// Index 0 = first real command; null/out-of-range = '---'.
+const List<String> kFxCommandNames = [
+  'ARP', // 00 – arpeggio
+  'CHA', // 01 – chance
+  'DEL', // 02 – delay
+  'KIL', // 03 – kill note
+  'PAN', // 04 – stereo pan
+  'RAN', // 05 – randomise
+  'RET', // 06 – retrigger
+  'REV', // 07 – reverse
+  'VIB', // 08 – vibrato
+  'VOL', // 09 – volume ramp
+];
+
+/// FX command byte constants (indices into kFxCommandNames).
+const int kFxARP = 0;
+const int kFxCHA = 1;
+const int kFxDEL = 2;
+const int kFxKIL = 3;
+const int kFxPAN = 4;
+const int kFxRAN = 5;
+const int kFxRET = 6;
+const int kFxREV = 7;
+const int kFxVIB = 8;
+const int kFxVOL = 9;
+
+/// Returns the 3-letter FX command name, or '---' if null/unknown.
+String fxCommandName(int? cmd) {
+  if (cmd == null) return '---';
+  if (cmd < kFxCommandNames.length) return kFxCommandNames[cmd];
+  return cmd.toRadixString(16).toUpperCase().padLeft(3, '0');
 }
 
 /// One row in a track: note + instrument + volume + pan + 3 FX slots.
@@ -49,7 +84,6 @@ class TrackerCell {
       note.isEmpty &&
       instrument == null &&
       volume == null &&
-      pan == null &&
       fxSlots.every((slot) => slot.command == null && slot.value == null);
 
   TrackerCell copy() => TrackerCell(
@@ -84,16 +118,15 @@ class TrackerCell {
 
 /// Column indices used throughout the UI.
 enum CellColumn {
-  note, // 0
+  note,       // 0
   instrument, // 1
-  volume, // 2
-  pan, // 3
-  fx0cmd, // 4
-  fx0val, // 5
-  fx1cmd, // 6
-  fx1val, // 7
-  fx2cmd, // 8
-  fx2val, // 9
+  volume,     // 2
+  fx0cmd,     // 3
+  fx0val,     // 4
+  fx1cmd,     // 5
+  fx1val,     // 6
+  fx2cmd,     // 7
+  fx2val,     // 8
 }
 
 extension CellColumnLabel on CellColumn {
@@ -105,8 +138,6 @@ extension CellColumnLabel on CellColumn {
         return 'IN';
       case CellColumn.volume:
         return 'VL';
-      case CellColumn.pan:
-        return 'PN';
       case CellColumn.fx0cmd:
         return 'FX1';
       case CellColumn.fx0val:

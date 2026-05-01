@@ -10,6 +10,7 @@ const Color kBgSelected = Color(0xFF001F4D);
 const Color kBgPlayhead = Color(0xFF003A8C);
 const Color kBgHeader = Color(0xFF161616);
 const Color kBgTrackHeader = Color(0xFF1A1A1A);
+const Color kBgTopNav = Color(0xFF0C1F1F); // dark teal — visually separates nav from content
 
 // Brightened text colours
 const Color kColNote = Color(0xFF55CCFF); // brighter blue
@@ -68,8 +69,8 @@ const double kWNote = 46.0; // "C#4"
 const double kWInst = 30.0; // "FF"
 const double kWVol = 30.0;
 const double kWPan = 30.0;
-const double kWFxCmd = 30.0;
-const double kWFxVal = 30.0;
+const double kWFxCmd = 40.0;
+const double kWFxVal = 28.0;
 const double kWGap = 5.0;
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -82,8 +83,6 @@ Color columnColor(CellColumn col) {
       return kColInst;
     case CellColumn.volume:
       return kColVol;
-    case CellColumn.pan:
-      return kColPan;
     case CellColumn.fx0cmd:
     case CellColumn.fx1cmd:
     case CellColumn.fx2cmd:

@@ -34,9 +34,20 @@ class AppState extends ChangeNotifier {
   bool _disposed = false;
   bool _notifyQueued = false;
   Timer? _playheadTimer;
+  Timer? _previewAutoStopTimer;
+  DateTime? _previewStartedAt;
+  int _previewDurationMs = 1000;
   bool _playbackFollowsSong = false;
   int _currentArrangementSlotIndex = 0;
   int _playheadArrangementSlot = 0;
+
+  static const int kTicksPerLine = 6;
+  int _tickWithinLine = 0; // 0 = row trigger tick, 1–5 = sub-row ticks
+
+  // Per-track 24-byte segments from the last row trigger (for DEL replay).
+  List<List<int>> _rowSegments = [];
+  // DEL FX: pending delayed notes. tick → {trackIndex → realNoteCmd}.
+  final Map<int, Map<int, int>> _pendingDelays = {};
 
   /// Instrument bank — fixed length, indexed by the cell's instrument byte.
   final List<InstrumentModel> instruments = List.generate(
@@ -76,6 +87,113 @@ class AppState extends ChangeNotifier {
   int get playheadArrangementSlot => _playheadArrangementSlot;
   bool get playbackFollowsSong => _playbackFollowsSong;
   bool get isPreviewingCurrentSampler => _previewSamplerSlot == _currentInstrumentIndex;
+  double get currentSamplerPreviewNorm {
+    if (_previewSamplerSlot < 0) return 0.0;
+    final started = _previewStartedAt;
+    if (started == null || _previewDurationMs <= 0) return 0.0;
+
+    final elapsedMs = DateTime.now().difference(started).inMilliseconds;
+    final d = _previewDurationMs;
+    final mode = instruments[_previewSamplerSlot].sampler.loopMode;
+
+    if (mode == SamplerLoopMode.off) {
+      return (elapsedMs / d).clamp(0.0, 1.0);
+    }
+
+    final wrapped = elapsedMs % d;
+    return (wrapped / d).clamp(0.0, 1.0);
+  }
+
+  Future<int?> _estimatePreviewDurationMs(InstrumentModel ins) async {
+    final srcPath = ins.sampler.samplePath;
+    if (srcPath == null || srcPath.isEmpty) return null;
+    final f = File(srcPath);
+    if (!f.existsSync()) return null;
+
+    try {
+      final bytes = await f.readAsBytes();
+      if (bytes.length < 44) return null;
+
+      bool matchAscii(int off, String s) {
+        if (off + s.length > bytes.length) return false;
+        for (int i = 0; i < s.length; i++) {
+          if (bytes[off + i] != s.codeUnitAt(i)) return false;
+        }
+        return true;
+      }
+
+      if (!matchAscii(0, 'RIFF') || !matchAscii(8, 'WAVE')) return null;
+
+      final bd = ByteData.sublistView(bytes);
+      int readLe16(int o) => bd.getUint16(o, Endian.little);
+      int readLe32(int o) => bd.getUint32(o, Endian.little);
+
+      int channels = 0;
+      int sampleRate = 0;
+      int bitsPerSample = 0;
+      int dataSize = 0;
+
+      int pos = 12;
+      while (pos + 8 <= bytes.length) {
+        final chunkSize = readLe32(pos + 4);
+        final body = pos + 8;
+        if (body + chunkSize > bytes.length) break;
+
+        if (matchAscii(pos, 'fmt ') && chunkSize >= 16) {
+          channels = readLe16(body + 2);
+          sampleRate = readLe32(body + 4);
+          bitsPerSample = readLe16(body + 14);
+        } else if (matchAscii(pos, 'data')) {
+          dataSize = chunkSize;
+        }
+
+        pos = body + chunkSize + (chunkSize.isOdd ? 1 : 0);
+      }
+
+      if (channels <= 0 || bitsPerSample <= 0 || dataSize <= 0 || sampleRate <= 0) {
+        return null;
+      }
+
+      final bytesPerSample = bitsPerSample ~/ 8;
+      final frameSize = bytesPerSample * channels;
+      if (frameSize <= 0) return null;
+      final totalFrames = dataSize ~/ frameSize;
+      if (totalFrames <= 0) return null;
+
+      final start = ins.sampler.start.clamp(0.0, 1.0);
+      final end = ins.sampler.end.clamp(0.0, 1.0);
+      final startFrame = (start * (totalFrames - 1)).round().clamp(0, totalFrames - 1);
+      final endFrame = (end * totalFrames).round().clamp(startFrame + 1, totalFrames);
+      final frames = endFrame - startFrame;
+      if (frames <= 0) return null;
+
+      final previewSec = frames / sampleRate;
+      final releaseSec = ins.sampler.release.clamp(0.0, 1.0) * 0.5;
+      final withTail = previewSec + releaseSec;
+      final ms = (withTail * 1000).round();
+      return ms.clamp(80, 120000);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> _schedulePreviewAutoStop(int slot, InstrumentModel ins) async {
+    _previewAutoStopTimer?.cancel();
+    _previewAutoStopTimer = null;
+
+    final ms = await _estimatePreviewDurationMs(ins);
+    if (ms != null) _previewDurationMs = ms;
+
+    if (ins.sampler.loopMode != SamplerLoopMode.off) return;
+
+    if (ms == null) return;
+
+    _previewAutoStopTimer = Timer(Duration(milliseconds: ms), () {
+      if (_disposed) return;
+      if (_previewSamplerSlot != slot) return;
+      stopPreviewCurrentSampler();
+    });
+  }
 
   PatternModel get currentPattern => song.patterns[_currentPatternIndex];
   TrackModel get currentTrack => currentPattern.tracks[_currentTrackIndex];
@@ -155,6 +273,50 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  int _defaultInstrumentForRow(TrackModel track, int row) {
+    // Scan upward for last used instrument, else 01.
+    int def = 1;
+    for (int r = row - 1; r >= 0; r--) {
+      final v = track.cells[r].instrument;
+      if (v != null) {
+        def = v;
+        break;
+      }
+    }
+    return def;
+  }
+
+  /// Resets a cell column to its default value (always writes a value).
+  void resetColumnToDefault(int row, CellColumn column) {
+    final track = currentTrack;
+    switch (column) {
+      case CellColumn.note:
+        track.setNote(row, NoteValue.fromScrollIndex(49)); // C-4
+        break;
+      case CellColumn.instrument:
+        track.writeColumnValue(row, column, _defaultInstrumentForRow(track, row));
+        break;
+      case CellColumn.volume:
+        track.writeColumnValue(row, column, 80);
+        break;
+      case CellColumn.fx0cmd:
+      case CellColumn.fx1cmd:
+      case CellColumn.fx2cmd:
+        track.writeColumnValue(row, column, 0x00);
+        break;
+      case CellColumn.fx0val:
+      case CellColumn.fx1val:
+      case CellColumn.fx2val:
+        // Default value depends on the paired cmd: PAN defaults to 50.
+        final fxIndex = column == CellColumn.fx0val ? 0
+            : column == CellColumn.fx1val ? 1 : 2;
+        final cmd = track.cells[row].fxSlots[fxIndex].command;
+        track.writeColumnValue(row, column, cmd == kFxPAN ? 50 : 0x00);
+        break;
+    }
+    notifyListeners();
+  }
+
   /// Inserts the column-specific default value into an empty cell.
   void insertDefaultValue(int row, CellColumn column) {
     final track = currentTrack;
@@ -162,26 +324,20 @@ class AppState extends ChangeNotifier {
       case CellColumn.note:
         track.setNote(row, NoteValue.fromScrollIndex(49)); // C-4
       case CellColumn.instrument:
-        // scan upward for last used instrument, else 01
-        int def = 1;
-        for (int r = row - 1; r >= 0; r--) {
-          final v = track.cells[r].instrument;
-          if (v != null) {
-            def = v;
-            break;
-          }
-        }
-        track.writeColumnValue(row, column, def);
+        track.writeColumnValue(row, column, _defaultInstrumentForRow(track, row));
       case CellColumn.volume:
         track.writeColumnValue(row, column, 80);
-      case CellColumn.pan:
-        track.writeColumnValue(row, column, 50);
       case CellColumn.fx0cmd:
       case CellColumn.fx1cmd:
       case CellColumn.fx2cmd:
         track.writeColumnValue(row, column, 0x00);
-      default:
-        return; // fx val columns — no default insert
+      case CellColumn.fx0val:
+      case CellColumn.fx1val:
+      case CellColumn.fx2val:
+        final fxIndex = column == CellColumn.fx0val ? 0
+            : column == CellColumn.fx1val ? 1 : 2;
+        final cmd = track.cells[row].fxSlots[fxIndex].command;
+        track.writeColumnValue(row, column, cmd == kFxPAN ? 50 : 0);
     }
     notifyListeners();
   }
@@ -196,8 +352,6 @@ class AppState extends ChangeNotifier {
         track.cells[row].instrument = null;
       case CellColumn.volume:
         track.cells[row].volume = null;
-      case CellColumn.pan:
-        track.cells[row].pan = null;
       case CellColumn.fx0cmd:
         track.cells[row].fxSlots[0].command = null;
       case CellColumn.fx1cmd:
@@ -421,16 +575,16 @@ class AppState extends ChangeNotifier {
         _norm01ToAudio255(0.00), // filterSus
         _norm01ToAudio255(0.25), // filterRel
         _norm01ToAudio255(0.50), // filterAmt
-        _norm01ToAudio255(0.02), // atk
+        _norm01ToAudio255(sp.attack),  // atk  ← sampler attack
         _norm01ToAudio255(0.30), // dec
         _norm01ToAudio255(0.80), // sus
-        _norm01ToAudio255(0.25), // rel
+        _norm01ToAudio255(sp.release), // rel  ← sampler release
         _norm01ToAudio255(0.00), // glide
         _norm01ToAudio255(sp.volume), // sampler volume / synth instVol
         _norm01ToAudio255(startNorm), // lfoRate reused as sampler start
         _norm01ToAudio255(endNorm), // lfoDepth reused as sampler end
         0, // lfoTarget: pitch
-        sp.loop ? 255 : 0, // loop flag (reuses drive byte for sampler)
+        sp.loopMode.index, // loop mode: 0=off, 1=forward, 2=pingpong
       ];
     }
     final p = ins.synth;
@@ -476,6 +630,7 @@ class AppState extends ChangeNotifier {
     isPlaying = true;
     AudioEngine.instance.start();
     _triggerCurrentRow(); // fire row 0 immediately
+    _tickWithinLine = 1;  // next timer tick is sub-tick 1 (row 0 already fired)
     _startPlayheadTimer();
     notifyListeners();
   }
@@ -522,20 +677,20 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
-  Duration _lineDuration() {
-    // One line lasts one beat divided by LPB.
+  Duration _tickDuration() {
+    // One line = kTicksPerLine ticks. Timer fires at tick resolution.
     final microsPerLine = (60000000 / (bpm * linesPerBeat)).round().clamp(
       1000,
       60000000,
     );
-    return Duration(microseconds: microsPerLine);
+    return Duration(microseconds: (microsPerLine / kTicksPerLine).round().clamp(500, 60000000));
   }
 
   void _startPlayheadTimer() {
     _playheadTimer?.cancel();
-    _playheadTimer = Timer.periodic(_lineDuration(), (_) {
+    _playheadTimer = Timer.periodic(_tickDuration(), (_) {
       if (!isPlaying) return;
-      advancePlayhead();
+      _onTick();
     });
   }
 
@@ -553,7 +708,19 @@ class AppState extends ChangeNotifier {
     }
   }
 
-  void advancePlayhead() {
+  /// Called every tick (kTicksPerLine times per row).
+  void _onTick() {
+    if (_tickWithinLine == 0) {
+      // Advance row then trigger.
+      _advanceRow();
+    } else {
+      // Sub-row tick: process tick-level FX.
+      _processSubTick(_tickWithinLine);
+    }
+    _tickWithinLine = (_tickWithinLine + 1) % kTicksPerLine;
+  }
+
+  void _advanceRow() {
     if (_playbackFollowsSong && song.arrangement.isNotEmpty) {
       final slotPatternIdx = song.arrangement[_playheadArrangementSlot];
       final slotPattern = song.patterns[slotPatternIdx];
@@ -571,6 +738,50 @@ class AppState extends ChangeNotifier {
     _triggerCurrentRow();
     notifyListeners();
   }
+
+  /// Sub-row tick processing: handles tick-level FX (KIL, DEL, etc.).
+  void _processSubTick(int tick) {
+    final PatternModel pattern;
+    if (_playbackFollowsSong && song.arrangement.isNotEmpty) {
+      pattern = song.patterns[song.arrangement[_playheadArrangementSlot]];
+    } else {
+      pattern = currentPattern;
+    }
+
+    // KIL: kill note after N ticks.
+    final killData = <int>[];
+    bool anyKil = false;
+    for (final track in pattern.tracks) {
+      if (playheadRow >= track.cells.length) { killData.add(0); continue; }
+      final cell = track.cells[playheadRow];
+      int kil = 0;
+      for (final fx in cell.fxSlots) {
+        if (fx.command == kFxKIL && fx.value != null) {
+          final kilTick = fx.value!.clamp(0, kTicksPerLine - 1);
+          if (tick >= kilTick) kil = 1;
+          break;
+        }
+      }
+      killData.add(kil);
+      if (kil == 1) anyKil = true;
+    }
+    if (anyKil) AudioEngine.instance.killVoices(killData);
+
+    // DEL: fire delayed notes at their scheduled tick.
+    final delayed = _pendingDelays[tick];
+    if (delayed != null && _rowSegments.isNotEmpty) {
+      final rowData = <int>[];
+      for (int t = 0; t < _rowSegments.length; t++) {
+        final seg = List<int>.from(_rowSegments[t]);
+        seg[0] = delayed[t] ?? -1; // real note if delayed at this tick, else hold
+        rowData.addAll(seg);
+      }
+      AudioEngine.instance.setRowData(rowData);
+      _pendingDelays.remove(tick);
+    }
+  }
+
+  void advancePlayhead() => _advanceRow();
 
   /// Reads the current row from all tracks in the playing pattern and
   /// sends packed note/volume/pan/wave + synth params to the audio engine.
@@ -594,7 +805,12 @@ class AppState extends ChangeNotifier {
       _carryInstrumentByTrack = List<int>.filled(pattern.tracks.length, 0);
     }
 
+    _pendingDelays.clear();
+    _rowSegments = [];
+
     final rowData = <int>[];
+    final immediateKillData = <int>[];
+    bool anyImmediateKill = false;
     for (int t = 0; t < pattern.tracks.length; t++) {
       final track = pattern.tracks[t];
       var currentSlot = _carryInstrumentByTrack[t];
@@ -604,12 +820,13 @@ class AppState extends ChangeNotifier {
       int waveCmd = _waveCodeForInstrumentSlot(currentSlot);
       int instrumentTypeCmd = _instrumentTypeCodeForSlot(currentSlot);
       var synthParams = _synthParamsForInstrumentSlot(currentSlot);
+      int delayTick = 0;
+      bool immediateKill = false;
 
       if (playheadRow < track.cells.length) {
         final cell = track.cells[playheadRow];
 
         if (cell.instrument != null) {
-          // IN column stores 1-based (01 = first instrument); convert to 0-based slot.
           currentSlot = (cell.instrument! - 1).clamp(0, instruments.length - 1);
           _carryInstrumentByTrack[t] = currentSlot;
           waveCmd = _waveCodeForInstrumentSlot(currentSlot);
@@ -617,12 +834,11 @@ class AppState extends ChangeNotifier {
           synthParams = _synthParamsForInstrumentSlot(currentSlot);
         }
 
-        // Emit note events for both synth and sampler. Native chooses playback
-        // mode based on instrumentTypeCmd.
         final note = cell.note;
+        final playable = instruments[currentSlot].type != InstrumentType.empty;
         if (note.isOff) {
           noteCmd = -2;
-        } else if (note.isNote) {
+        } else if (note.isNote && playable) {
           noteCmd = note.midiNote;
         }
 
@@ -630,27 +846,52 @@ class AppState extends ChangeNotifier {
           volCmd = ui99ToAudio255(cell.volume!);
         }
 
-        if (cell.pan != null) {
-          panCmd = ui99ToAudio255(cell.pan!);
+        for (final fx in cell.fxSlots) {
+          if (fx.command == kFxPAN && fx.value != null) {
+            panCmd = ui99ToAudio255(fx.value!.clamp(0, 99));
+          }
+          if (fx.command == kFxDEL && fx.value != null) {
+            delayTick = fx.value!.clamp(0, kTicksPerLine - 1);
+          }
+          if (fx.command == kFxKIL && (fx.value ?? 0) == 0) {
+            immediateKill = true;
+          }
         }
 
-        // At pattern start, reset carry values to defaults if first row is empty.
         if (playheadRow == 0) {
           if (volCmd == -1) volCmd = ui99ToAudio255(80);
           if (panCmd == -1) panCmd = ui99ToAudio255(50);
         }
       }
 
-      rowData.add(noteCmd);
+      // Build the per-track segment (stride 24) with the real noteCmd.
+      final segment = [noteCmd, volCmd, panCmd, waveCmd, instrumentTypeCmd, ...synthParams];
+      _rowSegments.add(segment);
+
+      // DEL: if delay > 0 and there's a real note, hold now and fire later.
+      final int sentNote;
+      if (delayTick > 0 && noteCmd >= 0) {
+        _pendingDelays.putIfAbsent(delayTick, () => {})[t] = noteCmd;
+        sentNote = -1; // hold at tick 0
+      } else {
+        sentNote = noteCmd;
+      }
+
+      rowData.add(sentNote);
       rowData.add(volCmd);
       rowData.add(panCmd);
       rowData.add(waveCmd);
       rowData.add(instrumentTypeCmd);
       rowData.addAll(synthParams);
+
+      immediateKillData.add(immediateKill ? 1 : 0);
+      if (immediateKill) anyImmediateKill = true;
     }
 
-    // Fire and forget — no await needed
     AudioEngine.instance.setRowData(rowData);
+    if (anyImmediateKill) {
+      AudioEngine.instance.killVoices(immediateKillData);
+    }
   }
 
   void _syncCurrentPatternToSongPlayhead() {
@@ -791,6 +1032,303 @@ class AppState extends ChangeNotifier {
     }
   }
 
+  /// Chops the current sampler's start→end region into a new WAV file,
+  /// places it in the next empty instrument slot as a sampler, and loads it.
+  /// Returns null on success, or an error string on failure.
+  Future<String?> chopToNewSlot() async {
+    final src = currentInstrument.sampler;
+    final srcPath = src.samplePath;
+    if (srcPath == null || srcPath.isEmpty) return 'No sample loaded';
+
+    // Find next empty slot
+    final nextEmpty = instruments.indexWhere(
+        (ins) => ins.type == InstrumentType.empty,
+        (currentInstrumentIndex + 1) % instruments.length);
+    if (nextEmpty < 0) return 'No empty instrument slots available';
+
+    // Read source WAV
+    final srcFile = File(srcPath);
+    if (!srcFile.existsSync()) return 'Source file not found';
+    final bytes = await srcFile.readAsBytes();
+    if (bytes.length < 44) return 'Invalid WAV file';
+
+    // Parse WAV header to find data chunk
+    bool matchAscii(int off, String s) {
+      if (off + s.length > bytes.length) return false;
+      for (int i = 0; i < s.length; i++) {
+        if (bytes[off + i] != s.codeUnitAt(i)) return false;
+      }
+      return true;
+    }
+    if (!matchAscii(0, 'RIFF') || !matchAscii(8, 'WAVE')) {
+      return 'Not a WAV file';
+    }
+    final bd = ByteData.sublistView(bytes);
+    int readLe16(int o) => bd.getUint16(o, Endian.little);
+    int readLe32(int o) => bd.getUint32(o, Endian.little);
+
+    int audioFormat = 0, channels = 0, sampleRate = 0, bitsPerSample = 0;
+    int dataOffset = -1, dataSize = 0;
+    int pos = 12;
+    while (pos + 8 <= bytes.length) {
+      final chunkSize = readLe32(pos + 4);
+      final body = pos + 8;
+      if (body + chunkSize > bytes.length) break;
+      if (matchAscii(pos, 'fmt ') && chunkSize >= 16) {
+        audioFormat  = readLe16(body + 0);
+        channels     = readLe16(body + 2);
+        sampleRate   = readLe32(body + 4);
+        bitsPerSample= readLe16(body + 14);
+      } else if (matchAscii(pos, 'data')) {
+        dataOffset = body;
+        dataSize   = chunkSize;
+      }
+      pos = body + chunkSize + (chunkSize.isOdd ? 1 : 0);
+    }
+    if (dataOffset < 0 || channels <= 0 || bitsPerSample <= 0 ||
+        !(audioFormat == 1 || audioFormat == 3)) {
+      return 'Unsupported WAV format';
+    }
+
+    final bytesPerSample = bitsPerSample ~/ 8;
+    final frameSize = bytesPerSample * channels;
+    final totalFrames = dataSize ~/ frameSize;
+    if (totalFrames <= 0) return 'Empty audio data';
+
+    // Compute frame range from start/end normalised values
+    final startFrame =
+        (src.start.clamp(0.0, 1.0) * (totalFrames - 1)).round().clamp(0, totalFrames - 1);
+    final endFrame =
+        (src.end.clamp(0.0, 1.0) * totalFrames).round().clamp(startFrame + 1, totalFrames);
+    final chopFrames = endFrame - startFrame;
+    if (chopFrames <= 0) return 'Start/end region is empty';
+
+    // Decode region → mono float, then re-encode as 16-bit PCM WAV
+    final outSamples = List<int>.filled(chopFrames, 0); // int16 range
+    for (int f = 0; f < chopFrames; f++) {
+      final frameOff = dataOffset + (startFrame + f) * frameSize;
+      double mono = 0.0;
+      for (int ch = 0; ch < channels; ch++) {
+        final off = frameOff + ch * bytesPerSample;
+        double s = 0.0;
+        if (audioFormat == 1 && bitsPerSample == 8) {
+          s = (bytes[off] - 128) / 128.0;
+        } else if (audioFormat == 1 && bitsPerSample == 16) {
+          s = bd.getInt16(off, Endian.little) / 32768.0;
+        } else if (audioFormat == 1 && bitsPerSample == 24) {
+          int raw = bytes[off] | (bytes[off + 1] << 8) | (bytes[off + 2] << 16);
+          if (raw & 0x800000 != 0) raw |= ~0xFFFFFF;
+          s = raw / 8388608.0;
+        } else if (audioFormat == 3 && bitsPerSample == 32) {
+          s = bd.getFloat32(off, Endian.little);
+        }
+        mono += s;
+      }
+      final monoVal = (mono / channels).clamp(-1.0, 1.0);
+      outSamples[f] = (monoVal * 32767.0).round().clamp(-32768, 32767);
+    }
+
+    // Build output WAV (mono 16-bit PCM)
+    final outSampleRate = sampleRate;
+    final dataBytes = chopFrames * 2; // 16-bit mono
+    final wavOut = ByteData(44 + dataBytes);
+    void writeFourCC(int off, String s) {
+      for (int i = 0; i < 4; i++) wavOut.setUint8(off + i, s.codeUnitAt(i));
+    }
+    writeFourCC(0, 'RIFF');
+    wavOut.setUint32(4, 36 + dataBytes, Endian.little);
+    writeFourCC(8, 'WAVE');
+    writeFourCC(12, 'fmt ');
+    wavOut.setUint32(16, 16, Endian.little);      // chunk size
+    wavOut.setUint16(20, 1, Endian.little);       // PCM
+    wavOut.setUint16(22, 1, Endian.little);       // mono
+    wavOut.setUint32(24, outSampleRate, Endian.little);
+    wavOut.setUint32(28, outSampleRate * 2, Endian.little); // byte rate
+    wavOut.setUint16(32, 2, Endian.little);       // block align
+    wavOut.setUint16(34, 16, Endian.little);      // bits per sample
+    writeFourCC(36, 'data');
+    wavOut.setUint32(40, dataBytes, Endian.little);
+    for (int f = 0; f < chopFrames; f++) {
+      wavOut.setInt16(44 + f * 2, outSamples[f], Endian.little);
+    }
+
+    // Build output filename: "<srcname>_chop_N.wav"
+    final srcName = (src.sampleName ?? srcPath.split(Platform.pathSeparator).last);
+    final dot = srcName.lastIndexOf('.');
+    final base = dot > 0 ? srcName.substring(0, dot) : srcName;
+    final lib = await _songSamplesDir();
+    int chopNum = 1;
+    String outName;
+    do {
+      outName = '${base}_chop_$chopNum.wav';
+      chopNum++;
+    } while (File('${lib.path}/$outName').existsSync());
+    final outPath = '${lib.path}/$outName';
+    await File(outPath).writeAsBytes(wavOut.buffer.asUint8List(), flush: true);
+
+    // Set up destination slot as sampler with chopped sample
+    final destIns = instruments[nextEmpty];
+    destIns.type = InstrumentType.sampler;
+    destIns.sampler
+      ..samplePath   = outPath
+      ..sampleName   = outName
+      ..pitch        = src.pitch
+      ..volume       = src.volume
+      ..loopMode     = src.loopMode
+      ..start        = 0.0
+      ..end          = 1.0
+      ..attack       = src.attack
+      ..release      = src.release;
+
+    // Load into the engine slot
+    await AudioEngine.instance.setSamplerSample(nextEmpty, outPath);
+
+    // Navigate to the new slot
+    selectInstrument(nextEmpty);
+    _notifyListenersSafe();
+    return null;
+  }
+
+  /// Crops the current sampler's start→end region into a new WAV file,
+  /// replaces the current sampler sample with it, and resets region to full.
+  /// Returns null on success, or an error string on failure.
+  Future<String?> cropCurrentSamplerToNewSample() async {
+    final src = currentInstrument.sampler;
+    final srcPath = src.samplePath;
+    if (srcPath == null || srcPath.isEmpty) return 'No sample loaded';
+
+    // Read source WAV
+    final srcFile = File(srcPath);
+    if (!srcFile.existsSync()) return 'Source file not found';
+    final bytes = await srcFile.readAsBytes();
+    if (bytes.length < 44) return 'Invalid WAV file';
+
+    // Parse WAV header to find data chunk
+    bool matchAscii(int off, String s) {
+      if (off + s.length > bytes.length) return false;
+      for (int i = 0; i < s.length; i++) {
+        if (bytes[off + i] != s.codeUnitAt(i)) return false;
+      }
+      return true;
+    }
+    if (!matchAscii(0, 'RIFF') || !matchAscii(8, 'WAVE')) {
+      return 'Not a WAV file';
+    }
+    final bd = ByteData.sublistView(bytes);
+    int readLe16(int o) => bd.getUint16(o, Endian.little);
+    int readLe32(int o) => bd.getUint32(o, Endian.little);
+
+    int audioFormat = 0, channels = 0, sampleRate = 0, bitsPerSample = 0;
+    int dataOffset = -1, dataSize = 0;
+    int pos = 12;
+    while (pos + 8 <= bytes.length) {
+      final chunkSize = readLe32(pos + 4);
+      final body = pos + 8;
+      if (body + chunkSize > bytes.length) break;
+      if (matchAscii(pos, 'fmt ') && chunkSize >= 16) {
+        audioFormat  = readLe16(body + 0);
+        channels     = readLe16(body + 2);
+        sampleRate   = readLe32(body + 4);
+        bitsPerSample= readLe16(body + 14);
+      } else if (matchAscii(pos, 'data')) {
+        dataOffset = body;
+        dataSize   = chunkSize;
+      }
+      pos = body + chunkSize + (chunkSize.isOdd ? 1 : 0);
+    }
+    if (dataOffset < 0 || channels <= 0 || bitsPerSample <= 0 ||
+        !(audioFormat == 1 || audioFormat == 3)) {
+      return 'Unsupported WAV format';
+    }
+
+    final bytesPerSample = bitsPerSample ~/ 8;
+    final frameSize = bytesPerSample * channels;
+    final totalFrames = dataSize ~/ frameSize;
+    if (totalFrames <= 0) return 'Empty audio data';
+
+    // Compute frame range from start/end normalised values
+    final startFrame =
+        (src.start.clamp(0.0, 1.0) * (totalFrames - 1)).round().clamp(0, totalFrames - 1);
+    final endFrame =
+        (src.end.clamp(0.0, 1.0) * totalFrames).round().clamp(startFrame + 1, totalFrames);
+    final cropFrames = endFrame - startFrame;
+    if (cropFrames <= 0) return 'Start/end region is empty';
+
+    // Decode region → mono float, then re-encode as 16-bit PCM WAV
+    final outSamples = List<int>.filled(cropFrames, 0);
+    for (int f = 0; f < cropFrames; f++) {
+      final frameOff = dataOffset + (startFrame + f) * frameSize;
+      double mono = 0.0;
+      for (int ch = 0; ch < channels; ch++) {
+        final off = frameOff + ch * bytesPerSample;
+        double s = 0.0;
+        if (audioFormat == 1 && bitsPerSample == 8) {
+          s = (bytes[off] - 128) / 128.0;
+        } else if (audioFormat == 1 && bitsPerSample == 16) {
+          s = bd.getInt16(off, Endian.little) / 32768.0;
+        } else if (audioFormat == 1 && bitsPerSample == 24) {
+          int raw = bytes[off] | (bytes[off + 1] << 8) | (bytes[off + 2] << 16);
+          if (raw & 0x800000 != 0) raw |= ~0xFFFFFF;
+          s = raw / 8388608.0;
+        } else if (audioFormat == 3 && bitsPerSample == 32) {
+          s = bd.getFloat32(off, Endian.little);
+        }
+        mono += s;
+      }
+      final monoVal = (mono / channels).clamp(-1.0, 1.0);
+      outSamples[f] = (monoVal * 32767.0).round().clamp(-32768, 32767);
+    }
+
+    // Build output WAV (mono 16-bit PCM)
+    final dataBytes = cropFrames * 2;
+    final wavOut = ByteData(44 + dataBytes);
+    void writeFourCC(int off, String s) {
+      for (int i = 0; i < 4; i++) wavOut.setUint8(off + i, s.codeUnitAt(i));
+    }
+    writeFourCC(0, 'RIFF');
+    wavOut.setUint32(4, 36 + dataBytes, Endian.little);
+    writeFourCC(8, 'WAVE');
+    writeFourCC(12, 'fmt ');
+    wavOut.setUint32(16, 16, Endian.little);
+    wavOut.setUint16(20, 1, Endian.little);
+    wavOut.setUint16(22, 1, Endian.little);
+    wavOut.setUint32(24, sampleRate, Endian.little);
+    wavOut.setUint32(28, sampleRate * 2, Endian.little);
+    wavOut.setUint16(32, 2, Endian.little);
+    wavOut.setUint16(34, 16, Endian.little);
+    writeFourCC(36, 'data');
+    wavOut.setUint32(40, dataBytes, Endian.little);
+    for (int f = 0; f < cropFrames; f++) {
+      wavOut.setInt16(44 + f * 2, outSamples[f], Endian.little);
+    }
+
+    // Build output filename: "<srcname>_crop_N.wav"
+    final srcName = (src.sampleName ?? srcPath.split(Platform.pathSeparator).last);
+    final dot = srcName.lastIndexOf('.');
+    final base = dot > 0 ? srcName.substring(0, dot) : srcName;
+    final projectDir = await _songSamplesDir();
+    int cropNum = 1;
+    String outName;
+    do {
+      outName = '${base}_crop_$cropNum.wav';
+      cropNum++;
+    } while (File('${projectDir.path}/$outName').existsSync());
+
+    final outPath = '${projectDir.path}/$outName';
+    await File(outPath).writeAsBytes(wavOut.buffer.asUint8List(), flush: true);
+
+    // Replace current sampler sample with the crop.
+    src
+      ..samplePath = outPath
+      ..sampleName = outName
+      ..start = 0.0
+      ..end = 1.0;
+
+    await AudioEngine.instance.setSamplerSample(currentInstrumentIndex, outPath);
+    _notifyListenersSafe();
+    return null;
+  }
+
   Future<String?> startPreviewCurrentSampler() async {
     try {
       final slot = currentInstrumentIndex.clamp(0, instruments.length - 1);
@@ -811,7 +1349,9 @@ class AppState extends ChangeNotifier {
       await AudioEngine.instance.start();
       await AudioEngine.instance.setRowData(noteOn);
       _previewSamplerSlot = slot;
+      _previewStartedAt = DateTime.now();
       notifyListeners();
+      await _schedulePreviewAutoStop(slot, ins);
       return null;
     } catch (e) {
       return e.toString();
@@ -819,7 +1359,12 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> stopPreviewCurrentSampler() async {
-    final slot = currentInstrumentIndex.clamp(0, instruments.length - 1);
+    _previewAutoStopTimer?.cancel();
+    _previewAutoStopTimer = null;
+    _previewStartedAt = null;
+
+    final slot = (_previewSamplerSlot >= 0 ? _previewSamplerSlot : currentInstrumentIndex)
+        .clamp(0, instruments.length - 1);
     final waveCmd = _waveCodeForInstrumentSlot(slot);
     final instrumentTypeCmd = _instrumentTypeCodeForSlot(slot);
     final synthParams = _synthParamsForInstrumentSlot(slot);
@@ -845,6 +1390,9 @@ class AppState extends ChangeNotifier {
   }
 
   void clearCurrentSamplerSample() {
+    _previewAutoStopTimer?.cancel();
+    _previewAutoStopTimer = null;
+    _previewStartedAt = null;
     if (isPreviewingCurrentSampler) {
       stopPreviewCurrentSampler();
     }
@@ -887,6 +1435,65 @@ class AppState extends ChangeNotifier {
     return File('${dir.path}/${_slugify(name)}.json');
   }
 
+  Future<Directory> _songSamplesDir([String? songName]) async {
+    final dir = await _songsDir();
+    final raw = songName ?? song.name;
+    final slug = _slugify(raw);
+    final safe = slug.isEmpty ? 'untitled' : slug;
+    final d = Directory('${dir.path}/${safe}_samples');
+    if (!d.existsSync()) d.createSync(recursive: true);
+    return d;
+  }
+
+  String _sanitizeFileStem(String stem) {
+    final cleaned = stem
+        .replaceAll(RegExp(r'[<>:"/\\|?*]'), '_')
+        .replaceAll(RegExp(r'\s+'), '_')
+        .trim();
+    return cleaned.isEmpty ? 'sample' : cleaned;
+  }
+
+  Future<void> _persistSamplerAssetsForSong() async {
+    final projectDir = await _songSamplesDir();
+    final projectRoot = '${projectDir.path}${Platform.pathSeparator}';
+
+    for (var i = 0; i < instruments.length; i++) {
+      final ins = instruments[i];
+      if (ins.type != InstrumentType.sampler) continue;
+
+      final srcPath = ins.sampler.samplePath;
+      if (srcPath == null || srcPath.isEmpty) continue;
+
+      final src = File(srcPath);
+      if (!src.existsSync()) continue;
+
+      final absSrc = src.absolute.path;
+      if (absSrc.startsWith(projectRoot)) {
+        ins.sampler.sampleName = absSrc.split(Platform.pathSeparator).last;
+        continue;
+      }
+
+      final srcName = ins.sampler.sampleName ??
+          absSrc.split(Platform.pathSeparator).last;
+      final dot = srcName.lastIndexOf('.');
+      final stem = _sanitizeFileStem(dot > 0 ? srcName.substring(0, dot) : srcName);
+      final ext = dot > 0 ? srcName.substring(dot) : '.wav';
+
+      var candidate = '$stem$ext';
+      var n = 2;
+      while (File('${projectDir.path}/$candidate').existsSync()) {
+        candidate = '${stem}_$n$ext';
+        n++;
+      }
+
+      final dstPath = '${projectDir.path}/$candidate';
+      await src.copy(dstPath);
+      ins.sampler.samplePath = dstPath;
+      ins.sampler.sampleName = candidate;
+      await AudioEngine.instance.setSamplerSample(i, dstPath);
+    }
+  }
+
   void renameSong(String name) {
     song.name = name;
     _notifyListenersSafe();
@@ -895,6 +1502,8 @@ class AppState extends ChangeNotifier {
   /// Save to disk using song.name as the filename. Overwrites existing.
   Future<bool> saveSong() async {
     try {
+      // Keep app-managed local copies of used sampler files for this song.
+      await _persistSamplerAssetsForSong();
       final payload = jsonEncode({
         'song': song.toJson(),
         'instruments': instruments.map((i) => i.toJson()).toList(),
@@ -966,6 +1575,7 @@ class AppState extends ChangeNotifier {
   void dispose() {
     _disposed = true;
     _playheadTimer?.cancel();
+    _previewAutoStopTimer?.cancel();
     super.dispose();
   }
 }

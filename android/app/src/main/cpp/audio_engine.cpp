@@ -390,7 +390,7 @@ void AudioEngine::triggerRow(const std::vector<int>& rowData) {
         v.samplerMode = isSampler;
         if (isSampler) {
             v.sampleSlot = std::clamp(wave, 0, static_cast<int>(mSamplerSlots.size()) - 1);
-            v.sampleLoop = (drive >= 128);
+            v.loopMode   = std::clamp(drive, 0, 2);
             v.sampleStartNorm = std::clamp(v.lfoRateNorm, 0.0f, 1.0f);
             v.sampleEndNorm = std::clamp(v.lfoDepth, 0.0f, 1.0f);
             if (v.sampleEndNorm < v.sampleStartNorm) {
@@ -410,6 +410,8 @@ void AudioEngine::triggerRow(const std::vector<int>& rowData) {
                         static_cast<int>(v.sampleStartNorm * static_cast<float>(sampleFrames - 1)),
                         0, sampleFrames - 1);
                     v.samplePos = static_cast<double>(startFrame);
+                    v.sampleElapsedFrames = 0.0;
+                    v.samplePingDir = false;
                     v.sampleActive = true;
                 } else {
                     v.sampleActive = false;
@@ -478,6 +480,19 @@ void AudioEngine::triggerRow(const std::vector<int>& rowData) {
     }
 }
 
+void AudioEngine::killVoices(const std::vector<int>& killMask) {
+    std::lock_guard<std::mutex> lock(mVoiceMutex);
+    const int n = static_cast<int>(std::min(killMask.size(), mVoices.size()));
+    for (int i = 0; i < n; ++i) {
+        if (killMask[i] != 1) continue;
+        Voice& v = mVoices[i];
+        // Trigger note-off: move to release stage without clearing the voice.
+        v.noteHeld = false;
+        v.envStage = EnvelopeStage::Release;
+        if (v.samplerMode) v.sampleActive = false;
+    }
+}
+
 oboe::DataCallbackResult AudioEngine::onAudioReady(
         oboe::AudioStream* stream,
         void*              audioData,
@@ -530,10 +545,21 @@ oboe::DataCallbackResult AudioEngine::onAudioReady(
             for (int i = 0; i < numFrames; ++i) {
                 int idx = static_cast<int>(v.samplePos);
                 if (idx < startFrame || idx >= endFrame) {
-                    if (v.sampleLoop && regionLen > 1.0) {
-                        while (v.samplePos >= regionEnd) v.samplePos -= regionLen;
-                        while (v.samplePos < regionStart) v.samplePos += regionLen;
+                    if (v.loopMode == 1 && regionLen > 1.0) {
+                        // Forward loop: wrap back to start
+                        while (v.samplePos >= regionEnd)   v.samplePos -= regionLen;
+                        while (v.samplePos < regionStart)  v.samplePos += regionLen;
                         idx = static_cast<int>(v.samplePos);
+                    } else if (v.loopMode == 2 && regionLen > 1.0) {
+                        // Ping-pong: bounce direction
+                        if (v.samplePos >= regionEnd) {
+                            v.samplePos = regionEnd - (v.samplePos - regionEnd) - 1.0;
+                            v.samplePingDir = true;
+                        } else if (v.samplePos < regionStart) {
+                            v.samplePos = regionStart + (regionStart - v.samplePos);
+                            v.samplePingDir = false;
+                        }
+                        idx = std::clamp(static_cast<int>(v.samplePos), startFrame, endFrame - 1);
                     } else {
                         v.sampleActive = false;
                         v.midiNote = -1;
@@ -541,17 +567,34 @@ oboe::DataCallbackResult AudioEngine::onAudioReady(
                     }
                 }
 
-                const float dry = s.mono[idx] * v.level * v.instrumentVolume * v.sampleGain;
+                // Attack / release gain envelope
+                float envGain = 1.0f;
+                const float atkFrames = static_cast<float>(v.attackSec  * sampleRate);
+                const float relFrames = static_cast<float>(v.releaseSec * sampleRate);
+                const float elapsed = static_cast<float>(v.sampleElapsedFrames);
+                if (atkFrames > 0.0f && elapsed < atkFrames) {
+                    envGain = elapsed / atkFrames;
+                }
+                // Release fade: only for non-looping (looping needs note-off, future work)
+                if (v.loopMode == 0 && relFrames > 0.0f) {
+                    const double framesLeft = regionEnd - v.samplePos;
+                    if (framesLeft < static_cast<double>(relFrames)) {
+                        envGain *= static_cast<float>(framesLeft) / relFrames;
+                    }
+                }
+
+                const float dry = s.mono[idx] * v.level * v.instrumentVolume * v.sampleGain * envGain;
 
                 const float pan01 = std::clamp(v.pan, 0.0f, 1.0f);
                 const float angle = pan01 * 1.57079632679f;
-                const float leftGain = std::cos(angle);
+                const float leftGain  = std::cos(angle);
                 const float rightGain = std::sin(angle);
 
                 out[i * 2]     += dry * leftGain;
                 out[i * 2 + 1] += dry * rightGain;
 
-                v.samplePos += ratio;
+                v.samplePos += v.samplePingDir ? -ratio : ratio;
+                v.sampleElapsedFrames += 1.0;
             }
             continue;
         }

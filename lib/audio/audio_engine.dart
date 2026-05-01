@@ -56,6 +56,13 @@ class AudioEngine {
     await _channel.invokeMethod('setRowData', {'data': rowData});
   }
 
+  /// Kill voices on specific tracks. [killMask] has one entry per track:
+  /// 1 = trigger note-off, 0 = leave playing.
+  Future<void> killVoices(List<int> killMask) async {
+    if (!_initialised) return;
+    await _channel.invokeMethod('killVoices', {'mask': killMask});
+  }
+
   /// Assigns a sample file to a sampler instrument slot.
   /// [slot] is 0-based instrument index.
   /// Pass null or empty [path] to clear sample assignment.

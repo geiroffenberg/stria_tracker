@@ -35,7 +35,7 @@ class TrackModel {
   }
 
   void setInstrument(int row, int? value) {
-    cells[row].instrument = value;
+    cells[row].instrument = value?.clamp(1, 99);
   }
 
   void setVolume(int row, int? value) {
@@ -79,8 +79,6 @@ class TrackModel {
         return cell.instrument;
       case CellColumn.volume:
         return cell.volume;
-      case CellColumn.pan:
-        return cell.pan;
       case CellColumn.fx0cmd:
         return cell.fxSlots[0].command;
       case CellColumn.fx0val:
@@ -103,13 +101,10 @@ class TrackModel {
         cells[row].note = NoteValue.fromScrollIndex(v ?? 0);
         break;
       case CellColumn.instrument:
-        cells[row].instrument = v;
+        cells[row].instrument = v?.clamp(1, 99);
         break;
       case CellColumn.volume:
         cells[row].volume = v;
-        break;
-      case CellColumn.pan:
-        cells[row].pan = v;
         break;
       case CellColumn.fx0cmd:
         cells[row].fxSlots[0].command = v;
@@ -136,13 +131,15 @@ class TrackModel {
   int maxValue(CellColumn column) {
     if (column == CellColumn.note) return 121; // 0=empty … 121=OFF
     if (column == CellColumn.instrument ||
-        column == CellColumn.volume ||
-        column == CellColumn.pan) {
+        column == CellColumn.volume) {
       return 99;
     }
     return 255; // FX fields are 0–255
   }
 
   /// Min value for clamping scroll input.
-  int minValue(CellColumn column) => 0;
+  int minValue(CellColumn column) {
+    if (column == CellColumn.instrument) return 1;
+    return 0;
+  }
 }

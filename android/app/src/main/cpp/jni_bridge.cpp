@@ -41,6 +41,16 @@ Java_com_example_tracker_AudioEnginePlugin_nativeSetRowData(
     reinterpret_cast<AudioEngine*>(ptr)->triggerRow(vec);
 }
 
+JNIEXPORT void JNICALL
+Java_com_example_tracker_AudioEnginePlugin_nativeKillVoices(
+        JNIEnv* env, jobject, jlong ptr, jintArray mask) {
+    jsize  len  = env->GetArrayLength(mask);
+    jint*  elms = env->GetIntArrayElements(mask, nullptr);
+    std::vector<int> vec(elms, elms + len);
+    env->ReleaseIntArrayElements(mask, elms, JNI_ABORT);
+    reinterpret_cast<AudioEngine*>(ptr)->killVoices(vec);
+}
+
 JNIEXPORT jboolean JNICALL
 Java_com_example_tracker_AudioEnginePlugin_nativeSetSamplerSample(
         JNIEnv* env, jobject, jlong ptr, jint slot, jstring path) {

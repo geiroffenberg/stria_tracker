@@ -326,6 +326,9 @@ class _MiniCellState extends State<_MiniCell> {
   static const double _pixelsPerStep = 11.0;
   static const int _defaultNoteScrollIndex = 49; // C-4
 
+  DateTime? _lastTapTime;
+  static const Duration _doubleTapWindow = Duration(milliseconds: 300);
+
   void _select(AppState state) {
     if (state.currentTrackIndex != widget.trackIndex) {
       state.selectTrack(widget.trackIndex);
@@ -334,6 +337,21 @@ class _MiniCellState extends State<_MiniCell> {
       state.setNote(widget.row, NoteValue.fromScrollIndex(_defaultNoteScrollIndex));
     }
     state.selectCell(widget.row, widget.column);
+  }
+
+  void _handleTap(AppState state) {
+    final now = DateTime.now();
+    final last = _lastTapTime;
+    _lastTapTime = now;
+
+    if (last != null && now.difference(last) < _doubleTapWindow) {
+      _lastTapTime = null;
+      _select(state);
+      state.resetColumnToDefault(widget.row, widget.column);
+      return;
+    }
+
+    _select(state);
   }
 
   @override
@@ -345,8 +363,12 @@ class _MiniCellState extends State<_MiniCell> {
 
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
-      onTap: () => _select(state),
+      onTap: () => _handleTap(state),
       onVerticalDragStart: (_) {
+        if (cellIsEmpty(widget.column, widget.cell)) {
+          _select(state);
+          state.insertDefaultValue(widget.row, widget.column);
+        }
         _dragAccum = 0.0;
         _select(state);
       },

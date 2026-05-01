@@ -79,7 +79,6 @@ class TrackPageWidget extends StatelessWidget {
       case CellColumn.note:       return kWNote;
       case CellColumn.instrument: return kWInst;
       case CellColumn.volume:     return kWVol;
-      case CellColumn.pan:        return kWPan;
       case CellColumn.fx0cmd:
       case CellColumn.fx1cmd:
       case CellColumn.fx2cmd:     return kWFxCmd;
@@ -94,7 +93,6 @@ class TrackPageWidget extends StatelessWidget {
       case CellColumn.note:       return kWGap;
       case CellColumn.instrument: return kWGap;
       case CellColumn.volume:     return kWGap;
-      case CellColumn.pan:        return kWGap;
       case CellColumn.fx0cmd:     return 2;
       case CellColumn.fx0val:     return kWGap;
       case CellColumn.fx1cmd:     return 2;

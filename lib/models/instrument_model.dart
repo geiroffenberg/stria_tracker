@@ -12,6 +12,7 @@
 enum InstrumentType {
   sampler,
   simpleSynth,
+  empty,
 }
 
 extension InstrumentTypeLabel on InstrumentType {
@@ -19,8 +20,10 @@ extension InstrumentTypeLabel on InstrumentType {
     switch (this) {
       case InstrumentType.sampler:     return 'SAMPLER';
       case InstrumentType.simpleSynth: return 'SIMPLE SYNTH';
+      case InstrumentType.empty:       return 'EMPTY';
     }
   }
+  bool get isEmpty => this == InstrumentType.empty;
 }
 
 enum SynthWave { sine, triangle, saw, square, pulse, noise }
@@ -179,43 +182,67 @@ class SimpleSynthParams {
       );
 }
 
+enum SamplerLoopMode { off, forward, pingPong }
+
+extension SamplerLoopModeLabel on SamplerLoopMode {
+  String get label {
+    switch (this) {
+      case SamplerLoopMode.off:      return 'OFF';
+      case SamplerLoopMode.forward:  return 'LOOP';
+      case SamplerLoopMode.pingPong: return 'PING';
+    }
+  }
+}
+
 class SamplerParams {
-  String? sampleName; // user-visible name; null = no sample loaded yet
-  String? samplePath; // absolute local file path
-  double  pitch;      // -1..1
+  String? sampleName;
+  String? samplePath;
+  double  pitch;      // -1..1  (±12 semitones)
   double  volume;     // 0..1
-  bool    loop;
+  SamplerLoopMode loopMode;
   double  start;      // 0..1
   double  end;        // 0..1
+  double  attack;     // 0..1  (fade-in length, 0 = instant)
+  double  release;    // 0..1  (fade-out length, 0 = instant)
+
+  // keep legacy bool getter so existing code using p.loop still compiles
+  bool get loop => loopMode != SamplerLoopMode.off;
 
   SamplerParams({
     this.sampleName,
     this.samplePath,
-    this.pitch  = 0.0,
-    this.volume = 0.9,
-    this.loop   = false,
-    this.start  = 0.0,
-    this.end    = 1.0,
+    this.pitch    = 0.0,
+    this.volume   = 0.9,
+    this.loopMode = SamplerLoopMode.off,
+    this.start    = 0.0,
+    this.end      = 1.0,
+    this.attack   = 0.0,
+    this.release  = 0.05,
   });
 
   Map<String, dynamic> toJson() => {
     'sampleName': sampleName,
     'samplePath': samplePath,
-    'pitch': pitch,
-    'vol': volume,
-    'loop': loop,
-    'start': start,
-    'end': end,
+    'pitch':      pitch,
+    'vol':        volume,
+    'loopMode':   loopMode.index,
+    'start':      start,
+    'end':        end,
+    'attack':     attack,
+    'release':    release,
   };
 
   factory SamplerParams.fromJson(Map<String, dynamic> j) => SamplerParams(
     sampleName: j['sampleName'] as String?,
     samplePath: j['samplePath'] as String?,
-    pitch: (j['pitch'] as num?)?.toDouble() ?? 0.0,
-    volume: (j['vol'] as num?)?.toDouble() ?? 0.9,
-    loop: (j['loop'] as bool?) ?? false,
-    start: (j['start'] as num?)?.toDouble() ?? 0.0,
-    end: (j['end'] as num?)?.toDouble() ?? 1.0,
+    pitch:    (j['pitch']  as num?)?.toDouble() ?? 0.0,
+    volume:   (j['vol']    as num?)?.toDouble() ?? 0.9,
+    loopMode: SamplerLoopMode.values[(j['loopMode'] as int?) ??
+              (((j['loop'] as bool?) ?? false) ? 1 : 0)],
+    start:    (j['start']   as num?)?.toDouble() ?? 0.0,
+    end:      (j['end']     as num?)?.toDouble() ?? 1.0,
+    attack:   (j['attack']  as num?)?.toDouble() ?? 0.0,
+    release:  (j['release'] as num?)?.toDouble() ?? 0.05,
   );
 }
 
@@ -227,7 +254,7 @@ class InstrumentModel {
 
   InstrumentModel({
     required this.name,
-    this.type = InstrumentType.simpleSynth,
+    this.type = InstrumentType.empty,
     SimpleSynthParams? synth,
     SamplerParams?     sampler,
   })  : synth   = synth   ?? SimpleSynthParams(),
@@ -246,7 +273,10 @@ class InstrumentModel {
 
   factory InstrumentModel.fromJson(Map<String, dynamic> j) => InstrumentModel(
     name: j['name'] as String,
-    type: InstrumentType.values[(j['type'] as int?) ?? 1],
+    // Legacy saves had 0=sampler 1=simpleSynth and no empty concept; default to empty for new slots
+    type: InstrumentType.values.length > (j['type'] as int? ?? 2)
+        ? InstrumentType.values[(j['type'] as int?) ?? 2]
+        : InstrumentType.empty,
     synth: SimpleSynthParams.fromJson(
         (j['synth'] as Map<String, dynamic>?) ?? {}),
     sampler: SamplerParams.fromJson(
@@ -255,4 +285,4 @@ class InstrumentModel {
 }
 
 /// Total number of instrument slots (matches FF in the tracker grid).
-const int kInstrumentSlots = 16;
+const int kInstrumentSlots = 64;

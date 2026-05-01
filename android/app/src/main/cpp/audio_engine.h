@@ -70,9 +70,11 @@ struct Voice {
     int    sampleSlot        = -1;
     double samplePos         = 0.0;
     double sampleStep        = 1.0;
-    bool   sampleLoop        = false;
-    float  sampleStartNorm   = 0.0f; // normalized region start [0..1]
-    float  sampleEndNorm     = 1.0f; // normalized region end [0..1]
+    int    loopMode          = 0;    // 0=off 1=forward 2=ping-pong
+    bool   samplePingDir     = false; // false=forward true=backward (ping-pong)
+    double sampleElapsedFrames = 0.0; // frames played since note-on (for attack/release)
+    float  sampleStartNorm   = 0.0f;
+    float  sampleEndNorm     = 1.0f;
     float  sampleGain        = 1.0f;
 };
 
@@ -117,6 +119,9 @@ public:
     /// Legacy stride-4 packets are still accepted.
     void triggerRow(const std::vector<int>& rowData);
 
+    /// Kill voices on specific tracks. One entry per track: 1 = kill, 0 = leave.
+    void killVoices(const std::vector<int>& killMask);
+
     /// Assign a sample file to an instrument slot for sampler playback.
     /// Pass empty path to clear assignment.
     bool setSamplerSample(int slot, const std::string& path);
@@ -133,7 +138,7 @@ private:
     std::atomic<double>              mBpm{120.0};
     std::mutex                       mVoiceMutex;
     std::array<Voice, kMaxVoices>    mVoices{};
-    std::array<SampleData, 16>       mSamplerSlots{};
+    std::array<SampleData, 64>       mSamplerSlots{};
 
     bool loadWavMono16OrFloat(const std::string& path, SampleData& outSample);
 

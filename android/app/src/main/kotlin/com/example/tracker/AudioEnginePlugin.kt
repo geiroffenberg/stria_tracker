@@ -61,6 +61,12 @@ class AudioEnginePlugin : FlutterPlugin, MethodCallHandler {
                 if (enginePtr != 0L) nativeSetRowData(enginePtr, data.toIntArray())
                 result.success(null)
             }
+            "killVoices" -> {
+                @Suppress("UNCHECKED_CAST")
+                val mask = call.argument<List<Int>>("mask") ?: emptyList()
+                if (enginePtr != 0L) nativeKillVoices(enginePtr, mask.toIntArray())
+                result.success(null)
+            }
             "setSamplerSample" -> {
                 val slot = call.argument<Int>("slot") ?: -1
                 val path = call.argument<String>("path")
@@ -88,6 +94,7 @@ class AudioEnginePlugin : FlutterPlugin, MethodCallHandler {
     private external fun nativeStop(ptr: Long)
     private external fun nativeSetTempo(ptr: Long, bpm: Double)
     private external fun nativeSetRowData(ptr: Long, data: IntArray)
+    private external fun nativeKillVoices(ptr: Long, mask: IntArray)
     private external fun nativeSetSamplerSample(ptr: Long, slot: Int, path: String): Boolean
     private external fun nativeDispose(ptr: Long)
 

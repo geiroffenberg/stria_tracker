@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 import 'dart:io';
 import 'dart:typed_data';
@@ -30,6 +31,9 @@ class InstrumentScreen extends StatelessWidget {
             child: switch (ins.type) {
               InstrumentType.simpleSynth => _SimpleSynthEditor(state: state),
               InstrumentType.sampler     => _SamplerEditor(state: state),
+              InstrumentType.empty       => _EmptyInstrumentPlaceholder(
+                onPick: (t) => state.setInstrumentType(
+                    state.currentInstrumentIndex, t)),
             },
           ),
         ],
@@ -48,30 +52,46 @@ class _InstrumentHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final idx = state.currentInstrumentIndex;
+    final total = state.instruments.length;
 
     return Container(
       height: 52,
       color: kBgTrackHeader,
-      padding: const EdgeInsets.symmetric(horizontal: 10),
+      padding: const EdgeInsets.symmetric(horizontal: 6),
       child: Row(
         children: [
-          Expanded(
-            child: GestureDetector(
-              onTap: () => _pickInstrument(context, state),
+          // Left arrow
+          IconButton(
+            icon: const Icon(Icons.chevron_left),
+            color: kColAccent,
+            iconSize: 28,
+            padding: EdgeInsets.zero,
+            onPressed: () => state.selectInstrument((idx - 1 + total) % total),
+          ),
+          // Tappable slot label — opens list
+          GestureDetector(
+            onTap: () => _pickInstrument(context, state),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
               child: Text(
-                '< INS ${(idx + 1).toString().padLeft(2, '0')} >',
+                'INS ${(idx + 1).toString().padLeft(2, '0')}',
                 style: kStyleLabel.copyWith(fontSize: 22, color: kColAccent),
               ),
             ),
           ),
-          const SizedBox(width: 8),
-
+          // Right arrow
+          IconButton(
+            icon: const Icon(Icons.chevron_right),
+            color: kColAccent,
+            iconSize: 28,
+            padding: EdgeInsets.zero,
+            onPressed: () => state.selectInstrument((idx + 1) % total),
+          ),
+          const Spacer(),
           // Type selector
           _TypeButton(
             type: instrument.type,
-            onPick: (t) {
-              state.setInstrumentType(idx, t);
-            },
+            onPick: (t) => state.setInstrumentType(idx, t),
           ),
         ],
       ),
@@ -82,41 +102,68 @@ class _InstrumentHeader extends StatelessWidget {
     showModalBottomSheet<void>(
       context: context,
       backgroundColor: kBgTrackHeader,
+      isScrollControlled: true,
       builder: (ctx) => SafeArea(
-        child: GridView.count(
-          crossAxisCount: 4,
-          padding: const EdgeInsets.all(12),
-          shrinkWrap: true,
-          children: [
-            for (int i = 0; i < state.instruments.length; i++)
-              GestureDetector(
-                onTap: () {
-                  state.selectInstrument(i);
-                  Navigator.pop(ctx);
-                },
-                child: Container(
-                  margin: const EdgeInsets.all(4),
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+            maxHeight: MediaQuery.of(ctx).size.height * 0.65,
+          ),
+          child: ListView.builder(
+            itemCount: state.instruments.length,
+            itemBuilder: (_, i) {
+              final ins = state.instruments[i];
+              final isCurrent = i == state.currentInstrumentIndex;
+              final String sub;
+              if (ins.type == InstrumentType.empty) {
+                sub = '—  empty';
+              } else if (ins.type == InstrumentType.sampler) {
+                final sn = ins.sampler.sampleName;
+                sub = sn != null && sn.isNotEmpty
+                    ? 'SAMPLER  ·  $sn'
+                    : 'SAMPLER  ·  no sample';
+              } else {
+                sub = 'SYNTH  ·  ${ins.name}';
+              }
+              return ListTile(
+                dense: true,
+                leading: Container(
+                  width: 36,
+                  height: 36,
+                  alignment: Alignment.center,
                   decoration: BoxDecoration(
-                    color: i == state.currentInstrumentIndex
+                    color: isCurrent
                         ? kColAccent.withAlpha(40)
                         : Colors.transparent,
                     border: Border.all(
-                      color: i == state.currentInstrumentIndex
-                          ? kColAccent : kColInactive,
+                      color: isCurrent ? kColAccent : kColInactive,
                     ),
                     borderRadius: BorderRadius.circular(4),
                   ),
-                  alignment: Alignment.center,
                   child: Text(
                     (i + 1).toString().padLeft(2, '0'),
                     style: kStyleBase.copyWith(
-                      color: kColHeader, fontSize: 16,
+                      fontSize: 14,
+                      color: isCurrent ? kColAccent : kColHeader,
                       fontWeight: FontWeight.w700,
                     ),
                   ),
                 ),
-              ),
-          ],
+                title: Text(
+                  sub,
+                  style: kStyleBase.copyWith(
+                    fontSize: 12,
+                    color: isCurrent ? kColAccent : kColHeader,
+                    fontWeight:
+                        isCurrent ? FontWeight.w700 : FontWeight.normal,
+                  ),
+                ),
+                onTap: () {
+                  state.selectInstrument(i);
+                  Navigator.pop(ctx);
+                },
+              );
+            },
+          ),
         ),
       ),
     );
@@ -151,7 +198,9 @@ class _TypeButton extends StatelessWidget {
                     leading: Icon(
                       t == InstrumentType.simpleSynth
                           ? Icons.graphic_eq
-                          : Icons.audiotrack,
+                          : t == InstrumentType.sampler
+                              ? Icons.audiotrack
+                              : Icons.remove_circle_outline,
                       color: t == type ? kColAccent : kColHeader,
                     ),
                     title: Text(t.label,
@@ -187,6 +236,44 @@ class _TypeButton extends StatelessWidget {
             Icon(Icons.arrow_drop_down, color: kColAccent, size: 20),
           ],
         ),
+      ),
+    );
+  }
+}
+
+// ── Empty slot placeholder ───────────────────────────────────────────────────
+
+class _EmptyInstrumentPlaceholder extends StatelessWidget {
+  final ValueChanged<InstrumentType> onPick;
+  const _EmptyInstrumentPlaceholder({required this.onPick});
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.add_circle_outline, color: kColInactive, size: 48),
+          const SizedBox(height: 16),
+          Text(
+            'EMPTY SLOT',
+            style: kStyleHeader.copyWith(color: kColInactive, fontSize: 14),
+          ),
+          const SizedBox(height: 24),
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              for (final t in [InstrumentType.simpleSynth, InstrumentType.sampler])
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  child: ElevatedButton(
+                    onPressed: () => onPick(t),
+                    child: Text(t.label),
+                  ),
+                ),
+            ],
+          ),
+        ],
       ),
     );
   }
@@ -546,6 +633,7 @@ class _SamplerEditorState extends State<_SamplerEditor> {
   String? _lastBrowserFolder;
   List<double>? _wavePeaks;
   bool _waveLoading = false;
+  Timer? _playheadTicker;
 
   AppState get state => widget.state;
 
@@ -553,6 +641,25 @@ class _SamplerEditorState extends State<_SamplerEditor> {
   void initState() {
     super.initState();
     _syncWaveformForCurrent();
+  }
+
+  void _syncPlayheadTicker(bool shouldRun) {
+    if (shouldRun) {
+      _playheadTicker ??= Timer.periodic(const Duration(milliseconds: 33), (_) {
+        if (!mounted) return;
+        setState(() {});
+      });
+      return;
+    }
+    _playheadTicker?.cancel();
+    _playheadTicker = null;
+  }
+
+  @override
+  void dispose() {
+    _playheadTicker?.cancel();
+    _playheadTicker = null;
+    super.dispose();
   }
 
   bool _isLegalSamplePath(String path) {
@@ -934,6 +1041,50 @@ class _SamplerEditorState extends State<_SamplerEditor> {
     }
   }
 
+  Future<void> _chopToNewSlot(BuildContext context) async {
+    if (_busy) return;
+    setState(() => _busy = true);
+    try {
+      final err = await state.chopToNewSlot();
+      if (!mounted) return;
+      if (err != null) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('Chop failed: $err'),
+          duration: const Duration(seconds: 3),
+        ));
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Chopped to new slot'),
+          duration: Duration(seconds: 2),
+        ));
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _cropCurrentSample(BuildContext context) async {
+    if (_busy) return;
+    setState(() => _busy = true);
+    try {
+      final err = await state.cropCurrentSamplerToNewSample();
+      if (!mounted) return;
+      if (err != null) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('Crop failed: $err'),
+          duration: const Duration(seconds: 3),
+        ));
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Cropped current sample'),
+          duration: Duration(seconds: 2),
+        ));
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
   Future<void> _previewSample(BuildContext context) async {
     if (_previewBusy) return;
     setState(() => _previewBusy = true);
@@ -952,6 +1103,8 @@ class _SamplerEditorState extends State<_SamplerEditor> {
   @override
   Widget build(BuildContext context) {
     final p = state.currentInstrument.sampler;
+    final isPreviewing = state.isPreviewingCurrentSampler;
+    _syncPlayheadTicker(isPreviewing);
     if (_wavePath != p.samplePath && !_waveLoading) {
       _syncWaveformForCurrent();
     }
@@ -969,7 +1122,9 @@ class _SamplerEditorState extends State<_SamplerEditor> {
             ),
           ),
           _Section(
-            title: 'PREVIEW',
+            title: (p.sampleName != null && p.sampleName!.isNotEmpty)
+                ? p.sampleName!
+                : 'PREVIEW',
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
@@ -1007,6 +1162,8 @@ class _SamplerEditorState extends State<_SamplerEditor> {
                                 axisColor: kColInactive,
                                 startNorm: p.start,
                                 endNorm: p.end,
+                                playheadNorm: state.currentSamplerPreviewNorm,
+                                showPlayhead: isPreviewing,
                               ),
                               child: const SizedBox.expand(),
                             ),
@@ -1017,12 +1174,12 @@ class _SamplerEditorState extends State<_SamplerEditor> {
                       ? null
                       : () => _previewSample(context),
                   icon: Icon(
-                    state.isPreviewingCurrentSampler
+                    isPreviewing
                         ? Icons.stop
                         : Icons.play_arrow,
                   ),
                   label: Text(
-                    state.isPreviewingCurrentSampler ? 'STOP' : 'PREVIEW',
+                    isPreviewing ? 'STOP' : 'PREVIEW',
                   ),
                 ),
               ],
@@ -1033,6 +1190,66 @@ class _SamplerEditorState extends State<_SamplerEditor> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
+                // ── Start / End sliders ──────────────────────────────────
+                Text(
+                  'START  ${(p.start * 100).round()}%',
+                  style: kStyleHeader.copyWith(fontSize: 11, color: kColHeader),
+                ),
+                Slider(
+                  value: p.start,
+                  onChanged: (v) {
+                    p.start = v.clamp(0.0, 1.0);
+                    if (p.end < p.start + 0.01) {
+                      p.end = (p.start + 0.01).clamp(0.0, 1.0);
+                    }
+                    state.instrumentParamsChanged();
+                  },
+                ),
+                Text(
+                  'END  ${(p.end * 100).round()}%',
+                  style: kStyleHeader.copyWith(fontSize: 11, color: kColHeader),
+                ),
+                Slider(
+                  value: p.end,
+                  onChanged: (v) {
+                    p.end = v.clamp(0.0, 1.0);
+                    if (p.end < p.start + 0.01) {
+                      p.start = (p.end - 0.01).clamp(0.0, 1.0);
+                    }
+                    state.instrumentParamsChanged();
+                  },
+                ),
+                Row(
+                  children: [
+                    Expanded(
+                      child: ElevatedButton.icon(
+                        onPressed: (_busy || p.samplePath == null)
+                            ? null
+                            : () => _chopToNewSlot(context),
+                        icon: const Icon(Icons.call_split),
+                        label: const Text('CHOP TO SLOT'),
+                        style: ElevatedButton.styleFrom(
+                          foregroundColor: kColAccent,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: ElevatedButton.icon(
+                        onPressed: (_busy || p.samplePath == null)
+                            ? null
+                            : () => _cropCurrentSample(context),
+                        icon: const Icon(Icons.content_cut),
+                        label: const Text('CROP CURRENT'),
+                        style: ElevatedButton.styleFrom(
+                          foregroundColor: kColAccent,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                // ── Knob row: Pitch · Volume · Attack · Release ──────────
                 Row(
                   children: [
                     Expanded(child: _Knob(
@@ -1053,53 +1270,69 @@ class _SamplerEditorState extends State<_SamplerEditor> {
                         state.instrumentParamsChanged();
                       },
                     )),
+                    Expanded(child: _Knob(
+                      label: 'ATTACK',
+                      value: p.attack,
+                      display: '${(p.attack * 500).round()} ms',
+                      onChanged: (v) {
+                        p.attack = v;
+                        state.instrumentParamsChanged();
+                      },
+                    )),
+                    Expanded(child: _Knob(
+                      label: 'RELEASE',
+                      value: p.release,
+                      display: '${(p.release * 500).round()} ms',
+                      onChanged: (v) {
+                        p.release = v;
+                        state.instrumentParamsChanged();
+                      },
+                    )),
                   ],
                 ),
                 const SizedBox(height: 10),
-                Text(
-                  'START ${(p.start * 100).round()}%',
-                  style: kStyleHeader.copyWith(fontSize: 11, color: kColHeader),
-                ),
-                Slider(
-                  value: p.start,
-                  onChanged: (v) {
-                    final next = v.clamp(0.0, 1.0);
-                    p.start = next;
-                    if (p.end < p.start + 0.01) {
-                      p.end = (p.start + 0.01).clamp(0.0, 1.0);
-                    }
-                    state.instrumentParamsChanged();
-                  },
-                ),
-                Text(
-                  'END ${(p.end * 100).round()}%',
-                  style: kStyleHeader.copyWith(fontSize: 11, color: kColHeader),
-                ),
-                Slider(
-                  value: p.end,
-                  onChanged: (v) {
-                    final next = v.clamp(0.0, 1.0);
-                    p.end = next;
-                    if (p.end < p.start + 0.01) {
-                      p.start = (p.end - 0.01).clamp(0.0, 1.0);
-                    }
-                    state.instrumentParamsChanged();
-                  },
-                ),
+                // ── Loop mode: OFF · LOOP · PING ─────────────────────────
                 Row(
                   children: [
                     Text(
                       'LOOP',
                       style: kStyleHeader.copyWith(fontSize: 11, color: kColHeader),
                     ),
-                    const Spacer(),
-                    Switch(
-                      value: p.loop,
-                      onChanged: (v) {
-                        p.loop = v;
-                        state.instrumentParamsChanged();
-                      },
-                    ),
+                    const SizedBox(width: 12),
+                    for (final mode in SamplerLoopMode.values)
+                      Padding(
+                        padding: const EdgeInsets.only(right: 6),
+                        child: GestureDetector(
+                          onTap: () {
+                            p.loopMode = mode;
+                            state.instrumentParamsChanged();
+                          },
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 10, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: p.loopMode == mode
+                                  ? kColAccent.withAlpha(40)
+                                  : Colors.transparent,
+                              border: Border.all(
+                                color: p.loopMode == mode
+                                    ? kColAccent
+                                    : kColInactive,
+                              ),
+                              borderRadius: BorderRadius.circular(3),
+                            ),
+                            child: Text(
+                              mode.label,
+                              style: kStyleHeader.copyWith(
+                                fontSize: 11,
+                                color: p.loopMode == mode
+                                    ? kColAccent
+                                    : kColInactive,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
                   ],
                 ),
               ],
@@ -1117,6 +1350,8 @@ class _SampleWaveformPainter extends CustomPainter {
   final Color axisColor;
   final double startNorm;
   final double endNorm;
+  final double playheadNorm;
+  final bool showPlayhead;
 
   const _SampleWaveformPainter({
     required this.peaks,
@@ -1124,6 +1359,8 @@ class _SampleWaveformPainter extends CustomPainter {
     required this.axisColor,
     required this.startNorm,
     required this.endNorm,
+    required this.playheadNorm,
+    required this.showPlayhead,
   });
 
   @override
@@ -1157,6 +1394,15 @@ class _SampleWaveformPainter extends CustomPainter {
     canvas.drawLine(Offset(leftX, 0), Offset(leftX, size.height), marker);
     canvas.drawLine(Offset(rightX, 0), Offset(rightX, size.height), marker);
 
+    if (showPlayhead) {
+      final ph = playheadNorm.clamp(0.0, 1.0);
+      final x = leftX + (rightX - leftX) * ph;
+      final playhead = Paint()
+        ..color = Colors.white.withAlpha(230)
+        ..strokeWidth = 1.2;
+      canvas.drawLine(Offset(x, 0), Offset(x, size.height), playhead);
+    }
+
     if (peaks.isEmpty) return;
     final wave = Paint()
       ..color = waveColor
@@ -1177,7 +1423,9 @@ class _SampleWaveformPainter extends CustomPainter {
         oldDelegate.waveColor != waveColor ||
         oldDelegate.axisColor != axisColor ||
         oldDelegate.startNorm != startNorm ||
-        oldDelegate.endNorm != endNorm;
+        oldDelegate.endNorm != endNorm ||
+        oldDelegate.playheadNorm != playheadNorm ||
+        oldDelegate.showPlayhead != showPlayhead;
   }
 }
 

@@ -52,7 +52,12 @@ class _MainScreenState extends State<MainScreen> {
     final state = AppStateScope.of(context);
     return Container(
       height: 38,
-      color:  kBgTrackHeader,
+      decoration: const BoxDecoration(
+        color: kBgTopNav,
+        border: Border(
+          bottom: BorderSide(color: Color(0xFF226666), width: 1),
+        ),
+      ),
       child: Row(
         children: List.generate(_tabs.length, (i) {
           final active = i == _tabIndex;

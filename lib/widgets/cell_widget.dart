@@ -18,18 +18,16 @@ String cellDisplay(CellColumn column, TrackerCell cell) {
       return _dec2Display(cell.instrument);
     case CellColumn.volume:
       return _dec2Display(cell.volume);
-    case CellColumn.pan:
-      return _dec2Display(cell.pan);
     case CellColumn.fx0cmd:
-      return FxSlot.hexDisplay(cell.fxSlots[0].command);
+      return fxCommandName(cell.fxSlots[0].command);
     case CellColumn.fx0val:
       return FxSlot.fxValueDisplay(cell.fxSlots[0].value);
     case CellColumn.fx1cmd:
-      return FxSlot.hexDisplay(cell.fxSlots[1].command);
+      return fxCommandName(cell.fxSlots[1].command);
     case CellColumn.fx1val:
       return FxSlot.fxValueDisplay(cell.fxSlots[1].value);
     case CellColumn.fx2cmd:
-      return FxSlot.hexDisplay(cell.fxSlots[2].command);
+      return fxCommandName(cell.fxSlots[2].command);
     case CellColumn.fx2val:
       return FxSlot.fxValueDisplay(cell.fxSlots[2].value);
   }
@@ -43,8 +41,6 @@ bool cellIsEmpty(CellColumn column, TrackerCell cell) {
       return cell.instrument == null;
     case CellColumn.volume:
       return cell.volume == null;
-    case CellColumn.pan:
-      return cell.pan == null;
     case CellColumn.fx0cmd:
       return cell.fxSlots[0].command == null;
     case CellColumn.fx0val:
@@ -84,7 +80,24 @@ class _CellWidgetState extends State<CellWidget> {
   static const double _pixelsPerStep = 11.0;
   Offset _longPressPos = Offset.zero;
 
+  // Manual double-tap detection (avoids GestureDetector's 300ms onTap delay).
+  DateTime? _lastTapTime;
+  static const Duration _doubleTapWindow = Duration(milliseconds: 300);
+
   void _handleTap(AppState state) {
+    final now = DateTime.now();
+    final last = _lastTapTime;
+    _lastTapTime = now;
+
+    if (last != null && now.difference(last) < _doubleTapWindow) {
+      // Double-tap: reset to default.
+      _lastTapTime = null;
+      state.resetColumnToDefault(widget.row, widget.column);
+      state.selectCell(widget.row, widget.column);
+      return;
+    }
+
+    // Single tap: immediate response.
     final empty = cellIsEmpty(widget.column, widget.cell);
     if (empty) {
       state.insertDefaultValue(widget.row, widget.column);
@@ -150,6 +163,9 @@ class _CellWidgetState extends State<CellWidget> {
       onLongPressStart: (d) => _longPressPos = d.globalPosition,
       onLongPress: () => _handleLongPress(state),
       onVerticalDragStart: (_) {
+        if (cellIsEmpty(widget.column, widget.cell)) {
+          state.insertDefaultValue(widget.row, widget.column);
+        }
         if (cellIsEmpty(widget.column, widget.cell)) return;
         _dragAccum = 0.0;
         state.selectCell(widget.row, widget.column);
