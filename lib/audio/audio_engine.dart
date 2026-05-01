@@ -40,9 +40,10 @@ class AudioEngine {
 
   /// Feed the current pattern row data to the engine so it knows what to play.
   /// [rowData] is packed per track as
-  /// [note, volume, pan, wave, cutoff, resonance,
+  /// [note, volume, pan, wave, instrumentType, detune, cutoff, resonance, filterMode,
   ///  filterAttack, filterDecay, filterSustain, filterRelease, filterEnvAmt,
-  ///  attack, decay, sustain, release, glide, instVol, ...].
+  ///  attack, decay, sustain, release, glide, instVol,
+  ///  lfoRate, lfoDepth, lfoTarget, drive, ...].
   /// note: 0-127 MIDI, -1 empty/hold, -2 OFF.
   /// volume: 0-255 sets level, -1 leaves current level unchanged.
   /// pan: 0-255 sets position, -1 leaves pan unchanged.
@@ -53,6 +54,19 @@ class AudioEngine {
   Future<void> setRowData(List<int> rowData) async {
     if (!_initialised) return;
     await _channel.invokeMethod('setRowData', {'data': rowData});
+  }
+
+  /// Assigns a sample file to a sampler instrument slot.
+  /// [slot] is 0-based instrument index.
+  /// Pass null or empty [path] to clear sample assignment.
+  /// Returns true on success, false if the file could not be loaded.
+  Future<bool> setSamplerSample(int slot, String? path) async {
+    if (!_initialised) return false;
+    final result = await _channel.invokeMethod<bool>('setSamplerSample', {
+      'slot': slot,
+      'path': path,
+    });
+    return result ?? false;
   }
 
   Future<void> dispose() async {

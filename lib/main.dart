@@ -32,7 +32,6 @@ class _TrackerAppState extends State<TrackerApp> {
   @override
   void dispose() {
     AudioEngine.instance.dispose();
-    _appState.dispose();
     super.dispose();
   }
 

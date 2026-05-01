@@ -1,6 +1,7 @@
 #include <jni.h>
 #include "audio_engine.h"
 #include <vector>
+#include <string>
 
 extern "C" {
 
@@ -38,6 +39,16 @@ Java_com_example_tracker_AudioEnginePlugin_nativeSetRowData(
     std::vector<int> vec(elms, elms + len);
     env->ReleaseIntArrayElements(data, elms, JNI_ABORT);
     reinterpret_cast<AudioEngine*>(ptr)->triggerRow(vec);
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_example_tracker_AudioEnginePlugin_nativeSetSamplerSample(
+        JNIEnv* env, jobject, jlong ptr, jint slot, jstring path) {
+    const char* cpath = env->GetStringUTFChars(path, nullptr);
+    std::string spath = cpath ? cpath : "";
+    if (cpath) env->ReleaseStringUTFChars(path, cpath);
+    const bool ok = reinterpret_cast<AudioEngine*>(ptr)->setSamplerSample(slot, spath);
+    return static_cast<jboolean>(ok);
 }
 
 JNIEXPORT void JNICALL

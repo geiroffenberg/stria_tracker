@@ -54,6 +54,20 @@ class TrackModel {
     cells[row].fxSlots[fxIndex].value = value;
   }
 
+  Map<String, dynamic> toJson() => {
+    'name': name,
+    'collapsed': collapsed,
+    'cells': cells.map((c) => c.toJson()).toList(),
+  };
+
+  factory TrackModel.fromJson(Map<String, dynamic> j) => TrackModel(
+    name: j['name'] as String,
+    collapsed: (j['collapsed'] as bool?) ?? false,
+    cells: (j['cells'] as List<dynamic>)
+        .map((e) => TrackerCell.fromJson(e as Map<String, dynamic>))
+        .toList(),
+  );
+
   /// Read the current numeric value for [column] at [row].
   /// Returns null when the field is empty.
   int? readColumnValue(int row, CellColumn column) {

@@ -87,6 +87,19 @@ class _TransportValueControlState extends State<_TransportValueControl> {
   static const double _pixelsPerStep = 10.0;
   double _dragAccum = 0;
 
+  void _applyDragDelta(Offset delta) {
+    // Vertical up increases value, horizontal right increases value.
+    final useHorizontal = delta.dx.abs() >= delta.dy.abs();
+    final signedDelta = useHorizontal ? delta.dx : -delta.dy;
+    _dragAccum += signedDelta;
+
+    final steps = (_dragAccum / _pixelsPerStep).truncate();
+    if (steps != 0) {
+      _dragAccum -= steps * _pixelsPerStep;
+      widget.onStep(steps);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final valueColor = widget.enabled ? kColAccent : kColInactive;
@@ -94,15 +107,8 @@ class _TransportValueControlState extends State<_TransportValueControl> {
 
     return GestureDetector(
       behavior: widget.enabled ? HitTestBehavior.opaque : HitTestBehavior.deferToChild,
-      onVerticalDragStart: widget.enabled ? (_) => _dragAccum = 0 : null,
-      onVerticalDragUpdate: widget.enabled ? (d) {
-        _dragAccum -= d.delta.dy;
-        final steps = (_dragAccum / _pixelsPerStep).truncate();
-        if (steps != 0) {
-          _dragAccum -= steps * _pixelsPerStep;
-          widget.onStep(steps);
-        }
-      } : null,
+      onPanStart: widget.enabled ? (_) => _dragAccum = 0 : null,
+      onPanUpdate: widget.enabled ? (d) => _applyDragDelta(d.delta) : null,
       child: SizedBox(
         width: 56,
         child: Column(

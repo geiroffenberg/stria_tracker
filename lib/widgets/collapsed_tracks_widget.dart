@@ -326,8 +326,7 @@ class _MiniCellState extends State<_MiniCell> {
   static const double _pixelsPerStep = 11.0;
   static const int _defaultNoteScrollIndex = 49; // C-4
 
-  void _select(BuildContext context) {
-    final state = AppStateScope.of(context);
+  void _select(AppState state) {
     if (state.currentTrackIndex != widget.trackIndex) {
       state.selectTrack(widget.trackIndex);
     }
@@ -339,23 +338,24 @@ class _MiniCellState extends State<_MiniCell> {
 
   @override
   Widget build(BuildContext context) {
+    final state = AppStateScope.of(context);
     final text = cellDisplay(widget.column, widget.cell);
     final empty = cellIsEmpty(widget.column, widget.cell);
     final style = empty ? kStyleEmpty : columnStyle(widget.column);
 
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
-      onTap: () => _select(context),
+      onTap: () => _select(state),
       onVerticalDragStart: (_) {
         _dragAccum = 0.0;
-        _select(context);
+        _select(state);
       },
       onVerticalDragUpdate: (d) {
         _dragAccum -= d.delta.dy;
         final steps = (_dragAccum / _pixelsPerStep).truncate();
         if (steps != 0) {
           _dragAccum -= steps * _pixelsPerStep;
-          AppStateScope.of(context).nudgeCell(widget.row, widget.column, steps);
+          state.nudgeCell(widget.row, widget.column, steps);
         }
       },
       child: Container(

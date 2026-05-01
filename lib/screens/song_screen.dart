@@ -26,7 +26,13 @@ class _SongScreenState extends State<SongScreen> {
   // to the timeline always lines up.
   final _slotsCtrl    = ScrollController();
   final _timelineCtrl = ScrollController();
+  final _nameCtrl = TextEditingController();
+  final _nameFocus = FocusNode();
   bool _syncing = false;
+  bool _editingName = false;
+  bool _showLoadMenu = false;
+  bool _loadingSongNames = false;
+  List<String> _savedSongNames = const [];
 
   static const double kSlotSize   = 64.0;
   static const double kSlotGap    = 6.0;
@@ -53,6 +59,8 @@ class _SongScreenState extends State<SongScreen> {
   void dispose() {
     _slotsCtrl.dispose();
     _timelineCtrl.dispose();
+    _nameCtrl.dispose();
+    _nameFocus.dispose();
     super.dispose();
   }
 
@@ -63,53 +71,61 @@ class _SongScreenState extends State<SongScreen> {
 
     return Container(
       color: kBgColor,
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
+      child: Column(
         children: [
-          // ── Left column: pattern slots ────────────────────────────────
-          SizedBox(
-            width: kSlotSize + 16,
-            child: Column(
+          _buildSaveLoadPanel(context, state),
+          Container(height: 1, color: kColInactive.withAlpha(60)),
+          Expanded(
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                _buildLeftHeader(),
-                Expanded(
-                  child: ListView.builder(
-                    controller: _slotsCtrl,
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8, vertical: 4,
-                    ),
-                    itemExtent: slotPitch,
-                    itemCount: state.song.arrangement.length + 1,
-                    itemBuilder: (_, i) {
-                      if (i == state.song.arrangement.length) {
-                        return _AddSlotButton(state: state);
-                      }
-                      return _PatternSlot(
-                        slotIndex: i,
-                        patternIndex: state.song.arrangement[i],
-                        muted: state.song.arrangementMutes[i],
-                        isCurrent: i == state.currentArrangementSlotIndex,
-                        size: kSlotSize,
-                        gap:  kSlotGap,
-                      );
-                    },
+                // ── Left column: pattern slots ────────────────────────────────
+                SizedBox(
+                  width: kSlotSize + 16,
+                  child: Column(
+                    children: [
+                      _buildLeftHeader(),
+                      Expanded(
+                        child: ListView.builder(
+                          controller: _slotsCtrl,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 4,
+                          ),
+                          itemExtent: slotPitch,
+                          itemCount: state.song.arrangement.length + 1,
+                          itemBuilder: (_, i) {
+                            if (i == state.song.arrangement.length) {
+                              return _AddSlotButton(state: state);
+                            }
+                            return _PatternSlot(
+                              slotIndex: i,
+                              patternIndex: state.song.arrangement[i],
+                              muted: state.song.arrangementMutes[i],
+                              isCurrent: i == state.currentArrangementSlotIndex,
+                              size: kSlotSize,
+                              gap:  kSlotGap,
+                            );
+                          },
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-              ],
-            ),
-          ),
 
-          Container(width: 1, color: kColInactive.withAlpha(80)),
+                Container(width: 1, color: kColInactive.withAlpha(80)),
 
-          // ── Right column: timeline overview ────────────────────────────
-          Expanded(
-            child: Column(
-              children: [
-                _buildRightHeader(state),
+                // ── Right column: timeline overview ────────────────────────────
                 Expanded(
-                  child: SingleChildScrollView(
-                    controller: _timelineCtrl,
-                    child: _buildTimeline(state, slotPitch),
+                  child: Column(
+                    children: [
+                      _buildRightHeader(state),
+                      Expanded(
+                        child: SingleChildScrollView(
+                          controller: _timelineCtrl,
+                          child: _buildTimeline(state, slotPitch),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ],
@@ -139,11 +155,225 @@ class _SongScreenState extends State<SongScreen> {
         children: [
           const Spacer(),
           if (state.isPlaying)
-            Text('PLAY · row ${(state.playheadRow + 1).toString().padLeft(2, '0')}',
+            Text(
+                'PLAY · row ${(state.playheadRow + 1).toString().padLeft(2, '0')}',
                 style: kStyleHeader.copyWith(color: kColPlayBtn)),
         ],
       ),
     );
+  }
+
+  Widget _buildSaveLoadPanel(BuildContext ctx, AppState state) {
+    if (!_editingName && _nameCtrl.text != state.song.name) {
+      _nameCtrl.text = state.song.name;
+    }
+
+    return Container(
+      color: kBgHeader,
+      padding: const EdgeInsets.fromLTRB(10, 5, 10, 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (!_editingName)
+            GestureDetector(
+              onTap: () => _startRename(state),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      state.song.name,
+                      style: kStyleHeader.copyWith(
+                          color: Colors.white70, fontSize: 11),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  const Icon(Icons.edit, size: 11, color: Colors.white38),
+                ],
+              ),
+            )
+          else
+            Row(
+              children: [
+                Expanded(
+                  child: SizedBox(
+                    height: 30,
+                    child: TextField(
+                      controller: _nameCtrl,
+                      focusNode: _nameFocus,
+                      autofocus: true,
+                      style: const TextStyle(color: Colors.white),
+                      autocorrect: false,
+                      enableSuggestions: false,
+                      autofillHints: const <String>[],
+                      decoration: InputDecoration(
+                        hintText: 'Song name',
+                        hintStyle: TextStyle(color: kColInactive),
+                        isDense: true,
+                        contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 6),
+                        enabledBorder: OutlineInputBorder(
+                          borderSide: BorderSide(color: kColAccent),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderSide: BorderSide(color: kColAccent),
+                        ),
+                      ),
+                      onSubmitted: (_) => _commitRename(state),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 6),
+                GestureDetector(
+                  onTap: () => _commitRename(state),
+                  child: Icon(Icons.check, size: 18, color: kColAccent),
+                ),
+                const SizedBox(width: 6),
+                GestureDetector(
+                  onTap: _cancelRename,
+                  child: Icon(Icons.close, size: 18, color: kColInactive),
+                ),
+              ],
+            ),
+          const SizedBox(height: 6),
+          Row(
+            children: [
+              Expanded(
+                child: _BigBtn(
+                  label: 'SAVE',
+                  icon: Icons.save_outlined,
+                  onTap: () => _handleSave(ctx, state),
+                ),
+              ),
+              const SizedBox(width: 6),
+              Expanded(
+                child: _BigBtn(
+                  label: 'LOAD',
+                  icon: Icons.folder_open_outlined,
+                  onTap: () => _toggleLoadMenu(state),
+                ),
+              ),
+            ],
+          ),
+          if (_showLoadMenu) ...[
+            const SizedBox(height: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(vertical: 4),
+              decoration: BoxDecoration(
+                color: kBgTrackHeader,
+                border: Border.all(color: kColInactive.withAlpha(120)),
+                borderRadius: BorderRadius.circular(4),
+              ),
+              child: _loadingSongNames
+                  ? Padding(
+                      padding: const EdgeInsets.all(8),
+                      child: Text(
+                        'Loading songs...',
+                        style: kStyleHeader.copyWith(
+                            color: kColInactive, fontSize: 11),
+                      ),
+                    )
+                  : _savedSongNames.isEmpty
+                      ? Padding(
+                          padding: const EdgeInsets.all(8),
+                          child: Text(
+                            'No saved songs',
+                            style: kStyleHeader.copyWith(
+                                color: kColInactive, fontSize: 11),
+                          ),
+                        )
+                      : Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: _savedSongNames
+                              .map((name) => GestureDetector(
+                                    onTap: () => _loadFromName(ctx, state, name),
+                                    child: Padding(
+                                      padding: const EdgeInsets.symmetric(
+                                          horizontal: 8, vertical: 7),
+                                      child: Text(
+                                        name,
+                                        style: kStyleHeader.copyWith(
+                                            color: kColAccent, fontSize: 12),
+                                      ),
+                                    ),
+                                  ))
+                              .toList(),
+                        ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  void _startRename(AppState state) {
+    _nameCtrl.text = state.song.name == 'New Song' ? '' : state.song.name;
+    setState(() {
+      _editingName = true;
+      _showLoadMenu = false;
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _nameFocus.requestFocus();
+    });
+  }
+
+  void _commitRename(AppState state) {
+    final value = _nameCtrl.text.trim();
+    if (value.isEmpty) return;
+    state.renameSong(value);
+    if (!mounted) return;
+    setState(() => _editingName = false);
+  }
+
+  void _cancelRename() {
+    if (!mounted) return;
+    setState(() => _editingName = false);
+  }
+
+  Future<void> _handleSave(BuildContext ctx, AppState state) async {
+    if (_editingName) _commitRename(state);
+    if (state.song.name == 'New Song') {
+      _startRename(state);
+      if (!ctx.mounted) return;
+      ScaffoldMessenger.of(ctx).showSnackBar(const SnackBar(
+        content: Text('Name the song first, then press SAVE.'),
+        duration: Duration(seconds: 2),
+      ));
+      return;
+    }
+    final ok = await state.saveSong();
+    if (!ctx.mounted) return;
+    ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(
+      content: Text(ok ? 'Saved "${state.song.name}".' : 'Save failed.'),
+      duration: const Duration(seconds: 2),
+    ));
+  }
+
+  Future<void> _toggleLoadMenu(AppState state) async {
+    if (_showLoadMenu) {
+      setState(() => _showLoadMenu = false);
+      return;
+    }
+    setState(() {
+      _editingName = false;
+      _loadingSongNames = true;
+      _showLoadMenu = true;
+    });
+    final names = await state.listSavedSongs();
+    if (!mounted) return;
+    setState(() {
+      _savedSongNames = names;
+      _loadingSongNames = false;
+    });
+  }
+
+  Future<void> _loadFromName(BuildContext ctx, AppState state, String name) async {
+    final ok = await state.loadSongByName(name);
+    if (!ctx.mounted) return;
+    setState(() => _showLoadMenu = false);
+    ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(
+      content: Text(ok ? 'Loaded "$name".' : 'Load failed.'),
+      duration: const Duration(seconds: 2),
+    ));
   }
 
   Widget _buildTimeline(AppState state, double slotPitch) {
@@ -487,5 +717,39 @@ class _SongTimelinePainter extends CustomPainter {
            old.patterns != patterns ||
            old.playheadSlot != playheadSlot ||
            old.playheadRow != playheadRow;
+  }
+}
+
+// ─── Header button ────────────────────────────────────────────────────────────
+
+class _BigBtn extends StatelessWidget {
+  final String label;
+  final IconData icon;
+  final VoidCallback onTap;
+
+  const _BigBtn({required this.label, required this.icon, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 7),
+        decoration: BoxDecoration(
+          color: kColAccent.withOpacity(0.12),
+          borderRadius: BorderRadius.circular(4),
+          border: Border.all(color: kColAccent.withOpacity(0.5), width: 1),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(icon, size: 15, color: kColAccent),
+            const SizedBox(width: 5),
+            Text(label,
+                style: kStyleHeader.copyWith(color: kColAccent, fontSize: 12)),
+          ],
+        ),
+      ),
+    );
   }
 }

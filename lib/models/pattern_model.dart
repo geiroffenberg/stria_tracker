@@ -81,4 +81,25 @@ class PatternModel {
           .toList(),
     );
   }
+
+  Map<String, dynamic> toJson() => {
+    'name': name,
+    'bpm': bpm ?? 120.0,
+    'beats': beats ?? kDefaultBeats,
+    'lpb': linesPerBeat ?? kDefaultLinesPerBeat,
+    'tracks': tracks.map((t) => t.toJson()).toList(),
+  };
+
+  factory PatternModel.fromJson(Map<String, dynamic> j) {
+    final loadedTracks = (j['tracks'] as List<dynamic>)
+        .map((e) => TrackModel.fromJson(e as Map<String, dynamic>))
+        .toList();
+    return PatternModel(
+      name: j['name'] as String,
+      bpm: (j['bpm'] as num?)?.toDouble() ?? 120.0,
+      beats: (j['beats'] as int?) ?? kDefaultBeats,
+      linesPerBeat: (j['lpb'] as int?) ?? kDefaultLinesPerBeat,
+      tracks: loadedTracks,
+    );
+  }
 }

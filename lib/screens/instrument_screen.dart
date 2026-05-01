@@ -1,6 +1,10 @@
 import 'dart:math' as math;
+import 'dart:io';
+
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import '../models/instrument_model.dart';
+import '../models/synth_preset_bank.dart';
 import '../state/app_state.dart';
 import '../theme/app_theme.dart';
 
@@ -251,12 +255,56 @@ class _SimpleSynthEditor extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final p = state.currentInstrument.synth;
+    final presets = [...kFactorySynthPresets]
+      ..sort((a, b) {
+        final an = a.name.toLowerCase();
+        final bn = b.name.toLowerCase();
+        if (an == 'default' && bn != 'default') return -1;
+        if (bn == 'default' && an != 'default') return 1;
+        return an.compareTo(bn);
+      });
 
     return SingleChildScrollView(
       padding: const EdgeInsets.all(12),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          _Section(
+            title: 'PRESETS',
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                DropdownButtonFormField<SynthPreset>(
+                  value: null,
+                  isExpanded: true,
+                  dropdownColor: kBgTrackHeader,
+                  decoration: const InputDecoration(
+                    border: OutlineInputBorder(),
+                  ),
+                  hint: const Text('Select preset'),
+                  items: [
+                    for (final preset in presets)
+                      DropdownMenuItem<SynthPreset>(
+                        value: preset,
+                        child: Text(preset.name),
+                      ),
+                  ],
+                  onChanged: (picked) {
+                    if (picked == null) return;
+                    picked.applyTo(state.currentInstrument.synth);
+                    state.instrumentParamsChanged();
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text('Loaded preset: ${picked.name}'),
+                        duration: const Duration(milliseconds: 1200),
+                      ),
+                    );
+                  },
+                ),
+              ],
+            ),
+          ),
+
           // ── Oscillator
           _Section(
             title: 'OSCILLATOR',
@@ -286,29 +334,41 @@ class _SimpleSynthEditor extends StatelessWidget {
           // ── Filter
           _Section(
             title: 'FILTER',
-            child: Row(
+            child: Column(
               children: [
-                Expanded(
-                  child: _Knob(
-                    label: 'CUTOFF',
-                    value: p.cutoff,
-                    display: '${(p.cutoff * 100).round()}%',
-                    onChanged: (v) {
-                      p.cutoff = v;
-                      state.instrumentParamsChanged();
-                    },
-                  ),
+                _FilterModePicker(
+                  value: p.filterMode,
+                  onChanged: (m) {
+                    p.filterMode = m;
+                    state.instrumentParamsChanged();
+                  },
                 ),
-                Expanded(
-                  child: _Knob(
-                    label: 'RES',
-                    value: p.resonance,
-                    display: '${(p.resonance * 100).round()}%',
-                    onChanged: (v) {
-                      p.resonance = v;
-                      state.instrumentParamsChanged();
-                    },
-                  ),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    Expanded(
+                      child: _Knob(
+                        label: 'CUTOFF',
+                        value: p.cutoff,
+                        display: '${(p.cutoff * 100).round()}%',
+                        onChanged: (v) {
+                          p.cutoff = v;
+                          state.instrumentParamsChanged();
+                        },
+                      ),
+                    ),
+                    Expanded(
+                      child: _Knob(
+                        label: 'RES',
+                        value: p.resonance,
+                        display: '${(p.resonance * 100).round()}%',
+                        onChanged: (v) {
+                          p.resonance = v;
+                          state.instrumentParamsChanged();
+                        },
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),
@@ -430,6 +490,15 @@ class _SimpleSynthEditor extends StatelessWidget {
             child: Row(
               children: [
                 Expanded(child: _Knob(
+                  label: 'DRIVE',
+                  value: p.drive,
+                  display: '${(p.drive * 100).round()}%',
+                  onChanged: (v) {
+                    p.drive = v;
+                    state.instrumentParamsChanged();
+                  },
+                )),
+                Expanded(child: _Knob(
                   label: 'GLIDE',
                   value: p.glide,
                   display: '${(p.glide * 100).round()}%',
@@ -451,6 +520,45 @@ class _SimpleSynthEditor extends StatelessWidget {
             ),
           ),
 
+          // ── LFO
+          _Section(
+            title: 'LFO',
+            child: Column(
+              children: [
+                _LfoTargetPicker(
+                  value: p.lfoTarget,
+                  onChanged: (t) {
+                    p.lfoTarget = t;
+                    state.instrumentParamsChanged();
+                  },
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    Expanded(child: _Knob(
+                      label: 'RATE',
+                      value: p.lfoRate,
+                      display: '${_lfoRateDisplay(p.lfoRate)} Hz',
+                      onChanged: (v) {
+                        p.lfoRate = v;
+                        state.instrumentParamsChanged();
+                      },
+                    )),
+                    Expanded(child: _Knob(
+                      label: 'DEPTH',
+                      value: p.lfoDepth,
+                      display: '${(p.lfoDepth * 100).round()}%',
+                      onChanged: (v) {
+                        p.lfoDepth = v;
+                        state.instrumentParamsChanged();
+                      },
+                    )),
+                  ],
+                ),
+              ],
+            ),
+          ),
+
           const SizedBox(height: 16),
           Text(
             'SYNTH params are live in the native audio engine.',
@@ -466,9 +574,94 @@ class _SimpleSynthEditor extends StatelessWidget {
 
 // ── Sampler editor (placeholder) ─────────────────────────────────────────────
 
-class _SamplerEditor extends StatelessWidget {
+class _SamplerEditor extends StatefulWidget {
   final AppState state;
   const _SamplerEditor({required this.state});
+
+  @override
+  State<_SamplerEditor> createState() => _SamplerEditorState();
+}
+
+class _SamplerEditorState extends State<_SamplerEditor> {
+  bool _busy = false;
+  String? _libraryPath;
+  List<String> _librarySamples = const [];
+
+  AppState get state => widget.state;
+
+  @override
+  void initState() {
+    super.initState();
+    _reloadLibrary();
+  }
+
+  Future<void> _reloadLibrary() async {
+    final path = await state.samplerLibraryPath();
+    final names = await state.listSamplerLibrarySamples();
+    if (!mounted) return;
+    setState(() {
+      _libraryPath = path;
+      _librarySamples = names;
+    });
+  }
+
+  Future<void> _importFromPhone(BuildContext context) async {
+    if (_busy) return;
+    setState(() => _busy = true);
+    try {
+      final picked = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: const [
+          'wav', 'aif', 'aiff', 'flac', 'ogg', 'mp3', 'm4a', 'aac'
+        ],
+        allowMultiple: false,
+        withData: true, // always fetch bytes — handles content URIs on Android
+      );
+      if (picked == null || picked.files.isEmpty) return;
+      final pFile = picked.files.single;
+
+      // Use real path when available, otherwise fall back to in-memory bytes.
+      final String? importedName;
+      if (pFile.path != null) {
+        importedName = await state.importSampleToLibrary(pFile.path!);
+      } else if (pFile.bytes != null) {
+        importedName = await state.importSampleBytesToLibrary(
+          pFile.bytes!,
+          pFile.name,
+        );
+      } else {
+        importedName = null;
+      }
+
+      if (importedName == null) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Import failed.'),
+          duration: Duration(seconds: 2),
+        ));
+        return;
+      }
+
+      final loadErr = await state.loadSamplerSampleFromLibrary(importedName);
+      await _reloadLibrary();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(loadErr == null ? 'Imported: $importedName' : 'Imported but: $loadErr'),
+        duration: const Duration(seconds: 3),
+      ));
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _loadSample(BuildContext context, String name) async {
+    final err = await state.loadSamplerSampleFromLibrary(name);
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text(err == null ? 'Loaded: $name' : 'Load failed: $err'),
+      duration: const Duration(seconds: 3),
+    ));
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -491,12 +684,120 @@ class _SamplerEditor extends StatelessWidget {
                     fontSize: 13,
                   ),
                 ),
+                if (p.samplePath != null) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    p.samplePath!,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: kStyleBase.copyWith(
+                      color: kColInactive,
+                      fontSize: 10,
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 8),
-                ElevatedButton.icon(
-                  onPressed: null, // wired up later (file picker / oboe load)
-                  icon: const Icon(Icons.upload_file),
-                  label: const Text('LOAD SAMPLE (coming soon)'),
+                Row(
+                  children: [
+                    Expanded(
+                      child: ElevatedButton.icon(
+                        onPressed: _busy ? null : () => _importFromPhone(context),
+                        icon: const Icon(Icons.folder_open),
+                        label: const Text('IMPORT FROM PHONE'),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    IconButton(
+                      tooltip: 'Refresh sample library',
+                      onPressed: _busy ? null : _reloadLibrary,
+                      icon: const Icon(Icons.refresh),
+                    ),
+                  ],
                 ),
+                if (_libraryPath != null) ...[
+                  const SizedBox(height: 6),
+                  Text(
+                    'Library: $_libraryPath',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: kStyleBase.copyWith(
+                      color: kColInactive,
+                      fontSize: 10,
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 8),
+                Container(
+                  constraints: const BoxConstraints(maxHeight: 170),
+                  decoration: BoxDecoration(
+                    color: kBgColor.withAlpha(60),
+                    border: Border.all(color: kColInactive.withAlpha(90)),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: _librarySamples.isEmpty
+                      ? Center(
+                          child: Padding(
+                            padding: const EdgeInsets.all(10),
+                            child: Text(
+                              'No samples in library yet.\nImport from phone to add one.',
+                              textAlign: TextAlign.center,
+                              style: kStyleBase.copyWith(
+                                color: kColInactive,
+                                fontSize: 11,
+                              ),
+                            ),
+                          ),
+                        )
+                      : ListView.builder(
+                          itemCount: _librarySamples.length,
+                          itemBuilder: (_, i) {
+                            final name = _librarySamples[i];
+                            final active = p.sampleName == name;
+                            return ListTile(
+                              dense: true,
+                              visualDensity: VisualDensity.compact,
+                              leading: Icon(
+                                Icons.audio_file,
+                                size: 16,
+                                color: active ? kColAccent : kColInactive,
+                              ),
+                              title: Text(
+                                name,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: kStyleBase.copyWith(
+                                  color: active ? kColAccent : kColHeader,
+                                  fontSize: 12,
+                                  fontWeight:
+                                      active ? FontWeight.w700 : FontWeight.normal,
+                                ),
+                              ),
+                              trailing: active
+                                  ? const Icon(Icons.check, size: 16)
+                                  : null,
+                              onTap: () => _loadSample(context, name),
+                            );
+                          },
+                        ),
+                ),
+                if (p.sampleName != null) ...[
+                  const SizedBox(height: 8),
+                  TextButton.icon(
+                    onPressed: () => state.clearCurrentSamplerSample(),
+                    icon: const Icon(Icons.clear),
+                    label: const Text('CLEAR CURRENT SAMPLE'),
+                  ),
+                ],
+                if (Platform.isAndroid) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    'Tip: You can also copy files directly into the Library folder using a file manager.',
+                    style: kStyleBase.copyWith(
+                      color: kColInactive,
+                      fontSize: 10,
+                    ),
+                  ),
+                ],
               ],
             ),
           ),
@@ -598,6 +899,87 @@ class _WaveformPicker extends StatelessWidget {
                   color: w == value ? kColAccent : kColHeader,
                   fontWeight:
                       w == value ? FontWeight.w700 : FontWeight.normal,
+                ),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+String _lfoRateDisplay(double n) {
+  final hz = 0.1 + n * n * 19.9;
+  return hz < 10 ? hz.toStringAsFixed(2) : hz.toStringAsFixed(1);
+}
+
+class _FilterModePicker extends StatelessWidget {
+  final SynthFilterMode value;
+  final ValueChanged<SynthFilterMode> onChanged;
+  const _FilterModePicker({required this.value, required this.onChanged});
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        for (final m in SynthFilterMode.values)
+          Expanded(
+            child: GestureDetector(
+              onTap: () => onChanged(m),
+              child: Container(
+                margin: const EdgeInsets.symmetric(horizontal: 3),
+                padding: const EdgeInsets.symmetric(vertical: 7),
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: m == value ? kColAccent.withAlpha(40) : Colors.transparent,
+                  border: Border.all(color: m == value ? kColAccent : kColInactive),
+                  borderRadius: BorderRadius.circular(3),
+                ),
+                child: Text(
+                  m.label,
+                  style: kStyleBase.copyWith(
+                    fontSize: 13,
+                    color: m == value ? kColAccent : kColHeader,
+                    fontWeight: m == value ? FontWeight.w700 : FontWeight.normal,
+                  ),
+                ),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+class _LfoTargetPicker extends StatelessWidget {
+  final SynthLfoTarget value;
+  final ValueChanged<SynthLfoTarget> onChanged;
+  const _LfoTargetPicker({required this.value, required this.onChanged});
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        for (final t in SynthLfoTarget.values)
+          Expanded(
+            child: GestureDetector(
+              onTap: () => onChanged(t),
+              child: Container(
+                margin: const EdgeInsets.symmetric(horizontal: 3),
+                padding: const EdgeInsets.symmetric(vertical: 7),
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: t == value ? kColAccent.withAlpha(40) : Colors.transparent,
+                  border: Border.all(color: t == value ? kColAccent : kColInactive),
+                  borderRadius: BorderRadius.circular(3),
+                ),
+                child: Text(
+                  t.label,
+                  style: kStyleBase.copyWith(
+                    fontSize: 11,
+                    color: t == value ? kColAccent : kColHeader,
+                    fontWeight: t == value ? FontWeight.w700 : FontWeight.normal,
+                  ),
                 ),
               ),
             ),

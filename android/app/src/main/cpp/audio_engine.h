@@ -7,6 +7,7 @@
 #include <mutex>
 #include <cmath>
 #include <cstdint>
+#include <string>
 
 static constexpr int kMaxVoices = 8; // one per track
 
@@ -32,11 +33,13 @@ struct Voice {
     int    pendingWaveform   = -1;   // waveform to apply after fade-out (-1 = none)
     float  pendingGainTarget = 0.0f; // gainTarget to restore after waveform swap
     float  instrumentVolume  = 0.8f; // from instrument editor (0..1)
+    float  detuneNorm        = 0.5f; // 0..1 mapped to -12..+12 semitones (0.5 = 0)
     float  currentFreq       = 0.0f; // Hz, slewed toward targetFreq for glide
     float  targetFreq        = 0.0f; // Hz from current midi note
     float  glideSec          = 0.0f; // 0 = instant, >0 = portamento time
     float  cutoffNorm        = 0.7f; // 0..1 filter cutoff control
     float  resonanceNorm     = 0.2f; // 0..1 filter resonance control
+    int    filterMode        = 0;    // 0=LP, 1=HP, 2=BP
     float  filterEnvLevel    = 0.0f; // filter ADSR output (0..1)
     EnvelopeStage filterEnvStage = EnvelopeStage::Idle;
     float  filterAttackSec   = 0.01f;
@@ -53,6 +56,27 @@ struct Voice {
     float  decaySec          = 0.20f;
     float  sustainLevel      = 0.80f;
     float  releaseSec        = 0.25f;
+    // LFO
+    double lfoPhase          = 0.0;  // radians, accumulated per sample
+    float  lfoRateNorm       = 0.2f; // 0..1 → 0.1..20 Hz
+    float  lfoDepth          = 0.0f; // 0..1
+    int    lfoTarget         = 0;    // 0=pitch, 1=filter, 2=amp
+    // Drive / saturation
+    float  drive             = 0.0f; // 0..1
+
+    // Sampler playback state
+    bool   samplerMode       = false;
+    bool   sampleActive      = false;
+    int    sampleSlot        = -1;
+    double samplePos         = 0.0;
+    double sampleStep        = 1.0;
+    bool   sampleLoop        = false;
+    float  sampleGain        = 1.0f;
+};
+
+struct SampleData {
+    std::vector<float> mono; // normalized [-1..1]
+    int sampleRate = 44100;
 };
 
 /**
@@ -91,6 +115,10 @@ public:
     /// Legacy stride-4 packets are still accepted.
     void triggerRow(const std::vector<int>& rowData);
 
+    /// Assign a sample file to an instrument slot for sampler playback.
+    /// Pass empty path to clear assignment.
+    bool setSamplerSample(int slot, const std::string& path);
+
     // oboe::AudioStreamDataCallback
     oboe::DataCallbackResult onAudioReady(
         oboe::AudioStream* stream,
@@ -103,6 +131,9 @@ private:
     std::atomic<double>              mBpm{120.0};
     std::mutex                       mVoiceMutex;
     std::array<Voice, kMaxVoices>    mVoices{};
+    std::array<SampleData, 16>       mSamplerSlots{};
+
+    bool loadWavMono16OrFloat(const std::string& path, SampleData& outSample);
 
     static double midiToFreq(int note) {
         return 440.0 * std::pow(2.0, (note - 69) / 12.0);

@@ -28,4 +28,21 @@ class SongModel {
     ));
     return patterns.length - 1;
   }
+
+  Map<String, dynamic> toJson() => {
+    'name': name,
+    'patterns': patterns.map((p) => p.toJson()).toList(),
+    'arrangement': arrangement,
+    'arrangementMutes': arrangementMutes,
+  };
+
+  factory SongModel.fromJson(Map<String, dynamic> j) => SongModel(
+    name: j['name'] as String,
+    patterns: (j['patterns'] as List<dynamic>)
+        .map((e) => PatternModel.fromJson(e as Map<String, dynamic>))
+        .toList(),
+    arrangement: List<int>.from(j['arrangement'] as List<dynamic>),
+    arrangementMutes:
+        List<bool>.from(j['arrangementMutes'] as List<dynamic>),
+  );
 }

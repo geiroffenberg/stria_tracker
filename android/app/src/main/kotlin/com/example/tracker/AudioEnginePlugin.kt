@@ -61,6 +61,14 @@ class AudioEnginePlugin : FlutterPlugin, MethodCallHandler {
                 if (enginePtr != 0L) nativeSetRowData(enginePtr, data.toIntArray())
                 result.success(null)
             }
+            "setSamplerSample" -> {
+                val slot = call.argument<Int>("slot") ?: -1
+                val path = call.argument<String>("path")
+                val ok = if (enginePtr != 0L && slot >= 0) {
+                    nativeSetSamplerSample(enginePtr, slot, path ?: "")
+                } else false
+                result.success(ok)
+            }
             "dispose" -> {
                 if (enginePtr != 0L) {
                     nativeDispose(enginePtr)
@@ -80,6 +88,7 @@ class AudioEnginePlugin : FlutterPlugin, MethodCallHandler {
     private external fun nativeStop(ptr: Long)
     private external fun nativeSetTempo(ptr: Long, bpm: Double)
     private external fun nativeSetRowData(ptr: Long, data: IntArray)
+    private external fun nativeSetSamplerSample(ptr: Long, slot: Int, path: String): Boolean
     private external fun nativeDispose(ptr: Long)
 
     companion object {
