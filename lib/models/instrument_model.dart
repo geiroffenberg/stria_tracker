@@ -51,6 +51,11 @@ class SimpleSynthParams {
   double detune;        // -1..1 (semitones * 12)
   double cutoff;        // 0..1
   double resonance;     // 0..1
+  double filterAttack;  // 0..1
+  double filterDecay;   // 0..1
+  double filterSustain; // 0..1
+  double filterRelease; // 0..1
+  double filterEnvAmt;  // 0..1
   double attack;        // 0..1 (seconds-ish curve)
   double decay;         // 0..1
   double sustain;       // 0..1 (level)
@@ -63,6 +68,11 @@ class SimpleSynthParams {
     this.detune    = 0.0,
     this.cutoff    = 0.7,
     this.resonance = 0.2,
+    this.filterAttack = 0.01,
+    this.filterDecay = 0.25,
+    this.filterSustain = 0.0,
+    this.filterRelease = 0.25,
+    this.filterEnvAmt = 0.5,
     this.attack    = 0.02,
     this.decay     = 0.3,
     this.sustain   = 0.8,

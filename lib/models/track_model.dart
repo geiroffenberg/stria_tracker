@@ -121,7 +121,12 @@ class TrackModel {
   /// Max value for clamping scroll input.
   int maxValue(CellColumn column) {
     if (column == CellColumn.note) return 121; // 0=empty … 121=OFF
-    return 255; // all other fields are 0–255
+    if (column == CellColumn.instrument ||
+        column == CellColumn.volume ||
+        column == CellColumn.pan) {
+      return 99;
+    }
+    return 255; // FX fields are 0–255
   }
 
   /// Min value for clamping scroll input.

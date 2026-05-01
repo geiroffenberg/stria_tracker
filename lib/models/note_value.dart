@@ -27,6 +27,10 @@ class NoteValue {
   bool get isOff   => scrollIndex == 121;
   bool get isNote  => scrollIndex >= 1 && scrollIndex <= 120;
 
+  /// Standard MIDI note number (0–127). C-0 = 12, C-4 = 60.
+  /// Only meaningful when [isNote] is true.
+  int get midiNote => scrollIndex + 11;
+
   NoteValue incremented() => fromScrollIndex(scrollIndex + 1);
   NoteValue decremented() => fromScrollIndex(scrollIndex - 1);
 

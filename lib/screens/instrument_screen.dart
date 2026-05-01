@@ -314,6 +314,71 @@ class _SimpleSynthEditor extends StatelessWidget {
             ),
           ),
 
+          _Section(
+            title: 'FILTER ENVELOPE',
+            child: Column(
+              children: [
+                Row(
+                  children: [
+                    Expanded(child: _Knob(
+                      label: 'A',
+                      value: p.filterAttack,
+                      display: '${(p.filterAttack * 100).round()}',
+                      onChanged: (v) {
+                        p.filterAttack = v;
+                        state.instrumentParamsChanged();
+                      },
+                    )),
+                    Expanded(child: _Knob(
+                      label: 'D',
+                      value: p.filterDecay,
+                      display: '${(p.filterDecay * 100).round()}',
+                      onChanged: (v) {
+                        p.filterDecay = v;
+                        state.instrumentParamsChanged();
+                      },
+                    )),
+                    Expanded(child: _Knob(
+                      label: 'S',
+                      value: p.filterSustain,
+                      display: '${(p.filterSustain * 100).round()}',
+                      onChanged: (v) {
+                        p.filterSustain = v;
+                        state.instrumentParamsChanged();
+                      },
+                    )),
+                    Expanded(child: _Knob(
+                      label: 'R',
+                      value: p.filterRelease,
+                      display: '${(p.filterRelease * 100).round()}',
+                      onChanged: (v) {
+                        p.filterRelease = v;
+                        state.instrumentParamsChanged();
+                      },
+                    )),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    Expanded(
+                      child: _Knob(
+                        label: 'AMT',
+                        value: p.filterEnvAmt,
+                        display: '${(p.filterEnvAmt * 100).round()}%',
+                        onChanged: (v) {
+                          p.filterEnvAmt = v;
+                          state.instrumentParamsChanged();
+                        },
+                      ),
+                    ),
+                    const Expanded(child: SizedBox.shrink()),
+                  ],
+                ),
+              ],
+            ),
+          ),
+
           // ── Amp envelope
           _Section(
             title: 'AMP ENVELOPE',
@@ -388,8 +453,7 @@ class _SimpleSynthEditor extends StatelessWidget {
 
           const SizedBox(height: 16),
           Text(
-            'Audio engine wiring coming next — params are stored on the\n'
-            'instrument and ready to be sent over the Oboe MethodChannel.',
+            'SYNTH params are live in the native audio engine.',
             textAlign: TextAlign.center,
             style: kStyleBase.copyWith(
                 color: kColInactive, fontSize: 11),

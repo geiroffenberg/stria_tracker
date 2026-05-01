@@ -1,7 +1,13 @@
 import 'package:flutter/material.dart';
 import '../models/cell.dart';
+import '../models/note_value.dart';
 import '../state/app_state.dart';
 import '../theme/app_theme.dart';
+
+String _dec2Display(int? v) {
+  if (v == null) return '--';
+  return v.clamp(0, 99).toString().padLeft(2, '0');
+}
 
 /// Returns the 2-3 character display string for a given column in a cell.
 String cellDisplay(CellColumn column, TrackerCell cell) {
@@ -9,11 +15,11 @@ String cellDisplay(CellColumn column, TrackerCell cell) {
     case CellColumn.note:
       return cell.note.display;
     case CellColumn.instrument:
-      return FxSlot.hexDisplay(cell.instrument);
+      return _dec2Display(cell.instrument);
     case CellColumn.volume:
-      return FxSlot.hexDisplay(cell.volume);
+      return _dec2Display(cell.volume);
     case CellColumn.pan:
-      return FxSlot.hexDisplay(cell.pan);
+      return _dec2Display(cell.pan);
     case CellColumn.fx0cmd:
       return FxSlot.hexDisplay(cell.fxSlots[0].command);
     case CellColumn.fx0val:
@@ -96,6 +102,10 @@ class _CellWidgetState extends State<CellWidget> {
     );
 
     final items = <PopupMenuEntry<String>>[
+      if (widget.column == CellColumn.note) ...([
+        const PopupMenuItem(value: 'off', child: Text('Insert OFF')),
+        const PopupMenuDivider(),
+      ]),
       const PopupMenuItem(value: 'copy', child: Text('Copy row')),
       PopupMenuItem(
         value: 'paste',
@@ -115,6 +125,9 @@ class _CellWidgetState extends State<CellWidget> {
 
     if (!mounted) return;
     switch (choice) {
+      case 'off':
+        state.setNote(widget.row, NoteValue.off);
+        state.selectCell(widget.row, widget.column);
       case 'copy':
         state.copyRow(widget.row);
       case 'paste':

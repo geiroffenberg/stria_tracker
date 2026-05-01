@@ -39,8 +39,17 @@ class AudioEngine {
   }
 
   /// Feed the current pattern row data to the engine so it knows what to play.
-  /// [rowData] is a flat list of note MIDI values (0-127) per track,
-  /// with -1 meaning empty and -2 meaning OFF.
+  /// [rowData] is packed per track as
+  /// [note, volume, pan, wave, cutoff, resonance,
+  ///  filterAttack, filterDecay, filterSustain, filterRelease, filterEnvAmt,
+  ///  attack, decay, sustain, release, glide, instVol, ...].
+  /// note: 0-127 MIDI, -1 empty/hold, -2 OFF.
+  /// volume: 0-255 sets level, -1 leaves current level unchanged.
+  /// pan: 0-255 sets position, -1 leaves pan unchanged.
+  /// wave: 0=sine,1=triangle,2=saw,3=square,4=pulse,5=noise.
+  /// cutoff/resonance/filterAttack/filterDecay/filterSustain/filterRelease/
+  /// filterEnvAmt/attack/decay/sustain/release/glide/instVol:
+  ///   0-255 mapped from instrument params.
   Future<void> setRowData(List<int> rowData) async {
     if (!_initialised) return;
     await _channel.invokeMethod('setRowData', {'data': rowData});

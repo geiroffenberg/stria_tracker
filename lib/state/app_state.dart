@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/widgets.dart';
+import '../audio/audio_engine.dart';
 import '../models/cell.dart';
 import '../models/instrument_model.dart';
 import '../models/note_value.dart';
@@ -44,6 +45,10 @@ class AppState extends ChangeNotifier {
 
   TrackerCell? _rowClipboard;
   bool get hasRowClipboard => _rowClipboard != null;
+
+  // Playback carry state for IN column per track.
+  List<int> _carryInstrumentByTrack = const [];
+  int _carryPatternIndex = -1;
 
   bool isPlaying   = false;
   bool isRecording = false;
@@ -148,17 +153,17 @@ class AppState extends ChangeNotifier {
       case CellColumn.note:
         track.setNote(row, NoteValue.fromScrollIndex(49)); // C-4
       case CellColumn.instrument:
-        // scan upward for last used instrument, else 0x00
-        int def = 0x00;
+        // scan upward for last used instrument, else 01
+        int def = 1;
         for (int r = row - 1; r >= 0; r--) {
           final v = track.cells[r].instrument;
           if (v != null) { def = v; break; }
         }
         track.writeColumnValue(row, column, def);
       case CellColumn.volume:
-        track.writeColumnValue(row, column, 0x80);
+        track.writeColumnValue(row, column, 80);
       case CellColumn.pan:
-        track.writeColumnValue(row, column, 0x50);
+        track.writeColumnValue(row, column, 50);
       case CellColumn.fx0cmd:
       case CellColumn.fx1cmd:
       case CellColumn.fx2cmd:
@@ -356,6 +361,71 @@ class AppState extends ChangeNotifier {
 
   // ── Transport ────────────────────────────────────────────────────────────
 
+  int _waveCodeForInstrumentSlot(int slot) {
+    final safe = slot.clamp(0, instruments.length - 1);
+    final ins = instruments[safe];
+    if (ins.type != InstrumentType.simpleSynth) return 0; // sine fallback
+    switch (ins.synth.wave) {
+      case SynthWave.sine:
+        return 0;
+      case SynthWave.triangle:
+        return 1;
+      case SynthWave.saw:
+        return 2;
+      case SynthWave.square:
+        return 3;
+      case SynthWave.pulse:
+        return 4;
+      case SynthWave.noise:
+        return 5;
+    }
+  }
+
+  int _norm01ToAudio255(double v) => (v.clamp(0.0, 1.0) * 255.0).round();
+
+  List<int> _synthParamsForInstrumentSlot(int slot) {
+    final safe = slot.clamp(0, instruments.length - 1);
+    final ins = instruments[safe];
+    if (ins.type != InstrumentType.simpleSynth) {
+      return <int>[
+        _norm01ToAudio255(0.70),
+        _norm01ToAudio255(0.20),
+        _norm01ToAudio255(0.01),
+        _norm01ToAudio255(0.25),
+        _norm01ToAudio255(0.00),
+        _norm01ToAudio255(0.25),
+        _norm01ToAudio255(0.50),
+        _norm01ToAudio255(0.02),
+        _norm01ToAudio255(0.30),
+        _norm01ToAudio255(0.80),
+        _norm01ToAudio255(0.25),
+        _norm01ToAudio255(0.00),
+        _norm01ToAudio255(0.80),
+      ];
+    }
+    final p = ins.synth;
+    return <int>[
+      _norm01ToAudio255(p.cutoff),
+      _norm01ToAudio255(p.resonance),
+      _norm01ToAudio255(p.filterAttack),
+      _norm01ToAudio255(p.filterDecay),
+      _norm01ToAudio255(p.filterSustain),
+      _norm01ToAudio255(p.filterRelease),
+      _norm01ToAudio255(p.filterEnvAmt),
+      _norm01ToAudio255(p.attack),
+      _norm01ToAudio255(p.decay),
+      _norm01ToAudio255(p.sustain),
+      _norm01ToAudio255(p.release),
+      _norm01ToAudio255(p.glide),
+      _norm01ToAudio255(p.volume),
+    ];
+  }
+
+  void _resetInstrumentCarry() {
+    _carryInstrumentByTrack = const [];
+    _carryPatternIndex = -1;
+  }
+
   void play() {
     if (isPlaying) return;
     if (_playbackFollowsSong && song.arrangement.isNotEmpty) {
@@ -364,7 +434,10 @@ class AppState extends ChangeNotifier {
       _syncCurrentPatternToSongPlayhead();
       playheadRow = 0;
     }
+    _resetInstrumentCarry();
     isPlaying = true;
+    AudioEngine.instance.start();
+    _triggerCurrentRow(); // fire row 0 immediately
     _startPlayheadTimer();
     notifyListeners();
   }
@@ -374,6 +447,8 @@ class AppState extends ChangeNotifier {
     _playheadTimer = null;
     isPlaying   = false;
     playheadRow = 0;
+    _resetInstrumentCarry();
+    AudioEngine.instance.stop();
     notifyListeners();
   }
 
@@ -453,7 +528,82 @@ class AppState extends ChangeNotifier {
     } else {
       playheadRow = (playheadRow + 1) % rowCount;
     }
+    _triggerCurrentRow();
     notifyListeners();
+  }
+
+  /// Reads the current row from all tracks in the playing pattern and
+  /// sends packed note/volume/pan/wave + synth params to the audio engine.
+  void _triggerCurrentRow() {
+    int _ui99ToAudio255(int v) => ((v.clamp(0, 99) * 255) / 99).round();
+
+    final PatternModel pattern;
+    final int patternIdx;
+    if (_playbackFollowsSong && song.arrangement.isNotEmpty) {
+      patternIdx = song.arrangement[_playheadArrangementSlot];
+      pattern = song.patterns[patternIdx];
+    } else {
+      patternIdx = _currentPatternIndex;
+      pattern = currentPattern;
+    }
+
+    if (_carryPatternIndex != patternIdx ||
+        _carryInstrumentByTrack.length != pattern.tracks.length ||
+        playheadRow == 0) {
+      _carryPatternIndex = patternIdx;
+      _carryInstrumentByTrack = List<int>.filled(pattern.tracks.length, 0);
+    }
+
+    final rowData = <int>[];
+    for (int t = 0; t < pattern.tracks.length; t++) {
+      final track = pattern.tracks[t];
+      int noteCmd = -1;
+      int volCmd = -1;
+      int panCmd = -1;
+      int waveCmd = _waveCodeForInstrumentSlot(_carryInstrumentByTrack[t]);
+      var synthParams = _synthParamsForInstrumentSlot(_carryInstrumentByTrack[t]);
+
+      if (playheadRow < track.cells.length) {
+        final cell = track.cells[playheadRow];
+        final note = cell.note;
+        if (note.isOff) {
+          noteCmd = -2;
+        } else if (note.isNote) {
+          noteCmd = note.midiNote;
+        }
+
+        if (cell.volume != null) {
+          volCmd = _ui99ToAudio255(cell.volume!);
+        }
+
+        if (cell.pan != null) {
+          panCmd = _ui99ToAudio255(cell.pan!);
+        }
+
+        if (cell.instrument != null) {
+          // IN column stores 1-based (01 = first instrument); convert to 0-based slot.
+          final slot = (cell.instrument! - 1).clamp(0, instruments.length - 1);
+          _carryInstrumentByTrack[t] = slot;
+          waveCmd = _waveCodeForInstrumentSlot(slot);
+          synthParams = _synthParamsForInstrumentSlot(slot);
+        }
+
+        // At pattern start, reset carry values to defaults if first row is empty.
+        if (playheadRow == 0) {
+          if (volCmd == -1) volCmd = _ui99ToAudio255(80);
+          if (panCmd == -1) panCmd = _ui99ToAudio255(50);
+        }
+      }
+
+      rowData.add(noteCmd);
+      rowData.add(volCmd);
+      rowData.add(panCmd);
+      rowData.add(waveCmd);
+      rowData.addAll(synthParams);
+    }
+
+    // Fire and forget — no await needed
+    AudioEngine.instance.setRowData(rowData);
   }
 
   void _syncCurrentPatternToSongPlayhead() {

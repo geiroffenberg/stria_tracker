@@ -37,7 +37,7 @@ Java_com_example_tracker_AudioEnginePlugin_nativeSetRowData(
     jint*        elms = env->GetIntArrayElements(data, nullptr);
     std::vector<int> vec(elms, elms + len);
     env->ReleaseIntArrayElements(data, elms, JNI_ABORT);
-    reinterpret_cast<AudioEngine*>(ptr)->setRowData(vec);
+    reinterpret_cast<AudioEngine*>(ptr)->triggerRow(vec);
 }
 
 JNIEXPORT void JNICALL
