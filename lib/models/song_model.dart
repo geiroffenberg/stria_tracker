@@ -2,7 +2,6 @@ import 'pattern_model.dart';
 
 class SongModel {
   String name;
-  double bpm;
   List<PatternModel> patterns;
   /// Song arrangement: each entry is a pattern index played in order.
   List<int> arrangement;
@@ -11,7 +10,6 @@ class SongModel {
 
   SongModel({
     required this.name,
-    this.bpm = 120.0,
     List<PatternModel>? patterns,
     List<int>? arrangement,
     List<bool>? arrangementMutes,

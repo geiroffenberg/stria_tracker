@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/widgets.dart';
 import '../models/cell.dart';
 import '../models/instrument_model.dart';
@@ -23,6 +25,10 @@ class CellPosition {
 /// Central application state — passed down via InheritedNotifier.
 class AppState extends ChangeNotifier {
   SongModel song = SongModel.initial();
+  Timer? _playheadTimer;
+  bool _playbackFollowsSong = false;
+  int _currentArrangementSlotIndex = 0;
+  int _playheadArrangementSlot = 0;
 
   /// Instrument bank — fixed length, indexed by the cell's instrument byte.
   final List<InstrumentModel> instruments = List.generate(
@@ -35,6 +41,9 @@ class AppState extends ChangeNotifier {
   int _currentInstrumentIndex = 0;
 
   CellPosition? selectedCell;
+
+  TrackerCell? _rowClipboard;
+  bool get hasRowClipboard => _rowClipboard != null;
 
   bool isPlaying   = false;
   bool isRecording = false;
@@ -50,13 +59,20 @@ class AppState extends ChangeNotifier {
   int get currentPatternIndex    => _currentPatternIndex;
   int get currentTrackIndex      => _currentTrackIndex;
   int get currentInstrumentIndex => _currentInstrumentIndex;
+  int get currentArrangementSlotIndex => _currentArrangementSlotIndex;
+  int get playheadArrangementSlot => _playheadArrangementSlot;
+  bool get playbackFollowsSong => _playbackFollowsSong;
 
   PatternModel    get currentPattern    => song.patterns[_currentPatternIndex];
   TrackModel      get currentTrack      => currentPattern.tracks[_currentTrackIndex];
   InstrumentModel get currentInstrument => instruments[_currentInstrumentIndex];
 
-  double get bpm => song.bpm;
+  double get bpm => currentPattern.bpm ?? 120.0;
+  int    get beats => currentPattern.beatCount;
+  int    get linesPerBeat => currentPattern.lpb;
+  int    get rowCount => currentPattern.rowCount;
   int    get trackCount => currentPattern.tracks.length;
+  bool   get canChangePatternLength => currentPattern.isEmpty;
 
   // ── Navigation ───────────────────────────────────────────────────────────
 
@@ -64,6 +80,8 @@ class AppState extends ChangeNotifier {
     _currentPatternIndex = index.clamp(0, song.patterns.length - 1);
     _currentTrackIndex   = 0;
     selectedCell = null;
+    _clampSelectionToPattern();
+    _restartPlayheadTimerIfNeeded();
     notifyListeners();
   }
 
@@ -123,8 +141,76 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Inserts the column-specific default value into an empty cell.
+  void insertDefaultValue(int row, CellColumn column) {
+    final track = currentTrack;
+    switch (column) {
+      case CellColumn.note:
+        track.setNote(row, NoteValue.fromScrollIndex(49)); // C-4
+      case CellColumn.instrument:
+        // scan upward for last used instrument, else 0x00
+        int def = 0x00;
+        for (int r = row - 1; r >= 0; r--) {
+          final v = track.cells[r].instrument;
+          if (v != null) { def = v; break; }
+        }
+        track.writeColumnValue(row, column, def);
+      case CellColumn.volume:
+        track.writeColumnValue(row, column, 0x80);
+      case CellColumn.pan:
+        track.writeColumnValue(row, column, 0x50);
+      case CellColumn.fx0cmd:
+      case CellColumn.fx1cmd:
+      case CellColumn.fx2cmd:
+        track.writeColumnValue(row, column, 0x00);
+      default:
+        return; // fx val columns — no default insert
+    }
+    notifyListeners();
+  }
+
+  /// Clears a single column value (sets to empty/null). Ignored for fx val columns.
+  void clearColumnValue(int row, CellColumn column) {
+    final track = currentTrack;
+    switch (column) {
+      case CellColumn.note:
+        track.cells[row].note = NoteValue.empty;
+      case CellColumn.instrument:
+        track.cells[row].instrument = null;
+      case CellColumn.volume:
+        track.cells[row].volume = null;
+      case CellColumn.pan:
+        track.cells[row].pan = null;
+      case CellColumn.fx0cmd:
+        track.cells[row].fxSlots[0].command = null;
+      case CellColumn.fx1cmd:
+        track.cells[row].fxSlots[1].command = null;
+      case CellColumn.fx2cmd:
+        track.cells[row].fxSlots[2].command = null;
+      default:
+        return; // fx val columns not clearable
+    }
+    notifyListeners();
+  }
+
   void clearCell(int row) {
     currentPattern.tracks[_currentTrackIndex].cells[row] = TrackerCell.empty();
+    notifyListeners();
+  }
+
+  void copyRow(int row) {
+    _rowClipboard = currentTrack.cells[row].copy();
+    notifyListeners();
+  }
+
+  void pasteRow(int row) {
+    if (_rowClipboard == null) return;
+    currentTrack.cells[row] = _rowClipboard!.copy();
+    notifyListeners();
+  }
+
+  void deleteRow(int row) {
+    currentTrack.cells[row] = TrackerCell.empty();
     notifyListeners();
   }
 
@@ -246,17 +332,46 @@ class AppState extends ChangeNotifier {
   /// Set the editor focus to the pattern referenced by this arrangement slot.
   void selectArrangementSlot(int slotIndex) {
     if (slotIndex < 0 || slotIndex >= song.arrangement.length) return;
+    _currentArrangementSlotIndex = slotIndex;
+    if (!isPlaying || _playbackFollowsSong) {
+      _playheadArrangementSlot = slotIndex;
+    }
     selectPattern(song.arrangement[slotIndex]);
+  }
+
+  void setPlaybackFollowsSong(bool enabled) {
+    if (_playbackFollowsSong == enabled) return;
+    _playbackFollowsSong = enabled;
+    if (isPlaying) {
+      if (_playbackFollowsSong) {
+        _playheadArrangementSlot =
+            _currentArrangementSlotIndex.clamp(0, song.arrangement.length - 1);
+        _syncCurrentPatternToSongPlayhead();
+        playheadRow = 0;
+      }
+      _restartPlayheadTimerIfNeeded();
+    }
+    notifyListeners();
   }
 
   // ── Transport ────────────────────────────────────────────────────────────
 
   void play() {
+    if (isPlaying) return;
+    if (_playbackFollowsSong && song.arrangement.isNotEmpty) {
+      _playheadArrangementSlot =
+          _currentArrangementSlotIndex.clamp(0, song.arrangement.length - 1);
+      _syncCurrentPatternToSongPlayhead();
+      playheadRow = 0;
+    }
     isPlaying = true;
+    _startPlayheadTimer();
     notifyListeners();
   }
 
   void stop() {
+    _playheadTimer?.cancel();
+    _playheadTimer = null;
     isPlaying   = false;
     playheadRow = 0;
     notifyListeners();
@@ -268,13 +383,91 @@ class AppState extends ChangeNotifier {
   }
 
   void setBpm(double value) {
-    song.bpm = value.clamp(20.0, 300.0);
+    final clamped = value.round().clamp(20, 300);
+    currentPattern.bpm = clamped.toDouble();
+    _restartPlayheadTimerIfNeeded();
     notifyListeners();
   }
 
-  void advancePlayhead() {
-    playheadRow = (playheadRow + 1) % kRowsPerPattern;
+  void setBeats(int value) {
+    if (!canChangePatternLength) return;
+    final clamped = value.clamp(1, 99);
+    currentPattern.beats = clamped;
+    currentPattern.syncTrackLengths();
+    _clampSelectionToPattern();
+    _restartPlayheadTimerIfNeeded();
     notifyListeners();
+  }
+
+  void setLinesPerBeat(int value) {
+    if (!canChangePatternLength) return;
+    final clamped = value.clamp(1, 99);
+    currentPattern.linesPerBeat = clamped;
+    currentPattern.syncTrackLengths();
+    _clampSelectionToPattern();
+    _restartPlayheadTimerIfNeeded();
+    notifyListeners();
+  }
+
+  Duration _lineDuration() {
+    // One line lasts one beat divided by LPB.
+    final microsPerLine =
+        (60000000 / (bpm * linesPerBeat)).round().clamp(1000, 60000000);
+    return Duration(microseconds: microsPerLine);
+  }
+
+  void _startPlayheadTimer() {
+    _playheadTimer?.cancel();
+    _playheadTimer = Timer.periodic(_lineDuration(), (_) {
+      if (!isPlaying) return;
+      advancePlayhead();
+    });
+  }
+
+  void _restartPlayheadTimerIfNeeded() {
+    if (!isPlaying) return;
+    _startPlayheadTimer();
+  }
+
+  void _clampSelectionToPattern() {
+    if (playheadRow >= rowCount) {
+      playheadRow = rowCount - 1;
+    }
+    if (selectedCell != null && selectedCell!.row >= rowCount) {
+      selectedCell = null;
+    }
+  }
+
+  void advancePlayhead() {
+    if (_playbackFollowsSong && song.arrangement.isNotEmpty) {
+      final slotPatternIdx = song.arrangement[_playheadArrangementSlot];
+      final slotPattern = song.patterns[slotPatternIdx];
+      playheadRow += 1;
+      if (playheadRow >= slotPattern.rowCount) {
+        playheadRow = 0;
+        _playheadArrangementSlot =
+            (_playheadArrangementSlot + 1) % song.arrangement.length;
+        _syncCurrentPatternToSongPlayhead();
+        _restartPlayheadTimerIfNeeded();
+      }
+    } else {
+      playheadRow = (playheadRow + 1) % rowCount;
+    }
+    notifyListeners();
+  }
+
+  void _syncCurrentPatternToSongPlayhead() {
+    if (song.arrangement.isEmpty) return;
+    final idx = song.arrangement[_playheadArrangementSlot]
+        .clamp(0, song.patterns.length - 1);
+    _currentPatternIndex = idx;
+    _clampSelectionToPattern();
+  }
+
+  @override
+  void dispose() {
+    _playheadTimer?.cancel();
+    super.dispose();
   }
 }
 

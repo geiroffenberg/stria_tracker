@@ -6,16 +6,16 @@ import '../models/cell.dart';
 const Color kBgColor         = Color(0xFF000000);
 const Color kBgBeat          = Color(0xFF161616); // beat-start rows
 const Color kBgBar           = Color(0xFF222222); // bar-start rows (every 16)
-const Color kBgSelected      = Color(0xFF003D1A);
-const Color kBgPlayhead      = Color(0xFF005C26);
+const Color kBgSelected      = Color(0xFF001F4D);
+const Color kBgPlayhead      = Color(0xFF003A8C);
 const Color kBgHeader        = Color(0xFF161616);
 const Color kBgTrackHeader   = Color(0xFF1A1A1A);
 
 // Brightened text colours
-const Color kColNote    = Color(0xFF66FF99); // bright green
-const Color kColInst    = Color(0xFF66E5FF); // bright cyan
-const Color kColVol     = Color(0xFFFFE066); // bright amber
-const Color kColPan     = Color(0xFFFFAA55); // bright orange
+const Color kColNote    = Color(0xFF55CCFF); // brighter blue
+const Color kColInst    = Color(0xFF44FF88); // bright green
+const Color kColVol     = Color(0xFF44FF88); // bright green
+const Color kColPan     = Color(0xFF44FF88); // bright green
 const Color kColFxCmd   = Color(0xFFFF7799); // bright pink
 const Color kColFxVal   = Color(0xFFFFB3CC); // light pink
 
@@ -24,16 +24,16 @@ const Color kColRowNum  = Color(0xFF888888); // grey
 const Color kColHeader  = Color(0xFFAAAAAA); // header text
 
 const Color kColAccent      = Color(0xFF66FFFF); // bright cyan
-const Color kColActive      = Color(0xFF66FF99);
+const Color kColActive      = Color(0xFF66B2FF);
 const Color kColInactive    = Color(0xFF666666);
-const Color kColPlayBtn     = Color(0xFF66FF99);
+const Color kColPlayBtn     = Color(0xFF4DA6FF);
 const Color kColStopBtn     = Color(0xFFFF6666);
 const Color kColRecBtn      = Color(0xFFFF4444);
 
 // ── Typography ────────────────────────────────────────────────────────────────
 
 const String kFontMono = 'monospace';
-const double kFontSize = 16.0;
+const double kFontSize = 18.0;
 const double kRowHeight = 32.0;
 
 const TextStyle kStyleBase = TextStyle(
@@ -85,11 +85,8 @@ Color columnColor(CellColumn col) {
 TextStyle columnStyle(CellColumn col) =>
     kStyleBase.copyWith(color: columnColor(col));
 
-Color rowBgColor(int row, bool isSelected, bool isPlayhead) {
+Color rowBgColor(int _row, bool _isSelected, bool isPlayhead, int _linesPerBeat) {
   if (isPlayhead) return kBgPlayhead;
-  if (isSelected) return kBgSelected;
-  if (row % 16 == 0) return kBgBar;
-  if (row % 4  == 0) return kBgBeat;
   return kBgColor;
 }
 

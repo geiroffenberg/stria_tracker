@@ -54,7 +54,17 @@ class _PatternScreenState extends State<PatternScreen> {
         _buildTrackHeader(context, state),
         Expanded(
           child: state.collapsedView
-              ? const CollapsedTracksWidget()
+              ? CollapsedTracksWidget(
+                  onTrackTap: (trackIndex) {
+                    state.selectTrack(trackIndex);
+                    state.toggleCollapsedView();
+                    WidgetsBinding.instance.addPostFrameCallback((_) {
+                      if (_pageCtrl.hasClients) {
+                        _pageCtrl.jumpToPage(trackIndex);
+                      }
+                    });
+                  },
+                )
               : PageView.builder(
                   controller: _pageCtrl,
                   itemCount: state.trackCount,
@@ -110,7 +120,7 @@ class _PatternScreenState extends State<PatternScreen> {
           ] else ...[
             Expanded(
               child: Text(
-                'ALL TRACKS  (${state.trackCount})',
+                'ALL TRACKS',
                 style: kStyleLabel.copyWith(fontSize: 13),
                 textAlign: TextAlign.center,
               ),

@@ -5,7 +5,7 @@ import '../state/app_state.dart';
 import '../theme/app_theme.dart';
 import 'cell_row_widget.dart';
 
-/// Displays one full track page: column header row + scrollable 64-row grid.
+/// Displays one full track page: column header row + scrollable pattern grid.
 class TrackPageWidget extends StatelessWidget {
   final TrackModel track;
   final int trackIndex;
@@ -21,13 +21,14 @@ class TrackPageWidget extends StatelessWidget {
     final state      = AppStateScope.of(context);
     final selected   = state.selectedCell;
     final playheadRow = state.playheadRow;
+    final rowCount = state.rowCount;
 
     return Column(
       children: [
         _buildColumnHeader(false),
         Expanded(
           child: ListView.builder(
-            itemCount: kRowsPerPattern,
+            itemCount: rowCount,
             itemExtent: kRowHeight,
             itemBuilder: (_, row) {
               final cell      = track.cells[row];

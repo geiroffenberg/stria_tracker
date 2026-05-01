@@ -24,7 +24,7 @@ class SettingsScreen extends StatelessWidget {
               _StepBtn('-', () => state.setBpm(state.bpm - 1)),
               const SizedBox(width: 8),
               Text(
-                state.bpm.toStringAsFixed(1),
+                state.bpm.toStringAsFixed(0),
                 style: kStyleNote.copyWith(fontSize: 14),
               ),
               const SizedBox(width: 8),
@@ -40,11 +40,24 @@ class SettingsScreen extends StatelessWidget {
         // Pattern info
         _SettingsRow(
           label: 'ROWS / PATTERN',
-          child: Text('64', style: kStyleNote.copyWith(fontSize: 14)),
+          child: Text(
+            state.rowCount.toString(),
+            style: kStyleNote.copyWith(fontSize: 14),
+          ),
+        ),
+        _SettingsRow(
+          label: 'BEATS',
+          child: Text(
+            state.beats.toString().padLeft(2, '0'),
+            style: kStyleNote.copyWith(fontSize: 14),
+          ),
         ),
         _SettingsRow(
           label: 'LINES / BEAT',
-          child: Text('4', style: kStyleNote.copyWith(fontSize: 14)),
+          child: Text(
+            state.linesPerBeat.toString().padLeft(2, '0'),
+            style: kStyleNote.copyWith(fontSize: 14),
+          ),
         ),
         _SettingsRow(
           label: 'TRACKS',

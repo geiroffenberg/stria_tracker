@@ -1,27 +1,63 @@
 import 'track_model.dart';
 
-const int kLinesPerBeat = 4;
+const int kDefaultLinesPerBeat = 4;
+const int kDefaultBeats = 16;
 const int kBeatsPerBar  = 4; // 4 lines × 4 beats = 16 lines per bar
 
 class PatternModel {
   String name;
+  double? bpm;
+  int? beats;
+  int? linesPerBeat;
   List<TrackModel> tracks;
 
   PatternModel({
     required this.name,
+    this.bpm = 120.0,
+    this.beats = kDefaultBeats,
+    this.linesPerBeat = kDefaultLinesPerBeat,
     List<TrackModel>? tracks,
-  }) : tracks = tracks ?? _defaultTracks();
+  }) : tracks = tracks ?? _defaultTracks(
+          _rowCountFor(beats ?? kDefaultBeats, linesPerBeat ?? kDefaultLinesPerBeat),
+        ) {
+    syncTrackLengths();
+  }
 
-  static List<TrackModel> _defaultTracks() => List.generate(
+  static int _rowCountFor(int beats, int linesPerBeat) {
+    final safeBeats = beats.clamp(1, 99);
+    final safeLinesPerBeat = linesPerBeat.clamp(1, 99);
+    return safeBeats * safeLinesPerBeat;
+  }
+
+  int get beatCount => (beats ?? kDefaultBeats).clamp(1, 99);
+  int get lpb => (linesPerBeat ?? kDefaultLinesPerBeat).clamp(1, 99);
+  int get rowCount => _rowCountFor(beatCount, lpb);
+  bool get isEmpty =>
+      tracks.every((track) => track.cells.every((cell) => cell.isEmpty));
+
+  void syncTrackLengths() {
+    final rows = rowCount;
+    for (final track in tracks) {
+      track.resizeRows(rows);
+    }
+  }
+
+  static List<TrackModel> _defaultTracks(int rowCount) => List.generate(
         kDefaultTracks,
-        (i) => TrackModel(name: 'TRK ${(i + 1).toString().padLeft(2, '0')}'),
+        (i) => TrackModel(
+          name: 'TRK ${(i + 1).toString().padLeft(2, '0')}',
+          rowCount: rowCount,
+        ),
       );
 
   /// Add a new empty track (up to kMaxTracks).
   void addTrack() {
     if (tracks.length < kMaxTracks) {
       final idx = tracks.length + 1;
-      tracks.add(TrackModel(name: 'TRK ${idx.toString().padLeft(2, '0')}'));
+      tracks.add(TrackModel(
+        name: 'TRK ${idx.toString().padLeft(2, '0')}',
+        rowCount: rowCount,
+      ));
     }
   }
 
@@ -34,6 +70,9 @@ class PatternModel {
   PatternModel copyWithName(String newName) {
     return PatternModel(
       name: newName,
+      bpm: bpm ?? 120.0,
+      beats: beatCount,
+      linesPerBeat: lpb,
       tracks: tracks
           .map((t) => TrackModel(
                 name: t.name,

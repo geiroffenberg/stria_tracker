@@ -25,7 +25,13 @@ class CellRowWidget extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final bg = rowBgColor(row, isSelected, isPlayhead);
+    final state = AppStateScope.of(context);
+    final linesPerBeat = state.linesPerBeat;
+    final bg = rowBgColor(row, isSelected, isPlayhead, linesPerBeat);
+    final isBeatStart = row % linesPerBeat == 0;
+    final rowNumStyle = isBeatStart
+        ? kStyleRowNum.copyWith(color: Colors.white)
+      : kStyleRowNum.copyWith(color: kColRowNum);
 
     // Which columns are visible
     final cols = collapsed
@@ -43,20 +49,12 @@ class CellRowWidget extends StatelessWidget {
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 2),
               child: Text(
-                row.toString().padLeft(2, '0'),
-                style: kStyleRowNum,
+                (row + 1).toString().padLeft(2, '0'),
+                style: rowNumStyle,
               ),
             ),
           ),
-          // Beat tick mark: bright bar at beat starts
-          Container(
-            width: 2,
-            color: row % 16 == 0
-                ? kColAccent.withAlpha(180)
-                : row % 4 == 0
-                    ? kColAccent.withAlpha(60)
-                    : Colors.transparent,
-          ),
+          const SizedBox(width: 2),
           // Data columns
           ...cols.expand((col) => [
                 SizedBox(

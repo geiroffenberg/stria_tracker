@@ -49,6 +49,7 @@ class _MainScreenState extends State<MainScreen> {
   }
 
   Widget _buildTopNav() {
+    final state = AppStateScope.of(context);
     return Container(
       height: 38,
       color:  kBgTrackHeader,
@@ -57,7 +58,10 @@ class _MainScreenState extends State<MainScreen> {
           final active = i == _tabIndex;
           return Expanded(
             child: GestureDetector(
-              onTap: () => setState(() => _tabIndex = i),
+              onTap: () {
+                setState(() => _tabIndex = i);
+                state.setPlaybackFollowsSong(i == 0);
+              },
               child: Container(
                 decoration: BoxDecoration(
                   border: Border(

@@ -1,7 +1,7 @@
 import 'cell.dart';
 import 'note_value.dart';
 
-const int kRowsPerPattern = 64;
+const int kDefaultRowsPerPattern = 64;
 const int kMaxTracks      = 16;
 const int kDefaultTracks  = 16;
 const int kFxSlots        = 3;
@@ -9,13 +9,24 @@ const int kFxSlots        = 3;
 class TrackModel {
   String name;
   bool collapsed;
-  List<TrackerCell> cells; // always length == kRowsPerPattern
+  List<TrackerCell> cells;
 
   TrackModel({
     required this.name,
     this.collapsed = false,
+    int rowCount = kDefaultRowsPerPattern,
     List<TrackerCell>? cells,
-  }) : cells = cells ?? List.generate(kRowsPerPattern, (_) => TrackerCell.empty());
+  }) : cells = cells ?? List.generate(rowCount, (_) => TrackerCell.empty());
+
+  void resizeRows(int rowCount) {
+    final target = rowCount.clamp(1, 9801);
+    if (cells.length == target) return;
+    if (cells.length < target) {
+      cells.addAll(List.generate(target - cells.length, (_) => TrackerCell.empty()));
+      return;
+    }
+    cells = cells.sublist(0, target);
+  }
 
   // ── Cell mutation helpers ────────────────────────────────────────────────
 

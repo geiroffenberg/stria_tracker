@@ -30,7 +30,6 @@ class _SongScreenState extends State<SongScreen> {
 
   static const double kSlotSize   = 64.0;
   static const double kSlotGap    = 6.0;
-  static const double kRowPx      = 1.0; // 1 pixel per pattern row in mini-view
 
   @override
   void initState() {
@@ -60,7 +59,6 @@ class _SongScreenState extends State<SongScreen> {
   @override
   Widget build(BuildContext context) {
     final state = AppStateScope.of(context);
-    final slotHeight = kRowsPerPattern * kRowPx; // 64px per pattern in timeline
     final slotPitch  = kSlotSize + kSlotGap;
 
     return Container(
@@ -90,8 +88,7 @@ class _SongScreenState extends State<SongScreen> {
                         slotIndex: i,
                         patternIndex: state.song.arrangement[i],
                         muted: state.song.arrangementMutes[i],
-                        isCurrent: state.song.arrangement[i] ==
-                            state.currentPatternIndex,
+                        isCurrent: i == state.currentArrangementSlotIndex,
                         size: kSlotSize,
                         gap:  kSlotGap,
                       );
@@ -112,7 +109,7 @@ class _SongScreenState extends State<SongScreen> {
                 Expanded(
                   child: SingleChildScrollView(
                     controller: _timelineCtrl,
-                    child: _buildTimeline(state, slotHeight, slotPitch),
+                    child: _buildTimeline(state, slotPitch),
                   ),
                 ),
               ],
@@ -134,28 +131,22 @@ class _SongScreenState extends State<SongScreen> {
   }
 
   Widget _buildRightHeader(AppState state) {
-    final tracks = state.currentPattern.tracks.length;
     return Container(
       height: 28,
       color: kBgHeader,
       padding: const EdgeInsets.symmetric(horizontal: 8),
       child: Row(
         children: [
-          Text('SONG  ',
-              style: kStyleHeader.copyWith(color: kColAccent)),
-          Text('${state.song.arrangement.length} slots  •  $tracks tracks',
-              style: kStyleHeader),
           const Spacer(),
           if (state.isPlaying)
-            Text('PLAY · row ${state.playheadRow.toString().padLeft(2, '0')}',
+            Text('PLAY · row ${(state.playheadRow + 1).toString().padLeft(2, '0')}',
                 style: kStyleHeader.copyWith(color: kColPlayBtn)),
         ],
       ),
     );
   }
 
-  Widget _buildTimeline(
-      AppState state, double slotContentH, double slotPitch) {
+  Widget _buildTimeline(AppState state, double slotPitch) {
     // Total drawing area must align each slot to slotPitch so it lines up
     // with the slot squares on the left (centred vertically inside slot).
     final totalH = state.song.arrangement.length * slotPitch;
@@ -167,8 +158,7 @@ class _SongScreenState extends State<SongScreen> {
         mutes:       state.song.arrangementMutes,
         patterns:    state.song.patterns,
         slotPitch:   slotPitch,
-        rowsPx:      kRowPx,
-        playheadSlot: state.isPlaying ? state.currentPatternIndex : null,
+        playheadSlot: state.isPlaying ? state.playheadArrangementSlot : null,
         playheadRow:  state.isPlaying ? state.playheadRow : null,
       ),
       child: SizedBox(
@@ -234,15 +224,6 @@ class _PatternSlot extends StatelessWidget {
                         ? kColRecBtn
                         : isCurrent ? kColAccent : kColHeader,
                     letterSpacing: 1,
-                  ),
-                ),
-              ),
-              Positioned(
-                top: 2, left: 4,
-                child: Text(
-                  '#${(slotIndex + 1).toString().padLeft(2, '0')}',
-                  style: kStyleBase.copyWith(
-                    fontSize: 9, color: kColInactive,
                   ),
                 ),
               ),
@@ -380,7 +361,6 @@ class _SongTimelinePainter extends CustomPainter {
   final List<bool>         mutes;
   final List<PatternModel> patterns;
   final double             slotPitch;
-  final double             rowsPx;
   final int?               playheadSlot;
   final int?               playheadRow;
 
@@ -389,7 +369,6 @@ class _SongTimelinePainter extends CustomPainter {
     required this.mutes,
     required this.patterns,
     required this.slotPitch,
-    required this.rowsPx,
     required this.playheadSlot,
     required this.playheadRow,
   });
@@ -416,6 +395,7 @@ class _SongTimelinePainter extends CustomPainter {
       final patIdx = arrangement[s];
       if (patIdx < 0 || patIdx >= patterns.length) continue;
       final pat = patterns[patIdx];
+      final rowCount = pat.rowCount;
 
       final yTop = s * slotPitch + _padTop;
       final blockH = slotPitch - _padTop - _padBottom;
@@ -437,7 +417,7 @@ class _SongTimelinePainter extends CustomPainter {
         );
 
         if (t < tracks.length) {
-          _drawLaneNotes(canvas, tracks[t], lx, yTop, laneW, blockH);
+          _drawLaneNotes(canvas, tracks[t], lx, yTop, laneW, blockH, rowCount);
         }
       }
 
@@ -449,21 +429,6 @@ class _SongTimelinePainter extends CustomPainter {
         );
       }
 
-      // Pattern label (top-left of block)
-      final tp = TextPainter(
-        text: TextSpan(
-          text: 'P${(patIdx + 1).toString().padLeft(2, '0')}',
-          style: TextStyle(
-            color: kColAccent.withAlpha(180),
-            fontSize: 9,
-            fontFamily: kFontMono,
-            fontWeight: FontWeight.w700,
-          ),
-        ),
-        textDirection: TextDirection.ltr,
-      )..layout();
-      tp.paint(canvas, Offset(originX + 2, yTop + 2));
-
       // Bottom divider between slots
       canvas.drawLine(
         Offset(0,         yTop + blockH + _padBottom - 0.5),
@@ -474,13 +439,15 @@ class _SongTimelinePainter extends CustomPainter {
 
     // Playhead
     if (playheadSlot != null && playheadRow != null) {
-      // Find first arrangement slot referencing the current pattern.
-      final s = arrangement.indexOf(playheadSlot!);
-      if (s >= 0) {
+      final s = playheadSlot!.clamp(0, arrangement.length - 1);
+      if (s >= 0 && s < arrangement.length) {
+        final patIdx = arrangement[s];
+        if (patIdx < 0 || patIdx >= patterns.length) return;
+        final pat = patterns[patIdx];
         final yTop = s * slotPitch + _padTop;
         final blockH = slotPitch - _padTop - _padBottom;
         final y = yTop +
-            (playheadRow! / kRowsPerPattern) * blockH;
+            (playheadRow! / pat.rowCount) * blockH;
         final p = Paint()
           ..color = kColPlayBtn
           ..strokeWidth = 1.5;
@@ -494,10 +461,10 @@ class _SongTimelinePainter extends CustomPainter {
   }
 
   void _drawLaneNotes(Canvas canvas, TrackModel track,
-      double x, double y, double w, double h) {
+      double x, double y, double w, double h, int rowCount) {
     final paint = Paint()..color = kColNote;
-    final pxPerRow = h / kRowsPerPattern;
-    for (int r = 0; r < track.cells.length; r++) {
+    final pxPerRow = h / rowCount;
+    for (int r = 0; r < track.cells.length && r < rowCount; r++) {
       final cell = track.cells[r];
       final n = cell.note;
       if (n.isEmpty) continue;

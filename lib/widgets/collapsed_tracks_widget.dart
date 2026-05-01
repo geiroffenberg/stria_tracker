@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../models/cell.dart';
+import '../models/note_value.dart';
 import '../models/track_model.dart';
 import '../state/app_state.dart';
 import '../theme/app_theme.dart';
@@ -17,7 +18,12 @@ import 'cell_widget.dart';
 ///   The row-number column stays put on the left.
 ///   The track header and the cell area share a horizontal scroll controller.
 class CollapsedTracksWidget extends StatefulWidget {
-  const CollapsedTracksWidget({super.key});
+  final ValueChanged<int> onTrackTap;
+
+  const CollapsedTracksWidget({
+    super.key,
+    required this.onTrackTap,
+  });
 
   static const double wNote = 38.0;
   static const double wInst = 26.0;
@@ -65,6 +71,7 @@ class _CollapsedTracksWidgetState extends State<CollapsedTracksWidget> {
   Widget build(BuildContext context) {
     final state = AppStateScope.of(context);
     final tracks = state.currentPattern.tracks;
+    final rowCount = state.rowCount;
 
     final tracksWidth = tracks.length * CollapsedTracksWidget.trackWidth;
     const leftColWidth = kWRow + 2; // row# + tick
@@ -103,7 +110,7 @@ class _CollapsedTracksWidgetState extends State<CollapsedTracksWidget> {
               SizedBox(
                 width: leftColWidth,
                 child: ListView.builder(
-                  itemCount: kRowsPerPattern,
+                  itemCount: rowCount,
                   itemExtent: kRowHeight,
                   controller: _rowNumCtrl,
                   itemBuilder: (_, row) => _buildRowNumber(state, row),
@@ -117,7 +124,7 @@ class _CollapsedTracksWidgetState extends State<CollapsedTracksWidget> {
                   child: SizedBox(
                     width: tracksWidth,
                     child: ListView.builder(
-                      itemCount: kRowsPerPattern,
+                      itemCount: rowCount,
                       itemExtent: kRowHeight,
                       controller: _vBodyCtrl,
                       itemBuilder: (_, row) =>
@@ -167,9 +174,7 @@ class _CollapsedTracksWidgetState extends State<CollapsedTracksWidget> {
               child: GestureDetector(
                 behavior: HitTestBehavior.opaque,
                 onTap: () {
-                  final state = AppStateScope.of(context);
-                  state.selectTrack(i);
-                  state.toggleCollapsedView();
+                  widget.onTrackTap(i);
                 },
                 child: Center(
                   child: Text(
@@ -201,7 +206,12 @@ class _CollapsedTracksWidgetState extends State<CollapsedTracksWidget> {
   Widget _buildRowNumber(AppState state, int row) {
     final isPlayhead = state.isPlaying && row == state.playheadRow;
     final rowSel = state.selectedCell?.row == row;
-    final bg = rowBgColor(row, rowSel, isPlayhead);
+    final linesPerBeat = state.linesPerBeat;
+    final bg = rowBgColor(row, rowSel, isPlayhead, linesPerBeat);
+    final isBeatStart = row % linesPerBeat == 0;
+    final rowNumStyle = isBeatStart
+        ? kStyleRowNum.copyWith(color: Colors.white)
+      : kStyleRowNum.copyWith(color: kColRowNum);
 
     return Container(
       color: bg,
@@ -211,17 +221,13 @@ class _CollapsedTracksWidgetState extends State<CollapsedTracksWidget> {
             width: kWRow,
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 2),
-              child: Text(row.toString().padLeft(2, '0'), style: kStyleRowNum),
+              child: Text(
+                (row + 1).toString().padLeft(2, '0'),
+                style: rowNumStyle,
+              ),
             ),
           ),
-          Container(
-            width: 2,
-            color: row % 16 == 0
-                ? kColAccent.withAlpha(180)
-                : row % 4 == 0
-                ? kColAccent.withAlpha(60)
-                : Colors.transparent,
-          ),
+          const SizedBox(width: 2),
         ],
       ),
     );
@@ -232,7 +238,7 @@ class _CollapsedTracksWidgetState extends State<CollapsedTracksWidget> {
   Widget _buildCellRow(AppState state, List<TrackModel> tracks, int row) {
     final isPlayhead = state.isPlaying && row == state.playheadRow;
     final rowSel = state.selectedCell?.row == row;
-    final bg = rowBgColor(row, rowSel, isPlayhead);
+    final bg = rowBgColor(row, rowSel, isPlayhead, state.linesPerBeat);
 
     return Container(
       color: bg,
@@ -318,11 +324,15 @@ class _MiniCell extends StatefulWidget {
 class _MiniCellState extends State<_MiniCell> {
   double _dragAccum = 0.0;
   static const double _pixelsPerStep = 11.0;
+  static const int _defaultNoteScrollIndex = 49; // C-4
 
   void _select(BuildContext context) {
     final state = AppStateScope.of(context);
     if (state.currentTrackIndex != widget.trackIndex) {
       state.selectTrack(widget.trackIndex);
+    }
+    if (widget.column == CellColumn.note && widget.cell.note.isEmpty) {
+      state.setNote(widget.row, NoteValue.fromScrollIndex(_defaultNoteScrollIndex));
     }
     state.selectCell(widget.row, widget.column);
   }

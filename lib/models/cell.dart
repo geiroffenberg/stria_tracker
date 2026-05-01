@@ -40,6 +40,13 @@ class TrackerCell {
 
   static TrackerCell empty() => TrackerCell();
 
+  bool get isEmpty =>
+      note.isEmpty &&
+      instrument == null &&
+      volume == null &&
+      pan == null &&
+      fxSlots.every((slot) => slot.command == null && slot.value == null);
+
   TrackerCell copy() => TrackerCell(
     note: note,
     instrument: instrument,

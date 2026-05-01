@@ -76,27 +76,78 @@ class CellWidget extends StatefulWidget {
 class _CellWidgetState extends State<CellWidget> {
   double _dragAccum = 0.0;
   static const double _pixelsPerStep = 11.0;
+  Offset _longPressPos = Offset.zero;
+
+  void _handleTap(AppState state) {
+    final empty = cellIsEmpty(widget.column, widget.cell);
+    if (empty) {
+      state.insertDefaultValue(widget.row, widget.column);
+    }
+    state.selectCell(widget.row, widget.column);
+  }
+
+  Future<void> _handleLongPress(AppState state) async {
+    state.selectCell(widget.row, widget.column);
+
+    final overlay = Overlay.of(context).context.findRenderObject() as RenderBox;
+    final pos = RelativeRect.fromRect(
+      _longPressPos & Size.zero,
+      Offset.zero & overlay.size,
+    );
+
+    final items = <PopupMenuEntry<String>>[
+      const PopupMenuItem(value: 'copy', child: Text('Copy row')),
+      PopupMenuItem(
+        value: 'paste',
+        enabled: state.hasRowClipboard,
+        child: const Text('Paste row'),
+      ),
+      const PopupMenuDivider(),
+      const PopupMenuItem(value: 'delete', child: Text('Delete row')),
+    ];
+
+    final choice = await showMenu<String>(
+      context: context,
+      position: pos,
+      items: items,
+      color: const Color(0xFF1E2030),
+    );
+
+    if (!mounted) return;
+    switch (choice) {
+      case 'copy':
+        state.copyRow(widget.row);
+      case 'paste':
+        state.pasteRow(widget.row);
+      case 'delete':
+        state.deleteRow(widget.row);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     final text = cellDisplay(widget.column, widget.cell);
     final empty = cellIsEmpty(widget.column, widget.cell);
     final style = empty ? kStyleEmpty : columnStyle(widget.column);
+    final state = AppStateScope.of(context);
 
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
-      onTap: () =>
-          AppStateScope.of(context).selectCell(widget.row, widget.column),
+      onTap: () => _handleTap(state),
+      onLongPressStart: (d) => _longPressPos = d.globalPosition,
+      onLongPress: () => _handleLongPress(state),
       onVerticalDragStart: (_) {
+        if (cellIsEmpty(widget.column, widget.cell)) return;
         _dragAccum = 0.0;
-        AppStateScope.of(context).selectCell(widget.row, widget.column);
+        state.selectCell(widget.row, widget.column);
       },
       onVerticalDragUpdate: (d) {
-        _dragAccum -= d.delta.dy; // drag up → positive → higher value
+        if (cellIsEmpty(widget.column, widget.cell)) return;
+        _dragAccum -= d.delta.dy;
         final steps = (_dragAccum / _pixelsPerStep).truncate();
         if (steps != 0) {
           _dragAccum -= steps * _pixelsPerStep;
-          AppStateScope.of(context).nudgeCell(widget.row, widget.column, steps);
+          state.nudgeCell(widget.row, widget.column, steps);
         }
       },
       child: Container(
