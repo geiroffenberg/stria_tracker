@@ -47,6 +47,7 @@ class AppState extends ChangeNotifier {
   int _currentPatternIndex = 0;
   int _currentTrackIndex = 0;
   int _currentInstrumentIndex = 0;
+  int _previewSamplerSlot = -1;
 
   CellPosition? selectedCell;
 
@@ -74,6 +75,7 @@ class AppState extends ChangeNotifier {
   int get currentArrangementSlotIndex => _currentArrangementSlotIndex;
   int get playheadArrangementSlot => _playheadArrangementSlot;
   bool get playbackFollowsSong => _playbackFollowsSong;
+  bool get isPreviewingCurrentSampler => _previewSamplerSlot == _currentInstrumentIndex;
 
   PatternModel get currentPattern => song.patterns[_currentPatternIndex];
   TrackModel get currentTrack => currentPattern.tracks[_currentTrackIndex];
@@ -407,6 +409,8 @@ class AppState extends ChangeNotifier {
     if (ins.type != InstrumentType.simpleSynth) {
       final sp = ins.sampler;
       final detuneNorm = ((sp.pitch + 1.0) / 2.0).clamp(0.0, 1.0);
+      final startNorm = sp.start.clamp(0.0, 1.0);
+      final endNorm = sp.end.clamp(0.0, 1.0);
       return <int>[
         _norm01ToAudio255(detuneNorm), // sampler pitch / synth detune
         _norm01ToAudio255(0.70), // cutoff
@@ -423,8 +427,8 @@ class AppState extends ChangeNotifier {
         _norm01ToAudio255(0.25), // rel
         _norm01ToAudio255(0.00), // glide
         _norm01ToAudio255(sp.volume), // sampler volume / synth instVol
-        _norm01ToAudio255(0.20), // lfoRate
-        0, // lfoDepth: 0
+        _norm01ToAudio255(startNorm), // lfoRate reused as sampler start
+        _norm01ToAudio255(endNorm), // lfoDepth reused as sampler end
         0, // lfoTarget: pitch
         sp.loop ? 255 : 0, // loop flag (reuses drive byte for sampler)
       ];
@@ -743,6 +747,37 @@ class AppState extends ChangeNotifier {
     }
   }
 
+  Future<String?> loadSamplerSampleFromPath(
+    String path, {
+    String? displayName,
+  }) async {
+    try {
+      final file = File(path);
+      if (!file.existsSync()) return 'File not found';
+
+      if (isPreviewingCurrentSampler) {
+        await stopPreviewCurrentSampler();
+      }
+
+      final ok = await AudioEngine.instance.setSamplerSample(
+        currentInstrumentIndex,
+        file.path,
+      );
+      if (!ok) {
+        return 'Unsupported audio format (need WAV 8/16/24-bit PCM or 32-bit float)';
+      }
+
+      final sp = currentInstrument.sampler;
+      sp.sampleName =
+          displayName ?? file.path.split(Platform.pathSeparator).last;
+      sp.samplePath = file.path;
+      notifyListeners();
+      return null;
+    } catch (e) {
+      return e.toString();
+    }
+  }
+
   /// Returns empty string on success, or an error description on failure.
   Future<String?> loadSamplerSampleFromLibrary(String fileName) async {
     try {
@@ -750,21 +785,69 @@ class AppState extends ChangeNotifier {
       final file = File('${lib.path}/$fileName');
       if (!file.existsSync()) return 'File not found in library';
 
-      final ok = await AudioEngine.instance.setSamplerSample(
-          currentInstrumentIndex, file.path);
-      if (!ok) return 'Unsupported audio format (need WAV 8/16/24-bit PCM or 32-bit float)';
+      return await loadSamplerSampleFromPath(file.path, displayName: fileName);
+    } catch (e) {
+      return e.toString();
+    }
+  }
 
-      final sp = currentInstrument.sampler;
-      sp.sampleName = fileName;
-      sp.samplePath = file.path;
+  Future<String?> startPreviewCurrentSampler() async {
+    try {
+      final slot = currentInstrumentIndex.clamp(0, instruments.length - 1);
+      final ins = instruments[slot];
+      if (ins.type != InstrumentType.sampler) {
+        return 'Current instrument is not a sampler';
+      }
+      if (ins.sampler.samplePath == null || ins.sampler.samplePath!.isEmpty) {
+        return 'No sample loaded';
+      }
+
+      final waveCmd = _waveCodeForInstrumentSlot(slot);
+      final instrumentTypeCmd = _instrumentTypeCodeForSlot(slot);
+      final synthParams = _synthParamsForInstrumentSlot(slot);
+
+      final noteOn = <int>[60, 255, 128, waveCmd, instrumentTypeCmd, ...synthParams];
+
+      await AudioEngine.instance.start();
+      await AudioEngine.instance.setRowData(noteOn);
+      _previewSamplerSlot = slot;
       notifyListeners();
-      return null; // success
+      return null;
+    } catch (e) {
+      return e.toString();
+    }
+  }
+
+  Future<void> stopPreviewCurrentSampler() async {
+    final slot = currentInstrumentIndex.clamp(0, instruments.length - 1);
+    final waveCmd = _waveCodeForInstrumentSlot(slot);
+    final instrumentTypeCmd = _instrumentTypeCodeForSlot(slot);
+    final synthParams = _synthParamsForInstrumentSlot(slot);
+    final noteOff = <int>[-2, -1, -1, waveCmd, instrumentTypeCmd, ...synthParams];
+    await AudioEngine.instance.setRowData(noteOff);
+    _previewSamplerSlot = -1;
+    notifyListeners();
+  }
+
+  Future<String?> togglePreviewCurrentSampler() async {
+    try {
+      if (isPreviewingCurrentSampler) {
+        await stopPreviewCurrentSampler();
+        return null;
+      }
+      if (_previewSamplerSlot >= 0) {
+        await stopPreviewCurrentSampler();
+      }
+      return await startPreviewCurrentSampler();
     } catch (e) {
       return e.toString();
     }
   }
 
   void clearCurrentSamplerSample() {
+    if (isPreviewingCurrentSampler) {
+      stopPreviewCurrentSampler();
+    }
     final sp = currentInstrument.sampler;
     sp.sampleName = null;
     sp.samplePath = null;

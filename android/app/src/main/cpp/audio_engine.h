@@ -71,6 +71,8 @@ struct Voice {
     double samplePos         = 0.0;
     double sampleStep        = 1.0;
     bool   sampleLoop        = false;
+    float  sampleStartNorm   = 0.0f; // normalized region start [0..1]
+    float  sampleEndNorm     = 1.0f; // normalized region end [0..1]
     float  sampleGain        = 1.0f;
 };
 

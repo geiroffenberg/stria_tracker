@@ -391,6 +391,11 @@ void AudioEngine::triggerRow(const std::vector<int>& rowData) {
         if (isSampler) {
             v.sampleSlot = std::clamp(wave, 0, static_cast<int>(mSamplerSlots.size()) - 1);
             v.sampleLoop = (drive >= 128);
+            v.sampleStartNorm = std::clamp(v.lfoRateNorm, 0.0f, 1.0f);
+            v.sampleEndNorm = std::clamp(v.lfoDepth, 0.0f, 1.0f);
+            if (v.sampleEndNorm < v.sampleStartNorm) {
+                std::swap(v.sampleStartNorm, v.sampleEndNorm);
+            }
             v.sampleGain = 1.0f;
 
             if (n >= 0) {
@@ -400,7 +405,11 @@ void AudioEngine::triggerRow(const std::vector<int>& rowData) {
                     const float detuneSemitones = (v.detuneNorm - 0.5f) * 24.0f;
                     const float semis = static_cast<float>(n - 60) + detuneSemitones;
                     v.sampleStep = std::pow(2.0f, semis / 12.0f);
-                    v.samplePos = 0.0;
+                    const int sampleFrames = static_cast<int>(s.mono.size());
+                    const int startFrame = std::clamp(
+                        static_cast<int>(v.sampleStartNorm * static_cast<float>(sampleFrames - 1)),
+                        0, sampleFrames - 1);
+                    v.samplePos = static_cast<double>(startFrame);
                     v.sampleActive = true;
                 } else {
                     v.sampleActive = false;
@@ -498,16 +507,32 @@ oboe::DataCallbackResult AudioEngine::onAudioReady(
                 continue;
             }
 
+            const int sampleFrames = static_cast<int>(s.mono.size());
+            const int startFrame = std::clamp(
+                static_cast<int>(v.sampleStartNorm * static_cast<float>(sampleFrames - 1)),
+                0, sampleFrames - 1);
+            int endFrame = std::clamp(
+                static_cast<int>(v.sampleEndNorm * static_cast<float>(sampleFrames)),
+                1, sampleFrames);
+            if (endFrame <= startFrame) {
+                endFrame = std::min(sampleFrames, startFrame + 1);
+            }
+            const double regionStart = static_cast<double>(startFrame);
+            const double regionEnd = static_cast<double>(endFrame);
+            const double regionLen = std::max(1.0, regionEnd - regionStart);
+            if (v.samplePos < regionStart || v.samplePos >= regionEnd) {
+                v.samplePos = regionStart;
+            }
+
             const double ratio =
                 (static_cast<double>(s.sampleRate) / sampleRate) * v.sampleStep;
 
             for (int i = 0; i < numFrames; ++i) {
                 int idx = static_cast<int>(v.samplePos);
-                if (idx < 0 || idx >= static_cast<int>(s.mono.size())) {
-                    if (v.sampleLoop && !s.mono.empty()) {
-                        const double len = static_cast<double>(s.mono.size());
-                        while (v.samplePos >= len) v.samplePos -= len;
-                        while (v.samplePos < 0.0) v.samplePos += len;
+                if (idx < startFrame || idx >= endFrame) {
+                    if (v.sampleLoop && regionLen > 1.0) {
+                        while (v.samplePos >= regionEnd) v.samplePos -= regionLen;
+                        while (v.samplePos < regionStart) v.samplePos += regionLen;
                         idx = static_cast<int>(v.samplePos);
                     } else {
                         v.sampleActive = false;

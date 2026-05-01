@@ -1,8 +1,9 @@
 import 'dart:math' as math;
 import 'dart:io';
+import 'dart:typed_data';
 
-import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:permission_handler/permission_handler.dart';
 import '../models/instrument_model.dart';
 import '../models/synth_preset_bank.dart';
 import '../state/app_state.dart';
@@ -47,7 +48,6 @@ class _InstrumentHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final idx = state.currentInstrumentIndex;
-    final total = state.instruments.length;
 
     return Container(
       height: 52,
@@ -55,43 +55,13 @@ class _InstrumentHeader extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 10),
       child: Row(
         children: [
-          // Number stepper
-          _StepArrow(
-              icon: Icons.chevron_left,
-              enabled: idx > 0,
-              onTap: () => state.selectInstrument(idx - 1)),
-          GestureDetector(
-            onTap: () => _pickInstrument(context, state),
-            child: Container(
-              width: 76,
-              alignment: Alignment.center,
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Text(
-                    'I${(idx + 1).toString().padLeft(2, '0')}',
-                    style: kStyleLabel.copyWith(
-                      fontSize: 22, color: kColAccent),
-                  ),
-                  Text('${idx + 1}/$total',
-                      style: kStyleHeader.copyWith(fontSize: 10)),
-                ],
-              ),
-            ),
-          ),
-          _StepArrow(
-              icon: Icons.chevron_right,
-              enabled: idx < total - 1,
-              onTap: () => state.selectInstrument(idx + 1)),
-          const SizedBox(width: 12),
-
-          // Name
           Expanded(
-            child: Text(
-              instrument.name,
-              style: kStyleBase.copyWith(
-                  color: kColHeader, fontSize: 14),
-              overflow: TextOverflow.ellipsis,
+            child: GestureDetector(
+              onTap: () => _pickInstrument(context, state),
+              child: Text(
+                '< INS ${(idx + 1).toString().padLeft(2, '0')} >',
+                style: kStyleLabel.copyWith(fontSize: 22, color: kColAccent),
+              ),
             ),
           ),
           const SizedBox(width: 8),
@@ -147,30 +117,6 @@ class _InstrumentHeader extends StatelessWidget {
                 ),
               ),
           ],
-        ),
-      ),
-    );
-  }
-}
-
-class _StepArrow extends StatelessWidget {
-  final IconData icon;
-  final bool enabled;
-  final VoidCallback onTap;
-  const _StepArrow({
-    required this.icon, required this.enabled, required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: enabled ? onTap : null,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 4),
-        child: Icon(
-          icon,
-          color: enabled ? kColAccent : kColInactive,
-          size: 28,
         ),
       ),
     );
@@ -583,252 +529,655 @@ class _SamplerEditor extends StatefulWidget {
 }
 
 class _SamplerEditorState extends State<_SamplerEditor> {
+  static const _kSampleExts = <String>{
+    '.wav',
+    '.aif',
+    '.aiff',
+    '.flac',
+    '.ogg',
+    '.mp3',
+    '.m4a',
+    '.aac',
+  };
+
   bool _busy = false;
-  String? _libraryPath;
-  List<String> _librarySamples = const [];
+  bool _previewBusy = false;
+  String? _wavePath;
+  String? _lastBrowserFolder;
+  List<double>? _wavePeaks;
+  bool _waveLoading = false;
 
   AppState get state => widget.state;
 
   @override
   void initState() {
     super.initState();
-    _reloadLibrary();
+    _syncWaveformForCurrent();
   }
 
-  Future<void> _reloadLibrary() async {
-    final path = await state.samplerLibraryPath();
-    final names = await state.listSamplerLibrarySamples();
-    if (!mounted) return;
-    setState(() {
-      _libraryPath = path;
-      _librarySamples = names;
-    });
+  bool _isLegalSamplePath(String path) {
+    final name = _sampleDisplayName(path).toLowerCase();
+    return _kSampleExts.any(name.endsWith);
   }
 
-  Future<void> _importFromPhone(BuildContext context) async {
-    if (_busy) return;
-    setState(() => _busy = true);
+  String _sampleDisplayName(String path) =>
+      path.split(Platform.pathSeparator).last;
+
+  String _folderDisplayName(String path) {
+    final parts = path.split(Platform.pathSeparator).where((p) => p.isNotEmpty);
+    return parts.isEmpty ? path : parts.last;
+  }
+
+  List<String> _collectSubFolders(String folderPath) {
     try {
-      final picked = await FilePicker.platform.pickFiles(
-        type: FileType.custom,
-        allowedExtensions: const [
-          'wav', 'aif', 'aiff', 'flac', 'ogg', 'mp3', 'm4a', 'aac'
-        ],
-        allowMultiple: false,
-        withData: true, // always fetch bytes — handles content URIs on Android
-      );
-      if (picked == null || picked.files.isEmpty) return;
-      final pFile = picked.files.single;
-
-      // Use real path when available, otherwise fall back to in-memory bytes.
-      final String? importedName;
-      if (pFile.path != null) {
-        importedName = await state.importSampleToLibrary(pFile.path!);
-      } else if (pFile.bytes != null) {
-        importedName = await state.importSampleBytesToLibrary(
-          pFile.bytes!,
-          pFile.name,
-        );
-      } else {
-        importedName = null;
+      final dir = Directory(folderPath);
+      if (!dir.existsSync()) return const [];
+      final dirs = <String>[];
+      for (final e in dir.listSync()) {
+        final t = FileSystemEntity.typeSync(e.path, followLinks: true);
+        if (t == FileSystemEntityType.directory) {
+          dirs.add(e.path);
+        }
       }
-
-      if (importedName == null) {
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('Import failed.'),
-          duration: Duration(seconds: 2),
-        ));
-        return;
-      }
-
-      final loadErr = await state.loadSamplerSampleFromLibrary(importedName);
-      await _reloadLibrary();
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text(loadErr == null ? 'Imported: $importedName' : 'Imported but: $loadErr'),
-        duration: const Duration(seconds: 3),
-      ));
-    } finally {
-      if (mounted) setState(() => _busy = false);
+      dirs.sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+      return dirs;
+    } catch (_) {
+      return const [];
     }
   }
 
-  Future<void> _loadSample(BuildContext context, String name) async {
-    final err = await state.loadSamplerSampleFromLibrary(name);
+  List<String> _collectPlayableSamples(String folderPath) {
+    try {
+      final dir = Directory(folderPath);
+      if (!dir.existsSync()) return const [];
+      final samples = <String>[];
+      for (final e in dir.listSync()) {
+        final t = FileSystemEntity.typeSync(e.path, followLinks: true);
+        if (t != FileSystemEntityType.file) continue;
+        if (_isLegalSamplePath(e.path)) samples.add(e.path);
+      }
+      samples.sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+      return samples;
+    } catch (_) {
+      return const [];
+    }
+  }
+
+  Future<bool> _requestStoragePermission() async {
+    // Android 13+ uses READ_MEDIA_AUDIO; older versions use READ_EXTERNAL_STORAGE
+    final status = await Permission.audio.request();
+    if (status.isGranted) return true;
+    final statusStorage = await Permission.storage.request();
+    return statusStorage.isGranted;
+  }
+
+  /// Returns the single internal-storage root for Android.
+  String _internalStorageRoot() {
+    const candidates = ['/storage/emulated/0', '/storage/self/primary', '/sdcard'];
+    for (final p in candidates) {
+      try {
+        if (Directory(p).existsSync()) return p;
+      } catch (_) {}
+    }
+    return '/storage/emulated/0';
+  }
+
+  Future<void> _showSampleBrowser(BuildContext context) async {
+    // Request storage permission at runtime
+    if (Platform.isAndroid) {
+      final status = await _requestStoragePermission();
+      if (!status) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Storage permission denied — cannot browse files.'),
+          duration: Duration(seconds: 3),
+        ));
+        return;
+      }
+    }
+
+    final internalRoot = _internalStorageRoot();
+
+    await showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: kBgTrackHeader,
+      isScrollControlled: true,
+      builder: (ctx) {
+        // Start at last remembered folder, or internal storage root
+        String currentFolder = _lastBrowserFolder ?? internalRoot;
+        return StatefulBuilder(
+          builder: (context, setSheetState) {
+            return SafeArea(
+              child: SizedBox(
+                height: MediaQuery.of(ctx).size.height * 0.7,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(12, 10, 12, 4),
+                      child: Row(
+                        children: [
+                          IconButton(
+                            onPressed: () {
+                              final parent = Directory(currentFolder).parent.path;
+                              if (parent == currentFolder ||
+                                  parent.isEmpty ||
+                                  currentFolder == internalRoot) {
+                                Navigator.of(ctx).pop();
+                                return;
+                              }
+                              currentFolder = parent;
+                              setSheetState(() {});
+                            },
+                            icon: const Icon(Icons.arrow_upward),
+                          ),
+                          Expanded(
+                            child: Text(
+                              currentFolder == internalRoot
+                                  ? 'INTERNAL STORAGE'
+                                  : currentFolder,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: kStyleHeader.copyWith(color: kColAccent),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const Divider(height: 1, color: Color(0xFF1A1A1A)),
+                    Expanded(
+                      child: Builder(
+                        builder: (_) {
+                          final activeFolder = currentFolder;
+                          final folders = _collectSubFolders(activeFolder);
+                          final samples = _collectPlayableSamples(activeFolder);
+
+                          return ListView(
+                            children: [
+                              for (final folderPath in folders)
+                            ListTile(
+                              dense: true,
+                              leading: const Icon(Icons.folder),
+                              title: Text(
+                                _folderDisplayName(folderPath),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: kStyleBase.copyWith(color: kColHeader),
+                              ),
+                              onTap: () {
+                                currentFolder = folderPath;
+                                _lastBrowserFolder = folderPath;
+                                setSheetState(() {});
+                              },
+                            ),
+                              if (samples.isEmpty)
+                            Padding(
+                              padding: const EdgeInsets.all(12),
+                              child: Text(
+                                'No playable samples in this folder.',
+                                style: kStyleBase.copyWith(
+                                  color: kColInactive,
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ),
+                              for (final samplePath in samples)
+                            Builder(
+                              builder: (_) {
+                                final name = _sampleDisplayName(samplePath);
+                                final isLoaded =
+                                    state.currentInstrument.sampler.samplePath ==
+                                        samplePath;
+                                final isPlaying =
+                                    isLoaded && state.isPreviewingCurrentSampler;
+                                return ListTile(
+                                  dense: true,
+                                  leading: IconButton(
+                                    icon: Icon(
+                                      isPlaying ? Icons.stop : Icons.play_arrow,
+                                    ),
+                                    color: isPlaying ? kColAccent : kColHeader,
+                                    onPressed: () async {
+                                      String? err;
+                                      if (isPlaying) {
+                                        await state.stopPreviewCurrentSampler();
+                                      } else {
+                                        err = await state.loadSamplerSampleFromPath(
+                                          samplePath,
+                                          displayName: name,
+                                        );
+                                        if (err == null) {
+                                          err = await state.startPreviewCurrentSampler();
+                                        }
+                                      }
+                                      setSheetState(() {});
+                                      if (!mounted || err == null) return;
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        SnackBar(
+                                          content: Text(err),
+                                          duration: const Duration(seconds: 2),
+                                        ),
+                                      );
+                                    },
+                                  ),
+                                  title: Text(
+                                    name,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: kStyleBase.copyWith(
+                                      color: isLoaded ? kColAccent : kColHeader,
+                                      fontWeight: isLoaded
+                                          ? FontWeight.w700
+                                          : FontWeight.normal,
+                                    ),
+                                  ),
+                                  trailing: TextButton(
+                                    onPressed: () async {
+                                      final err =
+                                          await state.loadSamplerSampleFromPath(
+                                        samplePath,
+                                        displayName: name,
+                                      );
+                                      if (!mounted || err == null) {
+                                        Navigator.of(ctx).pop();
+                                        return;
+                                      }
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        SnackBar(
+                                          content: Text(err),
+                                          duration: const Duration(seconds: 2),
+                                        ),
+                                      );
+                                    },
+                                    child: const Text('LOAD'),
+                                  ),
+                                );
+                              },
+                            ),
+                            ],
+                          );
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Future<void> _syncWaveformForCurrent() async {
+    final path = state.currentInstrument.sampler.samplePath;
+    _wavePath = path;
+    if (path == null || path.isEmpty) {
+      if (!mounted) return;
+      setState(() {
+        _wavePeaks = null;
+        _waveLoading = false;
+      });
+      return;
+    }
+
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      content: Text(err == null ? 'Loaded: $name' : 'Load failed: $err'),
-      duration: const Duration(seconds: 3),
-    ));
+    setState(() => _waveLoading = true);
+    final peaks = await _readWavPeaks(path, 220);
+    if (!mounted || _wavePath != path) return;
+    setState(() {
+      _wavePeaks = peaks;
+      _waveLoading = false;
+    });
+  }
+
+  Future<List<double>?> _readWavPeaks(String path, int bins) async {
+    try {
+      final file = File(path);
+      if (!file.existsSync()) return null;
+      final bytes = await file.readAsBytes();
+      if (bytes.length < 44) return null;
+
+      bool matchAscii(int off, String s) {
+        if (off + s.length > bytes.length) return false;
+        for (int i = 0; i < s.length; i++) {
+          if (bytes[off + i] != s.codeUnitAt(i)) return false;
+        }
+        return true;
+      }
+
+      if (!matchAscii(0, 'RIFF') || !matchAscii(8, 'WAVE')) return null;
+
+      final bd = ByteData.sublistView(bytes);
+      int readLe16(int o) => bd.getUint16(o, Endian.little);
+      int readLe32(int o) => bd.getUint32(o, Endian.little);
+
+      int audioFormat = 0;
+      int channels = 0;
+      int bitsPerSample = 0;
+      int dataOffset = -1;
+      int dataSize = 0;
+
+      int pos = 12;
+      while (pos + 8 <= bytes.length) {
+        final chunkSize = readLe32(pos + 4);
+        final body = pos + 8;
+        if (body + chunkSize > bytes.length) break;
+
+        if (matchAscii(pos, 'fmt ') && chunkSize >= 16) {
+          audioFormat = readLe16(body + 0);
+          channels = readLe16(body + 2);
+          bitsPerSample = readLe16(body + 14);
+        } else if (matchAscii(pos, 'data')) {
+          dataOffset = body;
+          dataSize = chunkSize;
+        }
+
+        pos = body + chunkSize + (chunkSize.isOdd ? 1 : 0);
+      }
+
+      if (dataOffset < 0 || dataSize <= 0 || channels <= 0 || bitsPerSample <= 0) {
+        return null;
+      }
+
+      final bytesPerSample = bitsPerSample ~/ 8;
+      final frameBytes = bytesPerSample * channels;
+      if (bytesPerSample <= 0 || frameBytes <= 0) return null;
+
+      final frameCount = dataSize ~/ frameBytes;
+      if (frameCount <= 0) return null;
+
+      final safeBins = bins.clamp(32, 480);
+      final peaks = List<double>.filled(safeBins, 0.0);
+      final framesPerBin = (frameCount / safeBins).ceil().clamp(1, frameCount);
+
+      for (int b = 0; b < safeBins; b++) {
+        final startFrame = b * framesPerBin;
+        if (startFrame >= frameCount) break;
+        final endFrame = math.min(frameCount, startFrame + framesPerBin);
+        double maxAbs = 0.0;
+
+        for (int f = startFrame; f < endFrame; f++) {
+          final frameBase = dataOffset + f * frameBytes;
+          double mono = 0.0;
+
+          for (int ch = 0; ch < channels; ch++) {
+            final sampleOff = frameBase + ch * bytesPerSample;
+            double sample = 0.0;
+            if (audioFormat == 1 && bitsPerSample == 8) {
+              sample = (bytes[sampleOff] - 128) / 128.0;
+            } else if (audioFormat == 1 && bitsPerSample == 16) {
+              sample = bd.getInt16(sampleOff, Endian.little) / 32768.0;
+            } else if (audioFormat == 1 && bitsPerSample == 24) {
+              final raw = bytes[sampleOff] |
+                  (bytes[sampleOff + 1] << 8) |
+                  (bytes[sampleOff + 2] << 16);
+              final signed = (raw & 0x800000) != 0 ? (raw | ~0xFFFFFF) : raw;
+              sample = signed / 8388608.0;
+            } else if (audioFormat == 3 && bitsPerSample == 32) {
+              sample = bd.getFloat32(sampleOff, Endian.little);
+            } else {
+              return null;
+            }
+            mono += sample;
+          }
+          mono /= channels;
+          final absV = mono.abs();
+          if (absV > maxAbs) maxAbs = absV;
+        }
+        peaks[b] = maxAbs.clamp(0.0, 1.0);
+      }
+
+      return peaks;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> _previewSample(BuildContext context) async {
+    if (_previewBusy) return;
+    setState(() => _previewBusy = true);
+    try {
+      final err = await state.togglePreviewCurrentSampler();
+      if (!mounted || err == null) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('Preview failed: $err'),
+        duration: const Duration(seconds: 2),
+      ));
+    } finally {
+      if (mounted) setState(() => _previewBusy = false);
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     final p = state.currentInstrument.sampler;
-    return Padding(
+    if (_wavePath != p.samplePath && !_waveLoading) {
+      _syncWaveformForCurrent();
+    }
+    return SingleChildScrollView(
       padding: const EdgeInsets.all(12),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           _Section(
             title: 'SAMPLE',
+            child: ElevatedButton.icon(
+              onPressed: _busy ? null : () => _showSampleBrowser(context),
+              icon: const Icon(Icons.folder_open),
+              label: const Text('LOAD SAMPLE'),
+            ),
+          ),
+          _Section(
+            title: 'PREVIEW',
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Text(
-                  p.sampleName ?? '— no sample loaded —',
-                  style: kStyleBase.copyWith(
-                    color: p.sampleName == null
-                        ? kColInactive : kColHeader,
-                    fontSize: 13,
-                  ),
-                ),
-                if (p.samplePath != null) ...[
-                  const SizedBox(height: 4),
-                  Text(
-                    p.samplePath!,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: kStyleBase.copyWith(
-                      color: kColInactive,
-                      fontSize: 10,
-                    ),
-                  ),
-                ],
-                const SizedBox(height: 8),
-                Row(
-                  children: [
-                    Expanded(
-                      child: ElevatedButton.icon(
-                        onPressed: _busy ? null : () => _importFromPhone(context),
-                        icon: const Icon(Icons.folder_open),
-                        label: const Text('IMPORT FROM PHONE'),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    IconButton(
-                      tooltip: 'Refresh sample library',
-                      onPressed: _busy ? null : _reloadLibrary,
-                      icon: const Icon(Icons.refresh),
-                    ),
-                  ],
-                ),
-                if (_libraryPath != null) ...[
-                  const SizedBox(height: 6),
-                  Text(
-                    'Library: $_libraryPath',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: kStyleBase.copyWith(
-                      color: kColInactive,
-                      fontSize: 10,
-                    ),
-                  ),
-                ],
-                const SizedBox(height: 8),
                 Container(
-                  constraints: const BoxConstraints(maxHeight: 170),
+                  height: 92,
                   decoration: BoxDecoration(
-                    color: kBgColor.withAlpha(60),
+                    color: kBgColor.withAlpha(70),
                     border: Border.all(color: kColInactive.withAlpha(90)),
                     borderRadius: BorderRadius.circular(4),
                   ),
-                  child: _librarySamples.isEmpty
+                  child: _waveLoading
                       ? Center(
-                          child: Padding(
-                            padding: const EdgeInsets.all(10),
-                            child: Text(
-                              'No samples in library yet.\nImport from phone to add one.',
-                              textAlign: TextAlign.center,
-                              style: kStyleBase.copyWith(
-                                color: kColInactive,
-                                fontSize: 11,
-                              ),
+                          child: Text(
+                            'Loading waveform...',
+                            style: kStyleBase.copyWith(
+                              color: kColInactive,
+                              fontSize: 12,
                             ),
                           ),
                         )
-                      : ListView.builder(
-                          itemCount: _librarySamples.length,
-                          itemBuilder: (_, i) {
-                            final name = _librarySamples[i];
-                            final active = p.sampleName == name;
-                            return ListTile(
-                              dense: true,
-                              visualDensity: VisualDensity.compact,
-                              leading: Icon(
-                                Icons.audio_file,
-                                size: 16,
-                                color: active ? kColAccent : kColInactive,
-                              ),
-                              title: Text(
-                                name,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
+                      : (_wavePeaks == null || _wavePeaks!.isEmpty)
+                          ? Center(
+                              child: Text(
+                                'Empty',
                                 style: kStyleBase.copyWith(
-                                  color: active ? kColAccent : kColHeader,
+                                  color: kColInactive,
                                   fontSize: 12,
-                                  fontWeight:
-                                      active ? FontWeight.w700 : FontWeight.normal,
                                 ),
                               ),
-                              trailing: active
-                                  ? const Icon(Icons.check, size: 16)
-                                  : null,
-                              onTap: () => _loadSample(context, name),
-                            );
-                          },
-                        ),
+                            )
+                          : CustomPaint(
+                              painter: _SampleWaveformPainter(
+                                peaks: _wavePeaks!,
+                                waveColor: kColAccent,
+                                axisColor: kColInactive,
+                                startNorm: p.start,
+                                endNorm: p.end,
+                              ),
+                              child: const SizedBox.expand(),
+                            ),
                 ),
-                if (p.sampleName != null) ...[
-                  const SizedBox(height: 8),
-                  TextButton.icon(
-                    onPressed: () => state.clearCurrentSamplerSample(),
-                    icon: const Icon(Icons.clear),
-                    label: const Text('CLEAR CURRENT SAMPLE'),
+                const SizedBox(height: 8),
+                ElevatedButton.icon(
+                  onPressed: (_previewBusy || p.samplePath == null)
+                      ? null
+                      : () => _previewSample(context),
+                  icon: Icon(
+                    state.isPreviewingCurrentSampler
+                        ? Icons.stop
+                        : Icons.play_arrow,
                   ),
-                ],
-                if (Platform.isAndroid) ...[
-                  const SizedBox(height: 4),
-                  Text(
-                    'Tip: You can also copy files directly into the Library folder using a file manager.',
-                    style: kStyleBase.copyWith(
-                      color: kColInactive,
-                      fontSize: 10,
-                    ),
+                  label: Text(
+                    state.isPreviewingCurrentSampler ? 'STOP' : 'PREVIEW',
                   ),
-                ],
+                ),
               ],
             ),
           ),
           _Section(
             title: 'PARAMS',
-            child: Row(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Expanded(child: _Knob(
-                  label: 'PITCH',
-                  value: (p.pitch + 1) / 2,
-                  display: '${(p.pitch * 12).toStringAsFixed(1)} st',
+                Row(
+                  children: [
+                    Expanded(child: _Knob(
+                      label: 'PITCH',
+                      value: (p.pitch + 1) / 2,
+                      display: '${(p.pitch * 12).toStringAsFixed(1)} st',
+                      onChanged: (v) {
+                        p.pitch = (v * 2) - 1;
+                        state.instrumentParamsChanged();
+                      },
+                    )),
+                    Expanded(child: _Knob(
+                      label: 'VOLUME',
+                      value: p.volume,
+                      display: '${(p.volume * 100).round()}%',
+                      onChanged: (v) {
+                        p.volume = v;
+                        state.instrumentParamsChanged();
+                      },
+                    )),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  'START ${(p.start * 100).round()}%',
+                  style: kStyleHeader.copyWith(fontSize: 11, color: kColHeader),
+                ),
+                Slider(
+                  value: p.start,
                   onChanged: (v) {
-                    p.pitch = (v * 2) - 1;
+                    final next = v.clamp(0.0, 1.0);
+                    p.start = next;
+                    if (p.end < p.start + 0.01) {
+                      p.end = (p.start + 0.01).clamp(0.0, 1.0);
+                    }
                     state.instrumentParamsChanged();
                   },
-                )),
-                Expanded(child: _Knob(
-                  label: 'VOLUME',
-                  value: p.volume,
-                  display: '${(p.volume * 100).round()}%',
+                ),
+                Text(
+                  'END ${(p.end * 100).round()}%',
+                  style: kStyleHeader.copyWith(fontSize: 11, color: kColHeader),
+                ),
+                Slider(
+                  value: p.end,
                   onChanged: (v) {
-                    p.volume = v;
+                    final next = v.clamp(0.0, 1.0);
+                    p.end = next;
+                    if (p.end < p.start + 0.01) {
+                      p.start = (p.end - 0.01).clamp(0.0, 1.0);
+                    }
                     state.instrumentParamsChanged();
                   },
-                )),
+                ),
+                Row(
+                  children: [
+                    Text(
+                      'LOOP',
+                      style: kStyleHeader.copyWith(fontSize: 11, color: kColHeader),
+                    ),
+                    const Spacer(),
+                    Switch(
+                      value: p.loop,
+                      onChanged: (v) {
+                        p.loop = v;
+                        state.instrumentParamsChanged();
+                      },
+                    ),
+                  ],
+                ),
               ],
             ),
           ),
         ],
       ),
     );
+  }
+}
+
+class _SampleWaveformPainter extends CustomPainter {
+  final List<double> peaks;
+  final Color waveColor;
+  final Color axisColor;
+  final double startNorm;
+  final double endNorm;
+
+  const _SampleWaveformPainter({
+    required this.peaks,
+    required this.waveColor,
+    required this.axisColor,
+    required this.startNorm,
+    required this.endNorm,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final s = startNorm.clamp(0.0, 1.0);
+    final e = endNorm.clamp(0.0, 1.0);
+    final leftX = size.width * math.min(s, e);
+    final rightX = size.width * math.max(s, e);
+
+    // Dim non-selected regions so sample start/end is obvious.
+    final dim = Paint()..color = axisColor.withAlpha(42);
+    if (leftX > 0) {
+      canvas.drawRect(Rect.fromLTWH(0, 0, leftX, size.height), dim);
+    }
+    if (rightX < size.width) {
+      canvas.drawRect(
+        Rect.fromLTWH(rightX, 0, size.width - rightX, size.height),
+        dim,
+      );
+    }
+
+    final centerY = size.height / 2;
+    final axis = Paint()
+      ..color = axisColor.withAlpha(120)
+      ..strokeWidth = 1;
+    canvas.drawLine(Offset(0, centerY), Offset(size.width, centerY), axis);
+
+    final marker = Paint()
+      ..color = waveColor.withAlpha(180)
+      ..strokeWidth = 1.5;
+    canvas.drawLine(Offset(leftX, 0), Offset(leftX, size.height), marker);
+    canvas.drawLine(Offset(rightX, 0), Offset(rightX, size.height), marker);
+
+    if (peaks.isEmpty) return;
+    final wave = Paint()
+      ..color = waveColor
+      ..strokeWidth = math.max(1.0, size.width / peaks.length * 0.8)
+      ..strokeCap = StrokeCap.round;
+
+    final step = size.width / peaks.length;
+    for (int i = 0; i < peaks.length; i++) {
+      final x = (i + 0.5) * step;
+      final amp = (peaks[i].clamp(0.0, 1.0)) * (size.height * 0.45);
+      canvas.drawLine(Offset(x, centerY - amp), Offset(x, centerY + amp), wave);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _SampleWaveformPainter oldDelegate) {
+    return oldDelegate.peaks != peaks ||
+        oldDelegate.waveColor != waveColor ||
+        oldDelegate.axisColor != axisColor ||
+        oldDelegate.startNorm != startNorm ||
+        oldDelegate.endNorm != endNorm;
   }
 }
 
