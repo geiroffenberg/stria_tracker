@@ -49,6 +49,16 @@ class _PatternScreenState extends State<PatternScreen> {
   Widget build(BuildContext context) {
     final state = AppStateScope.of(context);
 
+    // Keep the visible page aligned when pattern/track is selected externally
+    // (for example from Song timeline lane taps).
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || state.collapsedView || !_pageCtrl.hasClients) return;
+      final currentPage = (_pageCtrl.page ?? _pageCtrl.initialPage.toDouble()).round();
+      if (currentPage != state.currentTrackIndex) {
+        _pageCtrl.jumpToPage(state.currentTrackIndex);
+      }
+    });
+
     return Column(
       children: [
         _buildTrackHeader(context, state),
@@ -66,6 +76,7 @@ class _PatternScreenState extends State<PatternScreen> {
                   },
                 )
               : PageView.builder(
+                  key: ValueKey<int>(state.currentPatternIndex),
                   controller: _pageCtrl,
                   itemCount: state.trackCount,
                   physics: const PageScrollPhysics(),

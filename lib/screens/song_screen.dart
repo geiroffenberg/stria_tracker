@@ -1,9 +1,14 @@
 import 'package:flutter/material.dart';
 import '../models/note_value.dart';
 import '../models/pattern_model.dart';
+import '../models/song_model.dart';
 import '../models/track_model.dart';
 import '../state/app_state.dart';
 import '../theme/app_theme.dart';
+
+class OpenPatternTrackNotification extends Notification {
+  OpenPatternTrackNotification();
+}
 
 /// Song arrangement screen.
 ///
@@ -32,6 +37,8 @@ class _SongScreenState extends State<SongScreen> {
   bool _editingName = false;
   bool _showLoadMenu = false;
   bool _loadingSongNames = false;
+  bool _showTrashCan = false;
+  bool _trashHovered = false;
   List<String> _savedSongNames = const [];
 
   static const double kSlotSize   = 64.0;
@@ -71,69 +78,182 @@ class _SongScreenState extends State<SongScreen> {
 
     return Container(
       color: kBgColor,
-      child: Column(
+      child: Stack(
         children: [
-          _buildSaveLoadPanel(context, state),
-          Container(height: 1, color: kColInactive.withAlpha(60)),
-          Expanded(
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                // ── Left column: pattern slots ────────────────────────────────
-                SizedBox(
-                  width: kSlotSize + 16,
-                  child: Column(
-                    children: [
-                      _buildLeftHeader(),
-                      Expanded(
-                        child: ListView.builder(
-                          controller: _slotsCtrl,
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 8, vertical: 4,
+          Column(
+            children: [
+              _buildSaveLoadPanel(context, state),
+              Container(height: 1, color: kColInactive.withAlpha(60)),
+              Expanded(
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    // ── Left column: pattern slots ────────────────────────────────
+                    SizedBox(
+                      width: kSlotSize + 16,
+                      child: Column(
+                        children: [
+                          _buildLeftHeader(),
+                          Expanded(
+                            child: ListView.builder(
+                              controller: _slotsCtrl,
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8, vertical: 4,
+                              ),
+                              itemExtent: slotPitch,
+                              itemCount: kMaxSongPatterns,
+                              itemBuilder: (_, i) {
+                                final isReal = i < state.song.patterns.length;
+                                final isFirstVirtual =
+                                    i == state.song.patterns.length;
+                                if (!isReal) {
+                                  // Show the first empty slot after the list as
+                                  // a tappable '+'. The rest are visual placeholders.
+                                  return _EmptySlot(
+                                    slotNumber: i + 1,
+                                    active: isFirstVirtual &&
+                                        state.song.patterns.length < kMaxSongPatterns,
+                                    gap: kSlotGap,
+                                    onTap: isFirstVirtual
+                                        ? state.appendNewPattern
+                                        : null,
+                                    onAcceptDrop: (srcIdx) {
+                                      // Drag onto empty virtual slot = copy to end.
+                                      state.copyPatternInsertAt(srcIdx, i);
+                                    },
+                                  );
+                                }
+                                return _PatternSlot(
+                                  patternIndex: i,
+                                  isCurrent: i == state.currentArrangementSlotIndex,
+                                  size: kSlotSize,
+                                  gap: kSlotGap,
+                                  onDragStarted: _handlePatternDragStarted,
+                                  onDragFinished: _handlePatternDragFinished,
+                                );
+                              },
+                            ),
                           ),
-                          itemExtent: slotPitch,
-                          itemCount: state.song.arrangement.length + 1,
-                          itemBuilder: (_, i) {
-                            if (i == state.song.arrangement.length) {
-                              return _AddSlotButton(state: state);
-                            }
-                            return _PatternSlot(
-                              slotIndex: i,
-                              patternIndex: state.song.arrangement[i],
-                              muted: state.song.arrangementMutes[i],
-                              isCurrent: i == state.currentArrangementSlotIndex,
-                              size: kSlotSize,
-                              gap:  kSlotGap,
-                            );
-                          },
-                        ),
+                        ],
                       ),
-                    ],
+                    ),
+
+                    Container(width: 1, color: kColInactive.withAlpha(80)),
+
+                    // ── Right column: timeline overview ────────────────────────────
+                    Expanded(
+                      child: Column(
+                        children: [
+                          _buildRightHeader(state),
+                          Expanded(
+                            child: SingleChildScrollView(
+                              controller: _timelineCtrl,
+                              child: _buildTimeline(state, slotPitch),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 10,
+            child: SafeArea(
+              minimum: const EdgeInsets.symmetric(horizontal: 14),
+              child: IgnorePointer(
+                ignoring: !_showTrashCan,
+                child: AnimatedOpacity(
+                  opacity: _showTrashCan ? 1.0 : 0.0,
+                  duration: const Duration(milliseconds: 140),
+                  child: Center(
+                    child: DragTarget<int>(
+                      onWillAcceptWithDetails: (_) {
+                        if (!_trashHovered) setState(() => _trashHovered = true);
+                        return true;
+                      },
+                      onLeave: (_) {
+                        if (_trashHovered) setState(() => _trashHovered = false);
+                      },
+                      onAcceptWithDetails: (details) {
+                        state.removePattern(details.data);
+                        if (mounted) {
+                          setState(() {
+                            _trashHovered = false;
+                            _showTrashCan = false;
+                          });
+                        }
+                      },
+                      builder: (_, __, ___) {
+                        return AnimatedContainer(
+                          duration: const Duration(milliseconds: 120),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 16, vertical: 10),
+                          decoration: BoxDecoration(
+                            color: _trashHovered
+                                ? const Color(0x55FF4444)
+                                : const Color(0xCC1A1A1A),
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(
+                              color: _trashHovered
+                                  ? const Color(0xFFFF6666)
+                                  : kColInactive,
+                              width: 1.2,
+                            ),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                Icons.delete_outline,
+                                size: 20,
+                                color: _trashHovered
+                                    ? const Color(0xFFFF6666)
+                                    : kColInactive,
+                              ),
+                              const SizedBox(width: 8),
+                              Text(
+                                'DROP TO DELETE',
+                                style: kStyleHeader.copyWith(
+                                  color: _trashHovered
+                                      ? const Color(0xFFFF6666)
+                                      : kColInactive,
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ],
+                          ),
+                        );
+                      },
+                    ),
                   ),
                 ),
-
-                Container(width: 1, color: kColInactive.withAlpha(80)),
-
-                // ── Right column: timeline overview ────────────────────────────
-                Expanded(
-                  child: Column(
-                    children: [
-                      _buildRightHeader(state),
-                      Expanded(
-                        child: SingleChildScrollView(
-                          controller: _timelineCtrl,
-                          child: _buildTimeline(state, slotPitch),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
+              ),
             ),
           ),
         ],
       ),
     );
+  }
+
+  void _handlePatternDragStarted() {
+    if (!mounted) return;
+    setState(() {
+      _showTrashCan = true;
+      _trashHovered = false;
+    });
+  }
+
+  void _handlePatternDragFinished() {
+    if (!mounted) return;
+    setState(() {
+      _showTrashCan = false;
+      _trashHovered = false;
+    });
   }
 
   Widget _buildLeftHeader() {
@@ -377,208 +497,243 @@ class _SongScreenState extends State<SongScreen> {
   }
 
   Widget _buildTimeline(AppState state, double slotPitch) {
-    // Total drawing area must align each slot to slotPitch so it lines up
-    // with the slot squares on the left (centred vertically inside slot).
-    final totalH = state.song.arrangement.length * slotPitch;
+    // Draw all slots including virtual empty ones, up to kMaxSongPatterns.
+    final totalH = kMaxSongPatterns * slotPitch;
 
-    return CustomPaint(
-      size: Size.fromHeight(totalH),
-      painter: _SongTimelinePainter(
-        arrangement: state.song.arrangement,
-        mutes:       state.song.arrangementMutes,
-        patterns:    state.song.patterns,
-        slotPitch:   slotPitch,
-        playheadSlot: state.isPlaying ? state.playheadArrangementSlot : null,
-        playheadRow:  state.isPlaying ? state.playheadRow : null,
-      ),
-      child: SizedBox(
-        width: double.infinity,
-        height: totalH,
-      ),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final width = constraints.maxWidth;
+        return GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTapUp: (details) {
+            _openPatternTrackFromTimelineTap(
+              context,
+              state,
+              details.localPosition,
+              width,
+              slotPitch,
+            );
+          },
+          child: CustomPaint(
+            size: Size(width, totalH),
+            painter: _SongTimelinePainter(
+              patterns:    state.song.patterns,
+              slotPitch:   slotPitch,
+              playheadSlot: state.isPlaying ? state.playheadArrangementSlot : null,
+              playheadRow:  state.isPlaying ? state.playheadRow : null,
+            ),
+            child: SizedBox(
+              width: width,
+              height: totalH,
+            ),
+          ),
+        );
+      },
     );
+  }
+
+  void _openPatternTrackFromTimelineTap(
+    BuildContext context,
+    AppState state,
+    Offset localPos,
+    double width,
+    double slotPitch,
+  ) {
+    if (state.song.patterns.isEmpty) return;
+
+    final patternIndex = (localPos.dy / slotPitch).floor();
+    if (patternIndex < 0 || patternIndex >= state.song.patterns.length) return;
+
+    const laneGap = 1.0;
+    const originX = 4.0;
+    const laneCount = kMaxTracks;
+    final laneAreaW = width - 8;
+    if (laneAreaW <= 0) return;
+
+    final x = localPos.dx - originX;
+    if (x < 0 || x > laneAreaW) return;
+
+    final laneW = (laneAreaW - (laneCount - 1) * laneGap) / laneCount;
+    if (laneW <= 0) return;
+
+    final lanePitch = laneW + laneGap;
+    final rawTrack = (x / lanePitch).floor();
+    if (rawTrack < 0 || rawTrack >= laneCount) return;
+
+    // Ignore taps in the 1px gap between lanes.
+    final laneStart = rawTrack * lanePitch;
+    if (x - laneStart > laneW) return;
+
+    state.selectSongPattern(patternIndex);
+    final trackCount = state.song.patterns[patternIndex].tracks.length;
+    final trackIndex = rawTrack.clamp(0, trackCount - 1);
+    state.selectTrack(trackIndex);
+
+    OpenPatternTrackNotification().dispatch(context);
   }
 }
 
 // ─── Left column widgets ─────────────────────────────────────────────────────
 
+/// A slot that holds a real pattern. Long-press draggable; also a drop target.
 class _PatternSlot extends StatelessWidget {
-  final int  slotIndex;
-  final int  patternIndex;
-  final bool muted;
-  final bool isCurrent;
+  final int    patternIndex; // index in song.patterns
+  final bool   isCurrent;
   final double size;
   final double gap;
+  final VoidCallback onDragStarted;
+  final VoidCallback onDragFinished;
 
   const _PatternSlot({
-    required this.slotIndex,
     required this.patternIndex,
-    required this.muted,
     required this.isCurrent,
     required this.size,
     required this.gap,
+    required this.onDragStarted,
+    required this.onDragFinished,
   });
 
   @override
   Widget build(BuildContext context) {
     final state = AppStateScope.of(context);
+    final pat = state.song.patterns[patternIndex];
+    final numberMatch = RegExp(r'(\d+)$').firstMatch(pat.name.trim());
+    final displayLabel = numberMatch != null
+        ? numberMatch.group(1)!.padLeft(2, '0')
+        : (patternIndex + 1).toString().padLeft(2, '0');
+
+    final square = Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        color: kBgTrackHeader,
+        border: Border.all(
+          color: kColInactive,
+          width: 1,
+        ),
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Center(
+        child: Text(
+          displayLabel,
+          style: kStyleBase.copyWith(
+            fontSize: 26,
+            fontWeight: FontWeight.w800,
+            color: kColHeader,
+            letterSpacing: 1,
+          ),
+        ),
+      ),
+    );
+
     return Padding(
       padding: EdgeInsets.only(bottom: gap),
-      child: GestureDetector(
-        onTap:       () => state.selectArrangementSlot(slotIndex),
-        onLongPress: () => _showSlotMenu(context, state),
-        child: Container(
-          width: size, height: size,
-          decoration: BoxDecoration(
-            color: muted
-                ? const Color(0xFF110000)
-                : isCurrent
-                    ? kColAccent.withAlpha(30)
-                    : kBgTrackHeader,
-            border: Border.all(
-              color: muted
-                  ? kColRecBtn
-                  : isCurrent ? kColAccent : kColInactive,
-              width: isCurrent ? 2 : 1,
-            ),
-            borderRadius: BorderRadius.circular(6),
-          ),
-          child: Stack(
-            children: [
-              Center(
-                child: Text(
-                  (patternIndex + 1).toString().padLeft(2, '0'),
-                  style: kStyleBase.copyWith(
-                    fontSize: 26,
-                    fontWeight: FontWeight.w800,
-                    color: muted
-                        ? kColRecBtn
-                        : isCurrent ? kColAccent : kColHeader,
-                    letterSpacing: 1,
+      child: DragTarget<int>(
+        onWillAcceptWithDetails: (details) => details.data != patternIndex,
+        onAcceptWithDetails: (details) {
+          // Drag real → real: move (insert before target).
+          state.movePattern(details.data, patternIndex);
+        },
+        builder: (ctx, candidateData, _) {
+          final isHovered = candidateData.isNotEmpty;
+          return LongPressDraggable<int>(
+            data: patternIndex,
+            delay: const Duration(milliseconds: 300),
+            onDragStarted: onDragStarted,
+            onDragEnd: (_) => onDragFinished(),
+            feedback: Material(
+              color: Colors.transparent,
+              child: Opacity(
+                opacity: 0.85,
+                child: Container(
+                  width: size,
+                  height: size,
+                  decoration: BoxDecoration(
+                    color: kColAccent.withAlpha(40),
+                    border: Border.all(color: kColAccent, width: 1.5),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Center(
+                    child: Text(
+                      displayLabel,
+                      style: kStyleBase.copyWith(
+                        fontSize: 26,
+                        fontWeight: FontWeight.w800,
+                        color: kColAccent,
+                      ),
+                    ),
                   ),
                 ),
               ),
-              if (muted)
-                Positioned(
-                  bottom: 2, right: 4,
-                  child: Text('M',
-                      style: kStyleBase.copyWith(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w700,
-                        color: kColRecBtn,
-                      )),
+            ),
+            childWhenDragging: Opacity(opacity: 0.3, child: square),
+            child: GestureDetector(
+              onTap: () => state.selectSongPattern(patternIndex),
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 120),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(6),
+                  color: isHovered ? kColAccent.withAlpha(25) : Colors.transparent,
                 ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  void _showSlotMenu(BuildContext context, AppState state) {
-    showModalBottomSheet<void>(
-      context: context,
-      backgroundColor: kBgTrackHeader,
-      builder: (ctx) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Padding(
-              padding: const EdgeInsets.all(12),
-              child: Text(
-                'SLOT #${(slotIndex + 1).toString().padLeft(2, '0')}  '
-                '— PATTERN ${(patternIndex + 1).toString().padLeft(2, '0')}',
-                style: kStyleHeader.copyWith(color: kColAccent),
+                child: square,
               ),
             ),
-            const Divider(height: 1, color: Color(0xFF1A1A1A)),
-            _menuRow(ctx, muted ? 'UNMUTE' : 'MUTE', Icons.volume_off, () {
-              state.toggleArrangementMute(slotIndex);
-              Navigator.pop(ctx);
-            }),
-            _menuRow(
-              ctx,
-              'DUPLICATE',
-              Icons.content_copy,
-              () {
-                state.duplicatePatternToEnd(patternIndex);
-                Navigator.pop(ctx);
-              },
-              subtitle: 'New pattern (next number) at end of list',
-            ),
-            _menuRow(
-              ctx,
-              'REPEAT',
-              Icons.repeat,
-              () {
-                state.repeatPatternAtEnd(patternIndex);
-                Navigator.pop(ctx);
-              },
-              subtitle: 'Same pattern at end of list (edits affect all)',
-            ),
-            _menuRow(ctx, 'MOVE UP', Icons.arrow_upward, () {
-              state.moveArrangementSlot(slotIndex, slotIndex - 1);
-              Navigator.pop(ctx);
-            }),
-            _menuRow(ctx, 'MOVE DOWN', Icons.arrow_downward, () {
-              state.moveArrangementSlot(slotIndex, slotIndex + 1);
-              Navigator.pop(ctx);
-            }),
-            const Divider(height: 1, color: Color(0xFF1A1A1A)),
-            _menuRow(ctx, 'DELETE SLOT', Icons.delete_outline, () {
-              state.removeArrangementSlot(slotIndex);
-              Navigator.pop(ctx);
-            }, color: kColRecBtn),
-            const SizedBox(height: 8),
-          ],
-        ),
+          );
+        },
       ),
-    );
-  }
-
-  Widget _menuRow(BuildContext ctx, String label, IconData icon,
-      VoidCallback onTap,
-      {Color? color, String? subtitle}) {
-    final c = color ?? kColHeader;
-    return ListTile(
-      dense: true,
-      leading: Icon(icon, color: c, size: 20),
-      title: Text(label,
-          style: kStyleBase.copyWith(fontSize: 14, color: c)),
-      subtitle: subtitle == null
-          ? null
-          : Text(subtitle,
-              style: kStyleBase.copyWith(
-                  fontSize: 11, color: kColInactive)),
-      onTap: onTap,
     );
   }
 }
 
-class _AddSlotButton extends StatelessWidget {
-  final AppState state;
-  const _AddSlotButton({required this.state});
+/// An empty virtual slot — shows '+' and accepts drag-copy.
+class _EmptySlot extends StatelessWidget {
+  final int    slotNumber;  // 1-based display number
+  final bool   active;      // true = shows '+' and is tappable
+  final double gap;
+  final VoidCallback? onTap;
+  final void Function(int srcPatternIndex) onAcceptDrop;
+
+  const _EmptySlot({
+    required this.slotNumber,
+    required this.active,
+    required this.gap,
+    required this.onAcceptDrop,
+    this.onTap,
+  });
 
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: _SongScreenState.kSlotGap),
-      child: GestureDetector(
-        onTap: () => state.appendNewPattern(),
-        child: Container(
-          width:  _SongScreenState.kSlotSize,
-          height: _SongScreenState.kSlotSize,
-          decoration: BoxDecoration(
-            border: Border.all(
-              color: kColInactive,
-              style: BorderStyle.solid,
+      padding: EdgeInsets.only(bottom: gap),
+      child: DragTarget<int>(
+        onWillAcceptWithDetails: (_) => true,
+        onAcceptWithDetails: (details) => onAcceptDrop(details.data),
+        builder: (ctx, candidateData, _) {
+          final isHovered = candidateData.isNotEmpty;
+          return GestureDetector(
+            onTap: onTap,
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 120),
+              decoration: BoxDecoration(
+                border: Border.all(
+                  color: isHovered ? kColAccent : kColInactive,
+                  style: BorderStyle.solid,
+                ),
+                borderRadius: BorderRadius.circular(6),
+                color: isHovered ? kColAccent.withAlpha(20) : Colors.transparent,
+              ),
+              child: active
+                  ? Center(
+                      child: Icon(
+                        Icons.add,
+                        color: isHovered ? kColAccent : kColInactive,
+                        size: 28,
+                      ),
+                    )
+                  : const SizedBox.shrink(),
             ),
-            borderRadius: BorderRadius.circular(6),
-          ),
-          child: Center(
-            child: Icon(Icons.add, color: kColInactive, size: 28),
-          ),
-        ),
+          );
+        },
       ),
     );
   }
@@ -587,16 +742,12 @@ class _AddSlotButton extends StatelessWidget {
 // ─── Right column timeline ───────────────────────────────────────────────────
 
 class _SongTimelinePainter extends CustomPainter {
-  final List<int>          arrangement;
-  final List<bool>         mutes;
   final List<PatternModel> patterns;
   final double             slotPitch;
   final int?               playheadSlot;
   final int?               playheadRow;
 
   _SongTimelinePainter({
-    required this.arrangement,
-    required this.mutes,
     required this.patterns,
     required this.slotPitch,
     required this.playheadSlot,
@@ -609,121 +760,106 @@ class _SongTimelinePainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    final laneCount  = kMaxTracks;
-    final laneAreaW  = size.width - 8;
-    final laneW      = (laneAreaW - (laneCount - 1) * _laneGap) / laneCount;
-    final originX    = 4.0;
+    final laneCount = kMaxTracks;
+    final laneAreaW = size.width - 8;
+    final laneW     = (laneAreaW - (laneCount - 1) * _laneGap) / laneCount;
+    const originX   = 4.0;
 
     final dividerPaint = Paint()
       ..color = kColInactive.withAlpha(60)
       ..strokeWidth = 0.5;
-    final patternBgEven = Paint()..color = const Color(0xFF0A0A0A);
-    final patternBgOdd  = Paint()..color = const Color(0xFF050505);
-    final mutedOverlay  = Paint()..color = const Color(0x66220000);
+    final bgEven = Paint()..color = const Color(0xFF0A0A0A);
+    final bgOdd  = Paint()..color = const Color(0xFF050505);
 
-    for (int s = 0; s < arrangement.length; s++) {
-      final patIdx = arrangement[s];
-      if (patIdx < 0 || patIdx >= patterns.length) continue;
-      final pat = patterns[patIdx];
-      final rowCount = pat.rowCount;
+    // Index of the first empty pattern — the "stop marker".
+    final firstEmpty = patterns.indexWhere((p) => p.isEmpty);
 
-      final yTop = s * slotPitch + _padTop;
+    for (int s = 0; s < patterns.length; s++) {
+      final pat    = patterns[s];
+      final yTop   = s * slotPitch + _padTop;
       final blockH = slotPitch - _padTop - _padBottom;
+      final isAfterStop = firstEmpty >= 0 && s > firstEmpty;
 
-      // Pattern background
       canvas.drawRect(
         Rect.fromLTWH(originX, yTop, laneAreaW, blockH),
-        s.isEven ? patternBgEven : patternBgOdd,
+        s.isEven ? bgEven : bgOdd,
       );
 
-      // Per-track lanes
-      final tracks = pat.tracks;
       for (int t = 0; t < laneCount; t++) {
         final lx = originX + t * (laneW + _laneGap);
-        // lane background
         canvas.drawRect(
           Rect.fromLTWH(lx, yTop, laneW, blockH),
           Paint()..color = const Color(0xFF111111),
         );
-
-        if (t < tracks.length) {
-          _drawLaneNotes(canvas, tracks[t], lx, yTop, laneW, blockH, rowCount);
+        if (t < pat.tracks.length) {
+          _drawLaneNotes(canvas, pat.tracks[t], lx, yTop, laneW, blockH,
+              pat.rowCount, isAfterStop);
         }
       }
 
-      // Mute overlay
-      if (s < mutes.length && mutes[s]) {
+      // Dim patterns after the stop marker.
+      if (isAfterStop) {
         canvas.drawRect(
           Rect.fromLTWH(originX, yTop, laneAreaW, blockH),
-          mutedOverlay,
+          Paint()..color = const Color(0x55000000),
         );
       }
 
-      // Bottom divider between slots
       canvas.drawLine(
-        Offset(0,         yTop + blockH + _padBottom - 0.5),
+        Offset(0,          yTop + blockH + _padBottom - 0.5),
         Offset(size.width, yTop + blockH + _padBottom - 0.5),
         dividerPaint,
       );
     }
 
-    // Playhead
+    // Playhead line.
     if (playheadSlot != null && playheadRow != null) {
-      final s = playheadSlot!.clamp(0, arrangement.length - 1);
-      if (s >= 0 && s < arrangement.length) {
-        final patIdx = arrangement[s];
-        if (patIdx < 0 || patIdx >= patterns.length) return;
-        final pat = patterns[patIdx];
-        final yTop = s * slotPitch + _padTop;
+      final s = playheadSlot!.clamp(0, patterns.length - 1);
+      if (s < patterns.length) {
+        final pat    = patterns[s];
+        final yTop   = s * slotPitch + _padTop;
         final blockH = slotPitch - _padTop - _padBottom;
-        final y = yTop +
-            (playheadRow! / pat.rowCount) * blockH;
-        final p = Paint()
-          ..color = kColPlayBtn
-          ..strokeWidth = 1.5;
+        final y      = yTop + (playheadRow! / pat.rowCount) * blockH;
         canvas.drawLine(
           Offset(0, y),
           Offset(size.width, y),
-          p,
+          Paint()
+            ..color = kColPlayBtn
+            ..strokeWidth = 1.5,
         );
       }
     }
   }
 
   void _drawLaneNotes(Canvas canvas, TrackModel track,
-      double x, double y, double w, double h, int rowCount) {
-    final paint = Paint()..color = kColNote;
+      double x, double y, double w, double h, int rowCount, bool dimmed) {
+    final paint    = Paint();
     final pxPerRow = h / rowCount;
     for (int r = 0; r < track.cells.length && r < rowCount; r++) {
-      final cell = track.cells[r];
-      final n = cell.note;
+      final n = track.cells[r].note;
       if (n.isEmpty) continue;
       final dotY = y + r * pxPerRow;
       final dotH = pxPerRow.clamp(1.0, 3.0);
-      paint.color = n == NoteValue.off
-          ? kColInactive
-          : kColNote;
-      canvas.drawRect(
-        Rect.fromLTWH(x + 1, dotY, w - 2, dotH),
-        paint,
-      );
+      paint.color = dimmed
+          ? kColInactive.withAlpha(50)
+          : n == NoteValue.off
+              ? kColInactive
+              : kColNote;
+      canvas.drawRect(Rect.fromLTWH(x + 1, dotY, w - 2, dotH), paint);
     }
   }
 
   @override
-  bool shouldRepaint(covariant _SongTimelinePainter old) {
-    return old.arrangement != arrangement ||
-           old.mutes != mutes ||
-           old.patterns != patterns ||
-           old.playheadSlot != playheadSlot ||
-           old.playheadRow != playheadRow;
-  }
+  bool shouldRepaint(covariant _SongTimelinePainter old) =>
+      old.patterns != patterns ||
+      old.playheadSlot != playheadSlot ||
+      old.playheadRow != playheadRow;
 }
 
 // ─── Header button ────────────────────────────────────────────────────────────
 
 class _BigBtn extends StatelessWidget {
-  final String label;
+  final String   label;
   final IconData icon;
   final VoidCallback onTap;
 

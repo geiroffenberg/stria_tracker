@@ -26,23 +26,32 @@ class _MainScreenState extends State<MainScreen> {
 
     return Scaffold(
       backgroundColor: kBgColor,
-      body: SafeArea(
-        child: Column(
-          children: [
-            _buildTopNav(),
-            Expanded(
-              child: IndexedStack(
-                index: _tabIndex,
-                children: const [
-                  SongScreen(),
-                  PatternScreen(),
-                  InstrumentScreen(),
-                  MixerScreen(),
-                ],
+      body: NotificationListener<OpenPatternTrackNotification>(
+        onNotification: (notification) {
+          if (_tabIndex != 1) {
+            setState(() => _tabIndex = 1);
+          }
+          AppStateScope.of(context).setPlaybackFollowsSong(false);
+          return true;
+        },
+        child: SafeArea(
+          child: Column(
+            children: [
+              _buildTopNav(),
+              Expanded(
+                child: IndexedStack(
+                  index: _tabIndex,
+                  children: const [
+                    SongScreen(),
+                    PatternScreen(),
+                    InstrumentScreen(),
+                    MixerScreen(),
+                  ],
+                ),
               ),
-            ),
-            const TransportBar(),
-          ],
+              const TransportBar(),
+            ],
+          ),
         ),
       ),
     );

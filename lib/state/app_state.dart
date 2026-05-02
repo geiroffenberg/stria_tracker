@@ -272,8 +272,8 @@ class AppState extends ChangeNotifier {
   void prevTrack() => selectTrack(_currentTrackIndex - 1);
 
   PatternModel _playbackPattern() {
-    if (_playbackFollowsSong && song.arrangement.isNotEmpty) {
-      return song.patterns[song.arrangement[_playheadArrangementSlot]];
+    if (_playbackFollowsSong && song.patterns.isNotEmpty) {
+      return song.patterns[_playheadArrangementSlot.clamp(0, song.patterns.length - 1)];
     }
     return currentPattern;
   }
@@ -484,102 +484,57 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
-  // ── Song arrangement ─────────────────────────────────────────────────────
+  // ── Song pattern management ──────────────────────────────────────────────
 
-  /// Append a new empty pattern to the song and add a slot referencing it.
+  /// Append a new empty pattern to the end of the song.
   void appendNewPattern() {
-    final newIdx = song.addPattern();
-    song.arrangement.add(newIdx);
-    song.arrangementMutes.add(false);
+    if (song.patterns.length >= kMaxSongPatterns) return;
+    song.addPattern();
     notifyListeners();
   }
 
-  /// Append a slot referencing an existing pattern (cheap "copy" / repeat).
-  void appendPatternRef(int patternIndex) {
-    if (patternIndex < 0 || patternIndex >= song.patterns.length) return;
-    song.arrangement.add(patternIndex);
-    song.arrangementMutes.add(false);
+  /// Insert a new empty pattern at [index] (0-based).
+  void insertNewPatternAt(int index) {
+    if (song.patterns.length >= kMaxSongPatterns) return;
+    final clamped = index.clamp(0, song.patterns.length);
+    song.patterns.insert(clamped, song.createEmptyPattern());
     notifyListeners();
   }
 
-  /// Duplicate the slot at [slotIndex] (same pattern reference).
-  void duplicateArrangementSlot(int slotIndex) {
-    if (slotIndex < 0 || slotIndex >= song.arrangement.length) return;
-    song.arrangement.insert(slotIndex + 1, song.arrangement[slotIndex]);
-    song.arrangementMutes.insert(
-      slotIndex + 1,
-      song.arrangementMutes[slotIndex],
-    );
-    notifyListeners();
-  }
-
-  /// Duplicate a pattern: create a brand-new pattern with copied content,
-  /// append a slot at the end of the arrangement referring to it.
-  /// The new pattern has its own number and is independent.
-  void duplicatePatternToEnd(int sourcePatternIndex) {
-    if (sourcePatternIndex < 0 || sourcePatternIndex >= song.patterns.length) {
-      return;
-    }
-    final src = song.patterns[sourcePatternIndex];
-    final newIdx = song.patterns.length + 1;
-    final newName = 'PAT ${newIdx.toString().padLeft(2, '0')}';
-    song.patterns.add(src.copyWithName(newName));
-    song.arrangement.add(song.patterns.length - 1);
-    song.arrangementMutes.add(false);
-    notifyListeners();
-  }
-
-  /// Append another reference to [sourcePatternIndex] at the end of the
-  /// arrangement. Editing it edits every instance — same pattern.
-  void repeatPatternAtEnd(int sourcePatternIndex) {
-    appendPatternRef(sourcePatternIndex);
-  }
-
-  void removeArrangementSlot(int slotIndex) {
-    if (song.arrangement.length <= 1) return;
-    if (slotIndex < 0 || slotIndex >= song.arrangement.length) return;
-    final removedPatIdx = song.arrangement[slotIndex];
-    song.arrangement.removeAt(slotIndex);
-    song.arrangementMutes.removeAt(slotIndex);
-
-    // If no remaining slot references this pattern, remove the pattern
-    // itself and shift all higher pattern indices down by one. Numbers
-    // are renumbered (pattern at index N is "PAT (N+1)") so freed slots
-    // become available for the next new pattern.
-    final stillUsed = song.arrangement.contains(removedPatIdx);
-    if (!stillUsed) {
-      song.patterns.removeAt(removedPatIdx);
-      for (int i = 0; i < song.arrangement.length; i++) {
-        if (song.arrangement[i] > removedPatIdx) {
-          song.arrangement[i] -= 1;
-        }
-      }
-      // Renumber pattern names to stay consecutive.
-      for (int i = 0; i < song.patterns.length; i++) {
-        song.patterns[i].name = 'PAT ${(i + 1).toString().padLeft(2, '0')}';
-      }
-      // Clamp current pattern selection.
-      if (_currentPatternIndex >= song.patterns.length) {
-        _currentPatternIndex = song.patterns.length - 1;
-      }
-    }
-    notifyListeners();
-  }
-
-  void moveArrangementSlot(int from, int to) {
+  /// Move a pattern from [from] to [to] (insert-before semantics).
+  void movePattern(int from, int to) {
     if (from == to) return;
-    if (from < 0 || from >= song.arrangement.length) return;
-    if (to < 0 || to >= song.arrangement.length) return;
-    final p = song.arrangement.removeAt(from);
-    final m = song.arrangementMutes.removeAt(from);
-    song.arrangement.insert(to, p);
-    song.arrangementMutes.insert(to, m);
+    if (from < 0 || from >= song.patterns.length) return;
+    final dest = to.clamp(0, song.patterns.length - 1);
+    final pat = song.patterns.removeAt(from);
+    // After removing [from], indices above it shift down by one.
+    // To keep "insert before drop target" behavior, adjust when moving down.
+    final insertAt = dest > from ? dest - 1 : dest;
+    song.patterns.insert(insertAt, pat);
+    // Keep editor focused on the moved pattern.
+    _currentPatternIndex = insertAt.clamp(0, song.patterns.length - 1);
+    _currentArrangementSlotIndex = _currentPatternIndex;
     notifyListeners();
   }
 
-  void toggleArrangementMute(int slotIndex) {
-    if (slotIndex < 0 || slotIndex >= song.arrangementMutes.length) return;
-    song.arrangementMutes[slotIndex] = !song.arrangementMutes[slotIndex];
+  /// Insert a deep copy of pattern [sourceIndex] at position [destIndex].
+  void copyPatternInsertAt(int sourceIndex, int destIndex) {
+    if (song.patterns.length >= kMaxSongPatterns) return;
+    song.insertCopyAt(sourceIndex, destIndex);
+    _currentPatternIndex = destIndex.clamp(0, song.patterns.length - 1);
+    _currentArrangementSlotIndex = _currentPatternIndex;
+    notifyListeners();
+  }
+
+  void removePattern(int index) {
+    if (song.patterns.length <= 1) return;
+    if (index < 0 || index >= song.patterns.length) return;
+    song.patterns.removeAt(index);
+    if (_currentPatternIndex >= song.patterns.length) {
+      _currentPatternIndex = song.patterns.length - 1;
+    }
+    _currentArrangementSlotIndex =
+        _currentArrangementSlotIndex.clamp(0, song.patterns.length - 1);
     notifyListeners();
   }
 
@@ -603,22 +558,14 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Point an arrangement slot at a different (existing) pattern.
-  void replaceArrangementSlot(int slotIndex, int patternIndex) {
-    if (slotIndex < 0 || slotIndex >= song.arrangement.length) return;
+  /// Set the editor focus to a pattern by its position in the song.
+  void selectSongPattern(int patternIndex) {
     if (patternIndex < 0 || patternIndex >= song.patterns.length) return;
-    song.arrangement[slotIndex] = patternIndex;
-    notifyListeners();
-  }
-
-  /// Set the editor focus to the pattern referenced by this arrangement slot.
-  void selectArrangementSlot(int slotIndex) {
-    if (slotIndex < 0 || slotIndex >= song.arrangement.length) return;
-    _currentArrangementSlotIndex = slotIndex;
+    _currentArrangementSlotIndex = patternIndex;
     if (!isPlaying || _playbackFollowsSong) {
-      _playheadArrangementSlot = slotIndex;
+      _playheadArrangementSlot = patternIndex;
     }
-    selectPattern(song.arrangement[slotIndex]);
+    selectPattern(patternIndex);
   }
 
   void setPlaybackFollowsSong(bool enabled) {
@@ -628,7 +575,7 @@ class AppState extends ChangeNotifier {
       if (_playbackFollowsSong) {
         _playheadArrangementSlot = _currentArrangementSlotIndex.clamp(
           0,
-          song.arrangement.length - 1,
+          song.patterns.length - 1,
         );
         _syncCurrentPatternToSongPlayhead();
         playheadRow = 0;
@@ -730,10 +677,10 @@ class AppState extends ChangeNotifier {
 
   Future<void> play() async {
     if (isPlaying) return;
-    if (_playbackFollowsSong && song.arrangement.isNotEmpty) {
+    if (_playbackFollowsSong && song.patterns.isNotEmpty) {
       _playheadArrangementSlot = _currentArrangementSlotIndex.clamp(
         0,
-        song.arrangement.length - 1,
+        song.patterns.length - 1,
       );
       _syncCurrentPatternToSongPlayhead();
       playheadRow = 0;
@@ -858,14 +805,21 @@ class AppState extends ChangeNotifier {
   void _advanceRow() {
     // Cancel any pending mid-line FX from the previous line.
     _cancelRowFxTimers();
-    if (_playbackFollowsSong && song.arrangement.isNotEmpty) {
-      final slotPatternIdx = song.arrangement[_playheadArrangementSlot];
-      final slotPattern = song.patterns[slotPatternIdx];
+    if (_playbackFollowsSong && song.patterns.isNotEmpty) {
+      final curPat =
+          song.patterns[_playheadArrangementSlot.clamp(0, song.patterns.length - 1)];
       playheadRow += 1;
-      if (playheadRow >= slotPattern.rowCount) {
+      if (playheadRow >= curPat.rowCount) {
         playheadRow = 0;
-        _playheadArrangementSlot =
-            (_playheadArrangementSlot + 1) % song.arrangement.length;
+        final next = _playheadArrangementSlot + 1;
+        // Stop at end of list or first empty pattern ("stop marker").
+        if (next >= song.patterns.length || song.patterns[next].isEmpty) {
+          _triggerCurrentRow();
+          notifyListeners();
+          stop();
+          return;
+        }
+        _playheadArrangementSlot = next;
         _syncCurrentPatternToSongPlayhead();
         // Tempo/LPB may have changed across the pattern boundary.
         _playClockAnchor = DateTime.now();
@@ -885,8 +839,8 @@ class AppState extends ChangeNotifier {
 
     final PatternModel pattern;
     final int patternIdx;
-    if (_playbackFollowsSong && song.arrangement.isNotEmpty) {
-      patternIdx = song.arrangement[_playheadArrangementSlot];
+    if (_playbackFollowsSong && song.patterns.isNotEmpty) {
+      patternIdx = _playheadArrangementSlot.clamp(0, song.patterns.length - 1);
       pattern = song.patterns[patternIdx];
     } else {
       patternIdx = _currentPatternIndex;
@@ -1062,12 +1016,9 @@ class AppState extends ChangeNotifier {
   }
 
   void _syncCurrentPatternToSongPlayhead() {
-    if (song.arrangement.isEmpty) return;
-    final idx = song.arrangement[_playheadArrangementSlot].clamp(
-      0,
-      song.patterns.length - 1,
-    );
-    _currentPatternIndex = idx;
+    if (song.patterns.isEmpty) return;
+    _currentPatternIndex =
+        _playheadArrangementSlot.clamp(0, song.patterns.length - 1);
     _clampSelectionToPattern();
   }
 
