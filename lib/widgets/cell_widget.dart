@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import '../models/cell.dart';
-import '../models/note_value.dart';
 import '../state/app_state.dart';
 import '../theme/app_theme.dart';
 
@@ -78,7 +77,6 @@ class CellWidget extends StatefulWidget {
 class _CellWidgetState extends State<CellWidget> {
   double _dragAccum = 0.0;
   static const double _pixelsPerStep = 11.0;
-  Offset _longPressPos = Offset.zero;
 
   // Manual double-tap detection (avoids GestureDetector's 300ms onTap delay).
   DateTime? _lastTapTime;
@@ -105,51 +103,6 @@ class _CellWidgetState extends State<CellWidget> {
     state.selectCell(widget.row, widget.column);
   }
 
-  Future<void> _handleLongPress(AppState state) async {
-    state.selectCell(widget.row, widget.column);
-
-    final overlay = Overlay.of(context).context.findRenderObject() as RenderBox;
-    final pos = RelativeRect.fromRect(
-      _longPressPos & Size.zero,
-      Offset.zero & overlay.size,
-    );
-
-    final items = <PopupMenuEntry<String>>[
-      if (widget.column == CellColumn.note) ...([
-        const PopupMenuItem(value: 'off', child: Text('Insert OFF')),
-        const PopupMenuDivider(),
-      ]),
-      const PopupMenuItem(value: 'copy', child: Text('Copy row')),
-      PopupMenuItem(
-        value: 'paste',
-        enabled: state.hasRowClipboard,
-        child: const Text('Paste row'),
-      ),
-      const PopupMenuDivider(),
-      const PopupMenuItem(value: 'delete', child: Text('Delete row')),
-    ];
-
-    final choice = await showMenu<String>(
-      context: context,
-      position: pos,
-      items: items,
-      color: const Color(0xFF1E2030),
-    );
-
-    if (!mounted) return;
-    switch (choice) {
-      case 'off':
-        state.setNote(widget.row, NoteValue.off);
-        state.selectCell(widget.row, widget.column);
-      case 'copy':
-        state.copyRow(widget.row);
-      case 'paste':
-        state.pasteRow(widget.row);
-      case 'delete':
-        state.deleteRow(widget.row);
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     final text = cellDisplay(widget.column, widget.cell);
@@ -160,8 +113,6 @@ class _CellWidgetState extends State<CellWidget> {
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: () => _handleTap(state),
-      onLongPressStart: (d) => _longPressPos = d.globalPosition,
-      onLongPress: () => _handleLongPress(state),
       onVerticalDragStart: (_) {
         if (cellIsEmpty(widget.column, widget.cell)) {
           state.insertDefaultValue(widget.row, widget.column);
@@ -180,7 +131,12 @@ class _CellWidgetState extends State<CellWidget> {
         }
       },
       child: Container(
-        color: widget.isSelected ? kBgSelected : Colors.transparent,
+        decoration: widget.isSelected
+            ? BoxDecoration(
+                color: kBgSelected,
+                border: Border.all(color: kColSelection, width: 1.5),
+              )
+            : null,
         alignment: Alignment.centerLeft,
         padding: const EdgeInsets.symmetric(horizontal: 2),
         child: Text(text, style: style, maxLines: 1),

@@ -49,6 +49,11 @@ class _MainScreenState extends State<MainScreen> {
                   ],
                 ),
               ),
+              const Divider(
+                height: 1,
+                thickness: 1,
+                color: Color(0xFF226666),
+              ),
               const TransportBar(),
             ],
           ),
@@ -60,7 +65,7 @@ class _MainScreenState extends State<MainScreen> {
   Widget _buildTopNav() {
     final state = AppStateScope.of(context);
     return Container(
-      height: 38,
+      height: 52,
       decoration: const BoxDecoration(
         color: kBgTopNav,
         border: Border(
@@ -89,10 +94,10 @@ class _MainScreenState extends State<MainScreen> {
                 child: Text(
                   _tabs[i],
                   style: kStyleBase.copyWith(
-                    fontSize: 11,
-                    letterSpacing: 1.5,
+                    fontSize: 18,
+                    letterSpacing: 2,
                     color: active ? kColAccent : kColHeader,
-                    fontWeight: active ? FontWeight.w700 : FontWeight.normal,
+                    fontWeight: active ? FontWeight.w700 : FontWeight.w500,
                   ),
                 ),
               ),

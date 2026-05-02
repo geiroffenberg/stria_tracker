@@ -210,7 +210,7 @@ class _CollapsedTracksWidgetState extends State<CollapsedTracksWidget> {
     final bg = rowBgColor(row, rowSel, isPlayhead, linesPerBeat);
     final isBeatStart = row % linesPerBeat == 0;
     final rowNumStyle = isBeatStart
-        ? kStyleRowNum.copyWith(color: Colors.white)
+        ? kStyleRowNum.copyWith(color: kColAccent)
       : kStyleRowNum.copyWith(color: kColRowNum);
 
     return Container(

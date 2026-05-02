@@ -1,9 +1,8 @@
 import 'package:flutter/material.dart';
-import '../screens/settings_screen.dart';
 import '../state/app_state.dart';
 import '../theme/app_theme.dart';
 
-/// Global bottom bar: Play/Stop toggle | BPM | BEATS | LPB | Settings.
+/// Global bottom bar: Play/Stop toggle | BPM | BEATS | LPB.
 class TransportBar extends StatelessWidget {
   const TransportBar({super.key});
 
@@ -26,7 +25,7 @@ class TransportBar extends StatelessWidget {
           const SizedBox(width: 10),
           Expanded(
             child: Row(
-              mainAxisAlignment: MainAxisAlignment.end,
+              mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 _TransportValueControl(
                   label: 'BPM',
@@ -49,15 +48,6 @@ class TransportBar extends StatelessWidget {
                       state.setLinesPerBeat(state.linesPerBeat + steps),
                 ),
               ],
-            ),
-          ),
-          const SizedBox(width: 10),
-          _TransportButton(
-            icon:  Icons.settings,
-            color: kColAccent,
-            label: 'SETTINGS',
-            onTap: () => Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const SettingsScreen()),
             ),
           ),
         ],
@@ -117,11 +107,11 @@ class _TransportValueControlState extends State<_TransportValueControl> {
           children: [
             Text(
               widget.label,
-              style: kStyleHeader.copyWith(fontSize: 11, color: labelColor),
+              style: kStyleHeader.copyWith(fontSize: 14, color: labelColor),
             ),
             Text(
               widget.value,
-              style: kStyleLabel.copyWith(fontSize: 18, color: valueColor),
+              style: kStyleLabel.copyWith(fontSize: 22, color: valueColor),
             ),
           ],
         ),
@@ -153,10 +143,10 @@ class _TransportButton extends StatelessWidget {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(icon, color: color, size: 34),
+            Icon(icon, color: color, size: 38),
             const SizedBox(height: 2),
             Text(label,
-                style: kStyleHeader.copyWith(color: color, fontSize: 11)),
+                style: kStyleHeader.copyWith(color: color, fontSize: 14)),
           ],
         ),
       ),

@@ -45,6 +45,7 @@ class AppState extends ChangeNotifier {
   bool _playbackFollowsSong = false;
   int _currentArrangementSlotIndex = 0;
   int _playheadArrangementSlot = 0;
+  int? _queuedArrangementSlot;
 
   // Per-track segments from the last row trigger (for DEL replay).
   List<List<int>> _rowSegments = [];
@@ -70,6 +71,8 @@ class AppState extends ChangeNotifier {
   String? _defaultSampleFolder;
 
   CellPosition? selectedCell;
+  int? _selectedRow;
+  int? get selectedRow => _selectedRow;
 
   TrackerCell? _rowClipboard;
   bool get hasRowClipboard => _rowClipboard != null;
@@ -94,6 +97,7 @@ class AppState extends ChangeNotifier {
   int get currentInstrumentIndex => _currentInstrumentIndex;
   int get currentArrangementSlotIndex => _currentArrangementSlotIndex;
   int get playheadArrangementSlot => _playheadArrangementSlot;
+  int? get queuedArrangementSlot => _queuedArrangementSlot;
   bool get playbackFollowsSong => _playbackFollowsSong;
   bool get isPreviewingCurrentSampler => _previewSamplerSlot == _currentInstrumentIndex;
   String? get defaultSampleFolder => _defaultSampleFolder;
@@ -242,6 +246,7 @@ class AppState extends ChangeNotifier {
     _currentPatternIndex = index.clamp(0, song.patterns.length - 1);
     _currentTrackIndex = 0;
     selectedCell = null;
+    _selectedRow = null;
     _clampSelectionToPattern();
     _restartPlayheadTimerIfNeeded();
     notifyListeners();
@@ -265,6 +270,7 @@ class AppState extends ChangeNotifier {
   void selectTrack(int index) {
     _currentTrackIndex = index.clamp(0, currentPattern.tracks.length - 1);
     selectedCell = null;
+    _selectedRow = null;
     notifyListeners();
   }
 
@@ -338,12 +344,50 @@ class AppState extends ChangeNotifier {
   void selectCell(int row, CellColumn column) {
     final pos = CellPosition(row, column);
     selectedCell = (selectedCell == pos) ? null : pos;
+    _selectedRow = null;
     notifyListeners();
   }
 
   void clearSelection() {
     selectedCell = null;
+    _selectedRow = null;
     notifyListeners();
+  }
+
+  // ── Row selection ────────────────────────────────────────────────────────
+
+  void selectRow(int row) {
+    if (row < 0 || row >= rowCount) return;
+    _selectedRow = (_selectedRow == row) ? null : row;
+    selectedCell = null;
+    notifyListeners();
+  }
+
+  void clearRowSelection() {
+    if (_selectedRow == null) return;
+    _selectedRow = null;
+    notifyListeners();
+  }
+
+  /// Move the currently selected row up/down by [delta] in the current track,
+  /// swapping content with the neighbouring row. Selection follows the row.
+  void moveSelectedRowBy(int delta) {
+    final row = _selectedRow;
+    if (row == null) return;
+    final newRow = (row + delta).clamp(0, rowCount - 1);
+    if (newRow == row) return;
+    final cells = currentTrack.cells;
+    final tmp = cells[row];
+    cells[row] = cells[newRow];
+    cells[newRow] = tmp;
+    _selectedRow = newRow;
+    notifyListeners();
+  }
+
+  /// Cut row = copy + clear (current track only).
+  void cutRow(int row) {
+    copyRow(row);
+    deleteRow(row);
   }
 
   // ── Cell editing ─────────────────────────────────────────────────────────
@@ -446,12 +490,16 @@ class AppState extends ChangeNotifier {
         track.cells[row].volume = null;
       case CellColumn.fx0cmd:
         track.cells[row].fxSlots[0].command = null;
+      case CellColumn.fx0val:
+        track.cells[row].fxSlots[0].value = null;
       case CellColumn.fx1cmd:
         track.cells[row].fxSlots[1].command = null;
+      case CellColumn.fx1val:
+        track.cells[row].fxSlots[1].value = null;
       case CellColumn.fx2cmd:
         track.cells[row].fxSlots[2].command = null;
-      default:
-        return; // fx val columns not clearable
+      case CellColumn.fx2val:
+        track.cells[row].fxSlots[2].value = null;
     }
     notifyListeners();
   }
@@ -526,6 +574,47 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  void duplicatePattern(int index) {
+    if (index < 0 || index >= song.patterns.length) return;
+    copyPatternInsertAt(index, index + 1);
+  }
+
+  void movePatternUp(int index) {
+    if (index <= 0 || index >= song.patterns.length) return;
+    final pat = song.patterns.removeAt(index);
+    final newIndex = index - 1;
+    song.patterns.insert(newIndex, pat);
+    _currentPatternIndex = newIndex;
+    _currentArrangementSlotIndex = newIndex;
+    notifyListeners();
+  }
+
+  void movePatternDown(int index) {
+    if (index < 0 || index >= song.patterns.length - 1) return;
+    final pat = song.patterns.removeAt(index);
+    final newIndex = index + 1;
+    song.patterns.insert(newIndex, pat);
+    _currentPatternIndex = newIndex;
+    _currentArrangementSlotIndex = newIndex;
+    notifyListeners();
+  }
+
+  /// Ensure a real pattern exists at [index], filling any gap with empty
+  /// patterns. Used to "park" a new pattern below the song boundary.
+  void createPatternAt(int index) {
+    if (index < 0 || index >= kMaxSongPatterns) return;
+    // Fill gap with empty patterns up to and including [index].
+    while (song.patterns.length <= index) {
+      if (song.patterns.length >= kMaxSongPatterns) return;
+      song.patterns.add(song.createEmptyPattern());
+    }
+    // The slot at [index] is now an existing empty pattern — leave it as the
+    // newly "created" pattern (it's already blank and editable).
+    _currentPatternIndex = index;
+    _currentArrangementSlotIndex = index;
+    notifyListeners();
+  }
+
   void removePattern(int index) {
     if (song.patterns.length <= 1) return;
     if (index < 0 || index >= song.patterns.length) return;
@@ -562,15 +651,39 @@ class AppState extends ChangeNotifier {
   void selectSongPattern(int patternIndex) {
     if (patternIndex < 0 || patternIndex >= song.patterns.length) return;
     _currentArrangementSlotIndex = patternIndex;
+
+    // While song-follow playback is running, tapping a slot queues a jump
+    // to happen on the next pattern boundary instead of an immediate seek.
+    if (isPlaying && _playbackFollowsSong) {
+      _queuedArrangementSlot =
+          patternIndex == _playheadArrangementSlot ? null : patternIndex;
+      notifyListeners();
+      return;
+    }
+
+    _queuedArrangementSlot = null;
     if (!isPlaying || _playbackFollowsSong) {
       _playheadArrangementSlot = patternIndex;
     }
     selectPattern(patternIndex);
   }
 
+  /// Queue a song jump to happen at the next pattern boundary.
+  ///
+  /// This is intentionally silent (no notify) so UI can opt into a cheap
+  /// local redraw without forcing a whole-app rebuild during playback.
+  void queueSongPatternJump(int patternIndex) {
+    if (patternIndex < 0 || patternIndex >= song.patterns.length) return;
+    _queuedArrangementSlot =
+        patternIndex == _playheadArrangementSlot ? null : patternIndex;
+  }
+
   void setPlaybackFollowsSong(bool enabled) {
     if (_playbackFollowsSong == enabled) return;
     _playbackFollowsSong = enabled;
+    if (!_playbackFollowsSong) {
+      _queuedArrangementSlot = null;
+    }
     if (isPlaying) {
       if (_playbackFollowsSong) {
         _playheadArrangementSlot = _currentArrangementSlotIndex.clamp(
@@ -677,6 +790,7 @@ class AppState extends ChangeNotifier {
 
   Future<void> play() async {
     if (isPlaying) return;
+    _queuedArrangementSlot = null;
     if (_playbackFollowsSong && song.patterns.isNotEmpty) {
       _playheadArrangementSlot = _currentArrangementSlotIndex.clamp(
         0,
@@ -700,6 +814,7 @@ class AppState extends ChangeNotifier {
     _playheadTimer = null;
     _cancelRowFxTimers();
     isPlaying = false;
+    _queuedArrangementSlot = null;
     playheadRow = 0;
     _playClockAnchor = null;
     _linesSinceAnchor = 0;
@@ -811,6 +926,22 @@ class AppState extends ChangeNotifier {
       playheadRow += 1;
       if (playheadRow >= curPat.rowCount) {
         playheadRow = 0;
+
+        final queued = _queuedArrangementSlot;
+        if (queued != null &&
+            queued >= 0 &&
+            queued < song.patterns.length &&
+            !song.patterns[queued].isEmpty) {
+          _playheadArrangementSlot = queued;
+          _queuedArrangementSlot = null;
+          _syncCurrentPatternToSongPlayhead();
+          _playClockAnchor = DateTime.now();
+          _linesSinceAnchor = 0;
+          _triggerCurrentRow();
+          notifyListeners();
+          return;
+        }
+
         final next = _playheadArrangementSlot + 1;
         // Stop at end of list or first empty pattern ("stop marker").
         if (next >= song.patterns.length || song.patterns[next].isEmpty) {
@@ -1718,6 +1849,22 @@ class AppState extends ChangeNotifier {
   void renameSong(String name) {
     song.name = name;
     _notifyListenersSafe();
+  }
+
+  /// Save current song then reset to a blank new song.
+  Future<bool> newSong() async {
+    final saved = await saveSong();
+    song = SongModel.initial();
+    for (var i = 0; i < instruments.length; i++) {
+      instruments[i] = InstrumentModel.empty(i + 1);
+    }
+    _currentPatternIndex = 0;
+    _currentTrackIndex = 0;
+    _currentArrangementSlotIndex = 0;
+    selectedCell = null;
+    _selectedRow = null;
+    _notifyListenersSafe();
+    return saved;
   }
 
   /// Save to disk using song.name as the filename. Overwrites existing.

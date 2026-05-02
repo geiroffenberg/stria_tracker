@@ -3,38 +3,39 @@ import '../models/cell.dart';
 
 // ── Colours ──────────────────────────────────────────────────────────────────
 
-const Color kBgColor = Color(0xFF000000);
-const Color kBgBeat = Color(0xFF161616); // beat-start rows
-const Color kBgBar = Color(0xFF222222); // bar-start rows (every 16)
-const Color kBgSelected = Color(0xFF001F4D);
+const Color kBgColor = Color(0xFF010810); // near-black with blue tint
+const Color kBgBeat = Color(0xFF0A1220); // beat-start rows
+const Color kBgBar = Color(0xFF111D30); // bar-start rows (every 16)
+const Color kBgSelected = Color(0xFF002060);
 const Color kBgPlayhead = Color(0xFF003A8C);
-const Color kBgHeader = Color(0xFF161616);
-const Color kBgTrackHeader = Color(0xFF1A1A1A);
+const Color kBgHeader = Color(0xFF0A1220);
+const Color kBgTrackHeader = Color(0xFF0D1828);
 const Color kBgTopNav = Color(0xFF0C1628); // muted navy-blue — separates nav from content
 
-// Brightened text colours
-const Color kColNote = Color(0xFF55CCFF); // brighter blue
-const Color kColInst = Color(0xFF44FF88); // bright green
-const Color kColVol = Color(0xFF44FF88); // bright green
-const Color kColPan = Color(0xFF44FF88); // bright green
-const Color kColFxCmd = Color(0xFFFF7799); // bright pink
-const Color kColFxVal = Color(0xFFFFB3CC); // light pink
+// Text colours — all blue-family
+const Color kColNote = Color(0xFF55CCFF); // sky blue
+const Color kColInst = Color(0xFF44AAFF); // medium blue
+const Color kColVol = Color(0xFF33BBDD); // teal-blue
+const Color kColPan = Color(0xFF33BBDD); // teal-blue
+const Color kColFxCmd = Color(0xFF8899FF); // blue-violet
+const Color kColFxVal = Color(0xFFAABBFF); // light blue-violet
 
-const Color kColEmpty = Color(0xFF555555); // dim but readable
-const Color kColRowNum = Color(0xFF888888); // grey
-const Color kColHeader = Color(0xFFAAAAAA); // header text
+const Color kColEmpty = Color(0xFF2A3F5C); // dim blue-grey
+const Color kColRowNum = Color(0xFF4D6B8A); // mid blue-grey
+const Color kColHeader = Color(0xFF7A9FBF); // lighter blue-grey
 
 const Color kColAccent = Color(0xFF66FFFF); // bright cyan
 const Color kColActive = Color(0xFF66B2FF);
-const Color kColInactive = Color(0xFF666666);
+const Color kColInactive = Color(0xFF3A5570); // blue-grey (replaces neutral grey)
+const Color kColSelection = Color(0xFF44DD88); // green selection border
 const Color kColPlayBtn = Color(0xFF4DA6FF);
-const Color kColStopBtn = Color(0xFFFF6666);
-const Color kColRecBtn = Color(0xFFFF4444);
+const Color kColStopBtn = Color(0xFFFF6666); // keep red — universal stop convention
+const Color kColRecBtn = Color(0xFFFF4444); // keep red — universal rec convention
 
 // ── Typography ────────────────────────────────────────────────────────────────
 
 const String kFontMono = 'monospace';
-const double kFontSize = 18.0;
+const double kFontSize = 17.0;
 const double kRowHeight = 32.0;
 
 const TextStyle kStyleBase = TextStyle(
@@ -69,9 +70,9 @@ const double kWNote = 46.0; // "C#4"
 const double kWInst = 30.0; // "FF"
 const double kWVol = 30.0;
 const double kWPan = 30.0;
-const double kWFxCmd = 40.0;
-const double kWFxVal = 28.0;
-const double kWGap = 5.0;
+const double kWFxCmd = 48.0; // "ARP"
+const double kWFxVal = 31.0; // "99" 
+const double kWGap = 4.0;
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -122,7 +123,7 @@ ThemeData buildAppTheme() => ThemeData(
       letterSpacing: 2,
     ),
   ),
-  dividerColor: const Color(0xFF222222),
+  dividerColor: const Color(0xFF1A2D44),
   iconTheme: const IconThemeData(color: kColAccent, size: 24),
   textButtonTheme: TextButtonThemeData(
     style: TextButton.styleFrom(foregroundColor: kColAccent),

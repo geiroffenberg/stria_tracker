@@ -3,6 +3,7 @@ import '../state/app_state.dart';
 import '../theme/app_theme.dart';
 import '../widgets/track_page_widget.dart';
 import '../widgets/collapsed_tracks_widget.dart';
+import '../widgets/cell_action_bar.dart';
 
 /// The main pattern editor screen.
 ///
@@ -87,6 +88,13 @@ class _PatternScreenState extends State<PatternScreen> {
                   },
                 ),
         ),
+        if (!state.collapsedView) ...[
+          Container(
+            height: 1,
+            color: const Color(0xFF226666),
+          ),
+          const CellActionBar(),
+        ],
       ],
     );
   }
@@ -95,8 +103,11 @@ class _PatternScreenState extends State<PatternScreen> {
     final trackIdx = state.currentTrackIndex;
     final pat = state.currentPattern;
 
-    return Container(
-      height: 44,
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+      Container(
+      height: 28,
       color: kBgTrackHeader,
       padding: const EdgeInsets.symmetric(horizontal: 8),
       child: Row(
@@ -106,7 +117,7 @@ class _PatternScreenState extends State<PatternScreen> {
             style: kStyleBase.copyWith(color: kColHeader, fontSize: 12),
           ),
           const SizedBox(width: 8),
-          const Text('│', style: TextStyle(color: Color(0xFF333333))),
+          Text('│', style: TextStyle(color: kColInactive)),
           const SizedBox(width: 8),
           if (!state.collapsedView) ...[
             _NavBtn(
@@ -173,6 +184,9 @@ class _PatternScreenState extends State<PatternScreen> {
           ),
         ],
       ),
+    ),
+      Container(height: 1, color: kColActive.withAlpha(160)),
+    ],
     );
   }
 }

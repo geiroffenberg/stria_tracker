@@ -27,10 +27,11 @@ class CellRowWidget extends StatelessWidget {
   Widget build(BuildContext context) {
     final state = AppStateScope.of(context);
     final linesPerBeat = state.linesPerBeat;
+    final isRowSelected = state.selectedRow == row;
     final bg = rowBgColor(row, isSelected, isPlayhead, linesPerBeat);
     final isBeatStart = row % linesPerBeat == 0;
     final rowNumStyle = isBeatStart
-        ? kStyleRowNum.copyWith(color: Colors.white)
+        ? kStyleRowNum.copyWith(color: kColAccent)
       : kStyleRowNum.copyWith(color: kColRowNum);
 
     // Which columns are visible
@@ -40,17 +41,30 @@ class CellRowWidget extends StatelessWidget {
 
     return Container(
       height: kRowHeight,
-      color: bg,
+      decoration: BoxDecoration(
+        color: bg,
+        border: isRowSelected
+            ? Border.all(color: kColSelection, width: 1.5)
+            : null,
+      ),
       child: Row(
         children: [
-          // Row number
-          SizedBox(
-            width: kWRow,
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 2),
-              child: Text(
-                (row + 1).toString().padLeft(2, '0'),
-                style: rowNumStyle,
+          // Row number — tap to toggle whole-row selection.
+          GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: () => state.selectRow(row),
+            child: SizedBox(
+              width: kWRow,
+              height: kRowHeight,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 2),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    (row + 1).toString().padLeft(2, '0'),
+                    style: rowNumStyle,
+                  ),
+                ),
               ),
             ),
           ),

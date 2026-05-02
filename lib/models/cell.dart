@@ -42,6 +42,19 @@ const List<String> kFxCommandNames = [
   'VOL', // 09 – volume ramp
 ];
 
+const List<String> kFxCommandDescriptions = [
+  'Fast arpeggio',
+  'Random note chance',
+  'Repeat with delay',
+  'Kill note early',
+  'Stereo pan sweep',
+  'Randomize pitch',
+  'Retrigger pattern',
+  'Play sample backwards',
+  'Add vibrato modulation',
+  'Ramp volume over time',
+];
+
 /// FX command byte constants (indices into kFxCommandNames).
 const int kFxARP = 0;
 const int kFxCHA = 1;
@@ -59,6 +72,15 @@ String fxCommandName(int? cmd) {
   if (cmd == null) return '---';
   if (cmd < kFxCommandNames.length) return kFxCommandNames[cmd];
   return cmd.toRadixString(16).toUpperCase().padLeft(3, '0');
+}
+
+/// Returns the description for an FX command.
+String fxCommandDescription(int? cmd) {
+  if (cmd == null) return '';
+  if (cmd >= 0 && cmd < kFxCommandDescriptions.length) {
+    return kFxCommandDescriptions[cmd];
+  }
+  return '';
 }
 
 /// One row in a track: note + instrument + volume + pan + 3 FX slots.
