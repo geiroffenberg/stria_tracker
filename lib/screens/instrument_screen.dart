@@ -307,8 +307,26 @@ class _SimpleSynthEditor extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: ElevatedButton.icon(
+                    onPressed: () async {
+                      final err = await state.previewCurrentSynthOneShot();
+                      if (!context.mounted || err == null) return;
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text('Preview failed: $err'),
+                          duration: const Duration(seconds: 2),
+                        ),
+                      );
+                    },
+                    icon: const Icon(Icons.play_arrow),
+                    label: const Text('PREVIEW'),
+                  ),
+                ),
+                const SizedBox(height: 8),
                 DropdownButtonFormField<SynthPreset>(
-                  value: null,
+                  initialValue: null,
                   isExpanded: true,
                   dropdownColor: kBgTrackHeader,
                   decoration: const InputDecoration(
@@ -744,14 +762,20 @@ class _SamplerEditorState extends State<_SamplerEditor> {
     }
 
     final internalRoot = _internalStorageRoot();
+    final savedDefault = state.defaultSampleFolder;
+    final startFolder =
+      (savedDefault != null && Directory(savedDefault).existsSync())
+        ? savedDefault
+        : internalRoot;
 
     await showModalBottomSheet<void>(
       context: context,
       backgroundColor: kBgTrackHeader,
       isScrollControlled: true,
       builder: (ctx) {
-        // Start at last remembered folder, or internal storage root
-        String currentFolder = _lastBrowserFolder ?? internalRoot;
+        // Start at last remembered folder, else user default folder, else
+        // internal storage root.
+        String currentFolder = _lastBrowserFolder ?? startFolder;
         return StatefulBuilder(
           builder: (context, setSheetState) {
             return SafeArea(
@@ -786,6 +810,34 @@ class _SamplerEditorState extends State<_SamplerEditor> {
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               style: kStyleHeader.copyWith(color: kColAccent),
+                            ),
+                          ),
+                          Text(
+                            'Default',
+                            style: kStyleHeader.copyWith(
+                              color: state.defaultSampleFolder == currentFolder
+                                  ? kColAccent
+                                  : kColHeader,
+                            ),
+                          ),
+                          IconButton(
+                            tooltip: 'Set current folder as default sample folder',
+                            onPressed: () async {
+                              await state.setDefaultSampleFolder(currentFolder);
+                              _lastBrowserFolder = currentFolder;
+                              if (!mounted) return;
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text('Default sample folder updated.'),
+                                  duration: Duration(seconds: 2),
+                                ),
+                              );
+                              setSheetState(() {});
+                            },
+                            icon: Icon(
+                              state.defaultSampleFolder == currentFolder
+                                  ? Icons.bookmark
+                                  : Icons.bookmark_border,
                             ),
                           ),
                         ],
@@ -853,9 +905,7 @@ class _SamplerEditorState extends State<_SamplerEditor> {
                                           samplePath,
                                           displayName: name,
                                         );
-                                        if (err == null) {
-                                          err = await state.startPreviewCurrentSampler();
-                                        }
+                                        err ??= await state.startPreviewCurrentSampler();
                                       }
                                       setSheetState(() {});
                                       if (!mounted || err == null) return;

@@ -76,6 +76,11 @@ class PatternModel {
       tracks: tracks
           .map((t) => TrackModel(
                 name: t.name,
+                collapsed: t.collapsed,
+                mixerVolume: t.mixerVolume,
+                mixerPan: t.mixerPan,
+                mixerMute: t.mixerMute,
+                mixerSolo: t.mixerSolo,
                 cells: t.cells.map((c) => c.copy()).toList(),
               ))
           .toList(),

@@ -26,7 +26,7 @@ class CollapsedTracksWidget extends StatefulWidget {
   });
 
   static const double wNote = 38.0;
-  static const double wInst = 26.0;
+  static const double wInst = 34.0;
   static const double wTrackGap = 6.0;
 
   static double get trackWidth => wNote + wInst + wTrackGap;

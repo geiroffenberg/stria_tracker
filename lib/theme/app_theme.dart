@@ -10,7 +10,7 @@ const Color kBgSelected = Color(0xFF001F4D);
 const Color kBgPlayhead = Color(0xFF003A8C);
 const Color kBgHeader = Color(0xFF161616);
 const Color kBgTrackHeader = Color(0xFF1A1A1A);
-const Color kBgTopNav = Color(0xFF0C1F1F); // dark teal — visually separates nav from content
+const Color kBgTopNav = Color(0xFF0C1628); // muted navy-blue — separates nav from content
 
 // Brightened text colours
 const Color kColNote = Color(0xFF55CCFF); // brighter blue

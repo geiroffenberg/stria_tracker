@@ -30,24 +30,32 @@ class CellPosition {
 
 /// Central application state — passed down via InheritedNotifier.
 class AppState extends ChangeNotifier {
+  AppState() {
+    _loadAppSettings();
+  }
+
   SongModel song = SongModel.initial();
   bool _disposed = false;
   bool _notifyQueued = false;
   Timer? _playheadTimer;
   Timer? _previewAutoStopTimer;
+  Timer? _synthPreviewStopTimer;
   DateTime? _previewStartedAt;
   int _previewDurationMs = 1000;
   bool _playbackFollowsSong = false;
   int _currentArrangementSlotIndex = 0;
   int _playheadArrangementSlot = 0;
 
-  static const int kTicksPerLine = 6;
-  int _tickWithinLine = 0; // 0 = row trigger tick, 1–5 = sub-row ticks
-
-  // Per-track 24-byte segments from the last row trigger (for DEL replay).
+  // Per-track segments from the last row trigger (for DEL replay).
   List<List<int>> _rowSegments = [];
-  // DEL FX: pending delayed notes. tick → {trackIndex → realNoteCmd}.
-  final Map<int, Map<int, int>> _pendingDelays = {};
+  // One-shot timers scheduled for FX events within the current line
+  // (DEL note-fires, KIL note-offs at xx% into the line). Cancelled on
+  // every row advance and on stop.
+  final List<Timer> _rowFxTimers = [];
+
+  // Drift-corrected playhead clock anchor.
+  DateTime? _playClockAnchor;
+  int _linesSinceAnchor = 0;
 
   /// Instrument bank — fixed length, indexed by the cell's instrument byte.
   final List<InstrumentModel> instruments = List.generate(
@@ -59,6 +67,7 @@ class AppState extends ChangeNotifier {
   int _currentTrackIndex = 0;
   int _currentInstrumentIndex = 0;
   int _previewSamplerSlot = -1;
+  String? _defaultSampleFolder;
 
   CellPosition? selectedCell;
 
@@ -87,6 +96,7 @@ class AppState extends ChangeNotifier {
   int get playheadArrangementSlot => _playheadArrangementSlot;
   bool get playbackFollowsSong => _playbackFollowsSong;
   bool get isPreviewingCurrentSampler => _previewSamplerSlot == _currentInstrumentIndex;
+  String? get defaultSampleFolder => _defaultSampleFolder;
   double get currentSamplerPreviewNorm {
     if (_previewSamplerSlot < 0) return 0.0;
     final started = _previewStartedAt;
@@ -204,7 +214,27 @@ class AppState extends ChangeNotifier {
   int get linesPerBeat => currentPattern.lpb;
   int get rowCount => currentPattern.rowCount;
   int get trackCount => currentPattern.tracks.length;
+  int get minBeatsForExistingData => _minimumBeatsForExistingData();
+  bool get canChangeBeats => true;
   bool get canChangePatternLength => currentPattern.isEmpty;
+
+  int _minimumBeatsForExistingData() {
+    int lastUsedRow = -1;
+    for (final track in currentPattern.tracks) {
+      for (int row = track.cells.length - 1; row >= 0; row--) {
+        final cell = track.cells[row];
+        final hasData = !cell.isEmpty || cell.pan != null;
+        if (hasData) {
+          if (row > lastUsedRow) lastUsedRow = row;
+          break;
+        }
+      }
+    }
+
+    if (lastUsedRow < 0) return 1;
+    final usedLines = lastUsedRow + 1;
+    return ((usedLines + linesPerBeat - 1) ~/ linesPerBeat).clamp(1, 99);
+  }
 
   // ── Navigation ───────────────────────────────────────────────────────────
 
@@ -240,6 +270,68 @@ class AppState extends ChangeNotifier {
 
   void nextTrack() => selectTrack(_currentTrackIndex + 1);
   void prevTrack() => selectTrack(_currentTrackIndex - 1);
+
+  PatternModel _playbackPattern() {
+    if (_playbackFollowsSong && song.arrangement.isNotEmpty) {
+      return song.patterns[song.arrangement[_playheadArrangementSlot]];
+    }
+    return currentPattern;
+  }
+
+  bool _isTrackMutedByMixer(
+    PatternModel pattern,
+    int trackIndex, {
+    bool? hasSoloOverride,
+  }) {
+    if (trackIndex < 0 || trackIndex >= pattern.tracks.length) return false;
+    final hasSolo = hasSoloOverride ??
+        pattern.tracks.any((track) => track.mixerSolo);
+    final track = pattern.tracks[trackIndex];
+    if (track.mixerMute) return true;
+    if (hasSolo && !track.mixerSolo) return true;
+    return false;
+  }
+
+  void _applyImmediateMixerMuteState() {
+    if (!isPlaying) return;
+    final pattern = _playbackPattern();
+    final hasSolo = pattern.tracks.any((track) => track.mixerSolo);
+    final mask = List<int>.generate(
+      pattern.tracks.length,
+      (i) => _isTrackMutedByMixer(pattern, i, hasSoloOverride: hasSolo) ? 1 : 0,
+    );
+    if (mask.any((v) => v == 1)) {
+      AudioEngine.instance.killVoices(mask);
+    }
+  }
+
+  void setTrackMixerVolume(int trackIndex, double value) {
+    if (trackIndex < 0 || trackIndex >= currentPattern.tracks.length) return;
+    currentPattern.tracks[trackIndex].mixerVolume = value.clamp(0.0, 1.0);
+    notifyListeners();
+  }
+
+  void setTrackMixerPan(int trackIndex, double value) {
+    if (trackIndex < 0 || trackIndex >= currentPattern.tracks.length) return;
+    currentPattern.tracks[trackIndex].mixerPan = value.clamp(-1.0, 1.0);
+    notifyListeners();
+  }
+
+  void toggleTrackMixerMute(int trackIndex) {
+    if (trackIndex < 0 || trackIndex >= currentPattern.tracks.length) return;
+    final track = currentPattern.tracks[trackIndex];
+    track.mixerMute = !track.mixerMute;
+    _applyImmediateMixerMuteState();
+    notifyListeners();
+  }
+
+  void toggleTrackMixerSolo(int trackIndex) {
+    if (trackIndex < 0 || trackIndex >= currentPattern.tracks.length) return;
+    final track = currentPattern.tracks[trackIndex];
+    track.mixerSolo = !track.mixerSolo;
+    _applyImmediateMixerMuteState();
+    notifyListeners();
+  }
 
   // ── Cell selection ───────────────────────────────────────────────────────
 
@@ -491,6 +583,26 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  double get masterVolume => song.masterVolume;
+  bool get masterMute => song.masterMute;
+
+  void setMasterVolume(double value) {
+    song.masterVolume = value.clamp(0.0, 1.0);
+    notifyListeners();
+  }
+
+  void toggleMasterMute() {
+    song.masterMute = !song.masterMute;
+    if (isPlaying && song.masterMute) {
+      // Immediately silence all voices.
+      final pattern = _playbackPattern();
+      AudioEngine.instance.killVoices(
+        List<int>.filled(pattern.tracks.length, 1),
+      );
+    }
+    notifyListeners();
+  }
+
   /// Point an arrangement slot at a different (existing) pattern.
   void replaceArrangementSlot(int slotIndex, int patternIndex) {
     if (slotIndex < 0 || slotIndex >= song.arrangement.length) return;
@@ -616,7 +728,7 @@ class AppState extends ChangeNotifier {
     _carryPatternIndex = -1;
   }
 
-  void play() {
+  Future<void> play() async {
     if (isPlaying) return;
     if (_playbackFollowsSong && song.arrangement.isNotEmpty) {
       _playheadArrangementSlot = _currentArrangementSlotIndex.clamp(
@@ -628,18 +740,22 @@ class AppState extends ChangeNotifier {
     }
     _resetInstrumentCarry();
     isPlaying = true;
-    AudioEngine.instance.start();
+    await AudioEngine.instance.start();   // wait for Oboe stream to be live
+    _playClockAnchor = DateTime.now();
+    _linesSinceAnchor = 0;
     _triggerCurrentRow(); // fire row 0 immediately
-    _tickWithinLine = 1;  // next timer tick is sub-tick 1 (row 0 already fired)
-    _startPlayheadTimer();
+    _scheduleNextLine();
     notifyListeners();
   }
 
   void stop() {
     _playheadTimer?.cancel();
     _playheadTimer = null;
+    _cancelRowFxTimers();
     isPlaying = false;
     playheadRow = 0;
+    _playClockAnchor = null;
+    _linesSinceAnchor = 0;
     _resetInstrumentCarry();
     AudioEngine.instance.stop();
     notifyListeners();
@@ -658,8 +774,8 @@ class AppState extends ChangeNotifier {
   }
 
   void setBeats(int value) {
-    if (!canChangePatternLength) return;
-    final clamped = value.clamp(1, 99);
+    final minBeats = _minimumBeatsForExistingData();
+    final clamped = value.clamp(minBeats, 99);
     currentPattern.beats = clamped;
     currentPattern.syncTrackLengths();
     _clampSelectionToPattern();
@@ -677,26 +793,57 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
-  Duration _tickDuration() {
-    // One line = kTicksPerLine ticks. Timer fires at tick resolution.
+  Duration _lineDuration() {
+    // BPM is anchored to beats; a "line" is one of [linesPerBeat]
+    // subdivisions of a beat. lines vary per pattern, beats do not.
     final microsPerLine = (60000000 / (bpm * linesPerBeat)).round().clamp(
       1000,
       60000000,
     );
-    return Duration(microseconds: (microsPerLine / kTicksPerLine).round().clamp(500, 60000000));
+    return Duration(microseconds: microsPerLine);
   }
 
-  void _startPlayheadTimer() {
+  /// Schedule the next line trigger using a drift-corrected, single-shot
+  /// timer anchored to [_playClockAnchor]. This avoids the cumulative drift
+  /// of [Timer.periodic] and keeps tempo accurate at high BPM / high LPB.
+  void _scheduleNextLine() {
     _playheadTimer?.cancel();
-    _playheadTimer = Timer.periodic(_tickDuration(), (_) {
+    if (!isPlaying) return;
+    final anchor = _playClockAnchor;
+    if (anchor == null) return;
+
+    final dur = _lineDuration();
+    final targetMicros =
+        (_linesSinceAnchor + 1) * dur.inMicroseconds;
+    final elapsedMicros =
+        DateTime.now().difference(anchor).inMicroseconds;
+    final delayMicros = targetMicros - elapsedMicros;
+    final delay = Duration(
+      microseconds: delayMicros < 0 ? 0 : delayMicros,
+    );
+
+    _playheadTimer = Timer(delay, () {
       if (!isPlaying) return;
-      _onTick();
+      _linesSinceAnchor++;
+      _advanceRow();
+      _scheduleNextLine();
     });
   }
 
+  /// Re-anchor the playback clock (called on tempo / LPB changes so the
+  /// new line duration takes effect immediately without drift).
   void _restartPlayheadTimerIfNeeded() {
     if (!isPlaying) return;
-    _startPlayheadTimer();
+    _playClockAnchor = DateTime.now();
+    _linesSinceAnchor = 0;
+    _scheduleNextLine();
+  }
+
+  void _cancelRowFxTimers() {
+    for (final t in _rowFxTimers) {
+      t.cancel();
+    }
+    _rowFxTimers.clear();
   }
 
   void _clampSelectionToPattern() {
@@ -708,19 +855,9 @@ class AppState extends ChangeNotifier {
     }
   }
 
-  /// Called every tick (kTicksPerLine times per row).
-  void _onTick() {
-    if (_tickWithinLine == 0) {
-      // Advance row then trigger.
-      _advanceRow();
-    } else {
-      // Sub-row tick: process tick-level FX.
-      _processSubTick(_tickWithinLine);
-    }
-    _tickWithinLine = (_tickWithinLine + 1) % kTicksPerLine;
-  }
-
   void _advanceRow() {
+    // Cancel any pending mid-line FX from the previous line.
+    _cancelRowFxTimers();
     if (_playbackFollowsSong && song.arrangement.isNotEmpty) {
       final slotPatternIdx = song.arrangement[_playheadArrangementSlot];
       final slotPattern = song.patterns[slotPatternIdx];
@@ -730,7 +867,9 @@ class AppState extends ChangeNotifier {
         _playheadArrangementSlot =
             (_playheadArrangementSlot + 1) % song.arrangement.length;
         _syncCurrentPatternToSongPlayhead();
-        _restartPlayheadTimerIfNeeded();
+        // Tempo/LPB may have changed across the pattern boundary.
+        _playClockAnchor = DateTime.now();
+        _linesSinceAnchor = 0;
       }
     } else {
       playheadRow = (playheadRow + 1) % rowCount;
@@ -738,50 +877,6 @@ class AppState extends ChangeNotifier {
     _triggerCurrentRow();
     notifyListeners();
   }
-
-  /// Sub-row tick processing: handles tick-level FX (KIL, DEL, etc.).
-  void _processSubTick(int tick) {
-    final PatternModel pattern;
-    if (_playbackFollowsSong && song.arrangement.isNotEmpty) {
-      pattern = song.patterns[song.arrangement[_playheadArrangementSlot]];
-    } else {
-      pattern = currentPattern;
-    }
-
-    // KIL: kill note after N ticks.
-    final killData = <int>[];
-    bool anyKil = false;
-    for (final track in pattern.tracks) {
-      if (playheadRow >= track.cells.length) { killData.add(0); continue; }
-      final cell = track.cells[playheadRow];
-      int kil = 0;
-      for (final fx in cell.fxSlots) {
-        if (fx.command == kFxKIL && fx.value != null) {
-          final kilTick = fx.value!.clamp(0, kTicksPerLine - 1);
-          if (tick >= kilTick) kil = 1;
-          break;
-        }
-      }
-      killData.add(kil);
-      if (kil == 1) anyKil = true;
-    }
-    if (anyKil) AudioEngine.instance.killVoices(killData);
-
-    // DEL: fire delayed notes at their scheduled tick.
-    final delayed = _pendingDelays[tick];
-    if (delayed != null && _rowSegments.isNotEmpty) {
-      final rowData = <int>[];
-      for (int t = 0; t < _rowSegments.length; t++) {
-        final seg = List<int>.from(_rowSegments[t]);
-        seg[0] = delayed[t] ?? -1; // real note if delayed at this tick, else hold
-        rowData.addAll(seg);
-      }
-      AudioEngine.instance.setRowData(rowData);
-      _pendingDelays.remove(tick);
-    }
-  }
-
-  void advancePlayhead() => _advanceRow();
 
   /// Reads the current row from all tracks in the playing pattern and
   /// sends packed note/volume/pan/wave + synth params to the audio engine.
@@ -805,22 +900,29 @@ class AppState extends ChangeNotifier {
       _carryInstrumentByTrack = List<int>.filled(pattern.tracks.length, 0);
     }
 
-    _pendingDelays.clear();
     _rowSegments = [];
+    // Pending mid-line DEL fires for this row, keyed by % into line (1..99)
+    // → {trackIndex → noteCmd}. Scheduled as one-shot timers below.
+    final Map<int, Map<int, int>> pendingDelays = {};
+    // Pending mid-line KIL events: % into line (1..99) → trackIndex set.
+    final Map<int, Set<int>> pendingKills = {};
 
     final rowData = <int>[];
     final immediateKillData = <int>[];
+    final hasSolo = pattern.tracks.any((track) => track.mixerSolo);
     bool anyImmediateKill = false;
     for (int t = 0; t < pattern.tracks.length; t++) {
       final track = pattern.tracks[t];
       var currentSlot = _carryInstrumentByTrack[t];
       int noteCmd = -1;
-      int volCmd = -1;
-      int panCmd = -1;
+      int volCmd = (track.mixerVolume.clamp(0.0, 1.0) * 255).round();
+      int panCmd = (((track.mixerPan.clamp(-1.0, 1.0) + 1.0) / 2.0) * 255)
+          .round();
       int waveCmd = _waveCodeForInstrumentSlot(currentSlot);
       int instrumentTypeCmd = _instrumentTypeCodeForSlot(currentSlot);
       var synthParams = _synthParamsForInstrumentSlot(currentSlot);
-      int delayTick = 0;
+      int delayPct = 0;   // 0 = no delay, 1..99 = % into the line
+      int killPct = -1;   // -1 = no KIL, 0 = immediate, 1..99 = % into line
       bool immediateKill = false;
 
       if (playheadRow < track.cells.length) {
@@ -851,34 +953,58 @@ class AppState extends ChangeNotifier {
             panCmd = ui99ToAudio255(fx.value!.clamp(0, 99));
           }
           if (fx.command == kFxDEL && fx.value != null) {
-            delayTick = fx.value!.clamp(0, kTicksPerLine - 1);
+            delayPct = fx.value!.clamp(0, 99);
           }
-          if (fx.command == kFxKIL && (fx.value ?? 0) == 0) {
-            immediateKill = true;
+          if (fx.command == kFxKIL) {
+            killPct = (fx.value ?? 0).clamp(0, 99);
           }
         }
 
-        if (playheadRow == 0) {
-          if (volCmd == -1) volCmd = ui99ToAudio255(80);
-          if (panCmd == -1) panCmd = ui99ToAudio255(50);
-        }
+        if (killPct == 0) immediateKill = true;
       }
 
-      // Build the per-track segment (stride 24) with the real noteCmd.
+      final isMixerMuted = _isTrackMutedByMixer(
+        pattern,
+        t,
+        hasSoloOverride: hasSolo,
+      );
+      if (isMixerMuted) {
+        // Mute/solo should immediately silence ongoing voices and prevent
+        // new triggers for this track until it is active again.
+        noteCmd = -1;
+        delayPct = 0;
+        immediateKill = true;
+      }
+
+      // Build the per-track segment (with real noteCmd) for DEL replay.
       final segment = [noteCmd, volCmd, panCmd, waveCmd, instrumentTypeCmd, ...synthParams];
       _rowSegments.add(segment);
 
       // DEL: if delay > 0 and there's a real note, hold now and fire later.
       final int sentNote;
-      if (delayTick > 0 && noteCmd >= 0) {
-        _pendingDelays.putIfAbsent(delayTick, () => {})[t] = noteCmd;
-        sentNote = -1; // hold at tick 0
+      if (delayPct > 0 && noteCmd >= 0) {
+        pendingDelays.putIfAbsent(delayPct, () => {})[t] = noteCmd;
+        sentNote = -1; // hold at row trigger
       } else {
         sentNote = noteCmd;
       }
 
-      rowData.add(sentNote);
-      rowData.add(volCmd);
+      // KIL: any positive % schedules a per-track note-off mid-line.
+      if (killPct > 0) {
+        pendingKills.putIfAbsent(killPct, () => <int>{}).add(t);
+      }
+
+      // Apply master mute / master volume multiplier.
+      int finalNote = sentNote;
+      int finalVol = volCmd;
+      if (song.masterMute) {
+        finalNote = -1;
+      } else if (volCmd > 0) {
+        finalVol = (volCmd * song.masterVolume).round().clamp(0, 255);
+      }
+
+      rowData.add(finalNote);
+      rowData.add(finalVol);
       rowData.add(panCmd);
       rowData.add(waveCmd);
       rowData.add(instrumentTypeCmd);
@@ -891,6 +1017,47 @@ class AppState extends ChangeNotifier {
     AudioEngine.instance.setRowData(rowData);
     if (anyImmediateKill) {
       AudioEngine.instance.killVoices(immediateKillData);
+    }
+
+    // Schedule mid-line FX as one-shot timers based on the current line's
+    // duration. % values are interpreted as 0..99% into the line.
+    if (pendingDelays.isNotEmpty || pendingKills.isNotEmpty) {
+      final lineMicros = _lineDuration().inMicroseconds;
+      final trackCount = pattern.tracks.length;
+
+      pendingDelays.forEach((pct, perTrack) {
+        final delay = Duration(microseconds: (lineMicros * pct) ~/ 100);
+        final segments = _rowSegments
+            .map((s) => List<int>.from(s))
+            .toList(growable: false);
+        _rowFxTimers.add(Timer(delay, () {
+          if (!isPlaying) return;
+          final out = <int>[];
+          final hasSoloNow = pattern.tracks.any((track) => track.mixerSolo);
+          for (int t = 0; t < segments.length; t++) {
+            final seg = segments[t];
+            if (_isTrackMutedByMixer(pattern, t, hasSoloOverride: hasSoloNow)) {
+              seg[0] = -1;
+            } else {
+              seg[0] = perTrack[t] ?? -1; // fire delayed note(s), hold others
+            }
+            out.addAll(seg);
+          }
+          AudioEngine.instance.setRowData(out);
+        }));
+      });
+
+      pendingKills.forEach((pct, tracks) {
+        final delay = Duration(microseconds: (lineMicros * pct) ~/ 100);
+        final mask = List<int>.filled(trackCount, 0);
+        for (final t in tracks) {
+          if (t < trackCount) mask[t] = 1;
+        }
+        _rowFxTimers.add(Timer(delay, () {
+          if (!isPlaying) return;
+          AudioEngine.instance.killVoices(mask);
+        }));
+      });
     }
   }
 
@@ -1133,7 +1300,9 @@ class AppState extends ChangeNotifier {
     final dataBytes = chopFrames * 2; // 16-bit mono
     final wavOut = ByteData(44 + dataBytes);
     void writeFourCC(int off, String s) {
-      for (int i = 0; i < 4; i++) wavOut.setUint8(off + i, s.codeUnitAt(i));
+      for (int i = 0; i < 4; i++) {
+        wavOut.setUint8(off + i, s.codeUnitAt(i));
+      }
     }
     writeFourCC(0, 'RIFF');
     wavOut.setUint32(4, 36 + dataBytes, Endian.little);
@@ -1283,7 +1452,9 @@ class AppState extends ChangeNotifier {
     final dataBytes = cropFrames * 2;
     final wavOut = ByteData(44 + dataBytes);
     void writeFourCC(int off, String s) {
-      for (int i = 0; i < 4; i++) wavOut.setUint8(off + i, s.codeUnitAt(i));
+      for (int i = 0; i < 4; i++) {
+        wavOut.setUint8(off + i, s.codeUnitAt(i));
+      }
     }
     writeFourCC(0, 'RIFF');
     wavOut.setUint32(4, 36 + dataBytes, Endian.little);
@@ -1352,6 +1523,58 @@ class AppState extends ChangeNotifier {
       _previewStartedAt = DateTime.now();
       notifyListeners();
       await _schedulePreviewAutoStop(slot, ins);
+      return null;
+    } catch (e) {
+      return e.toString();
+    }
+  }
+
+  Future<String?> previewCurrentSynthOneShot({
+    int midiNote = 60,
+    int durationMs = 280,
+  }) async {
+    try {
+      if (isPlaying) {
+        return 'Stop playback before synth preview';
+      }
+
+      final slot = currentInstrumentIndex.clamp(0, instruments.length - 1);
+      final ins = instruments[slot];
+      if (ins.type != InstrumentType.simpleSynth) {
+        return 'Current instrument is not a synth';
+      }
+
+      if (_previewSamplerSlot >= 0) {
+        await stopPreviewCurrentSampler();
+      }
+
+      final waveCmd = _waveCodeForInstrumentSlot(slot);
+      final instrumentTypeCmd = _instrumentTypeCodeForSlot(slot);
+      final synthParams = _synthParamsForInstrumentSlot(slot);
+
+      final noteOff = <int>[-2, -1, -1, waveCmd, instrumentTypeCmd, ...synthParams];
+      final noteOn = <int>[
+        midiNote.clamp(0, 127),
+        255,
+        128,
+        waveCmd,
+        instrumentTypeCmd,
+        ...synthParams,
+      ];
+
+      await AudioEngine.instance.start();
+      await AudioEngine.instance.setRowData(noteOff);
+      await AudioEngine.instance.setRowData(noteOn);
+
+      _synthPreviewStopTimer?.cancel();
+      _synthPreviewStopTimer = Timer(
+        Duration(milliseconds: durationMs.clamp(60, 4000)),
+        () {
+          if (_disposed) return;
+          AudioEngine.instance.setRowData(noteOff);
+        },
+      );
+
       return null;
     } catch (e) {
       return e.toString();
@@ -1428,6 +1651,53 @@ class AppState extends ChangeNotifier {
     final d = Directory('${base.path}/songs');
     if (!d.existsSync()) d.createSync(recursive: true);
     return d;
+  }
+
+  Future<File> _appSettingsFile() async {
+    final base = await getApplicationDocumentsDirectory();
+    return File('${base.path}/app_settings.json');
+  }
+
+  Future<void> _loadAppSettings() async {
+    try {
+      final file = await _appSettingsFile();
+      if (!file.existsSync()) return;
+      final raw = await file.readAsString();
+      final j = jsonDecode(raw) as Map<String, dynamic>;
+      final folder = j['defaultSampleFolder'] as String?;
+      if (folder == null || folder.isEmpty) return;
+      if (!Directory(folder).existsSync()) return;
+      _defaultSampleFolder = folder;
+      _notifyListenersSafe();
+    } catch (_) {
+      // Ignore malformed/unavailable settings and keep defaults.
+    }
+  }
+
+  Future<void> _saveAppSettings() async {
+    try {
+      final file = await _appSettingsFile();
+      final payload = jsonEncode({
+        'defaultSampleFolder': _defaultSampleFolder,
+      });
+      await file.writeAsString(payload, flush: true);
+    } catch (_) {
+      // Non-fatal: app continues with in-memory setting.
+    }
+  }
+
+  Future<void> setDefaultSampleFolder(String? folderPath) async {
+    if (folderPath == null || folderPath.isEmpty) {
+      _defaultSampleFolder = null;
+      await _saveAppSettings();
+      _notifyListenersSafe();
+      return;
+    }
+    final path = folderPath.trim();
+    if (!Directory(path).existsSync()) return;
+    _defaultSampleFolder = path;
+    await _saveAppSettings();
+    _notifyListenersSafe();
   }
 
   Future<File> _songFile(String name) async {
@@ -1576,6 +1846,7 @@ class AppState extends ChangeNotifier {
     _disposed = true;
     _playheadTimer?.cancel();
     _previewAutoStopTimer?.cancel();
+    _synthPreviewStopTimer?.cancel();
     super.dispose();
   }
 }

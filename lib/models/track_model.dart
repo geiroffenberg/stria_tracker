@@ -9,11 +9,19 @@ const int kFxSlots        = 3;
 class TrackModel {
   String name;
   bool collapsed;
+  double mixerVolume; // 0..1
+  double mixerPan; // -1..1
+  bool mixerMute;
+  bool mixerSolo;
   List<TrackerCell> cells;
 
   TrackModel({
     required this.name,
     this.collapsed = false,
+    this.mixerVolume = 0.8,
+    this.mixerPan = 0.0,
+    this.mixerMute = false,
+    this.mixerSolo = false,
     int rowCount = kDefaultRowsPerPattern,
     List<TrackerCell>? cells,
   }) : cells = cells ?? List.generate(rowCount, (_) => TrackerCell.empty());
@@ -57,12 +65,20 @@ class TrackModel {
   Map<String, dynamic> toJson() => {
     'name': name,
     'collapsed': collapsed,
+    'mixVol': mixerVolume,
+    'mixPan': mixerPan,
+    'mixMute': mixerMute,
+    'mixSolo': mixerSolo,
     'cells': cells.map((c) => c.toJson()).toList(),
   };
 
   factory TrackModel.fromJson(Map<String, dynamic> j) => TrackModel(
     name: j['name'] as String,
     collapsed: (j['collapsed'] as bool?) ?? false,
+    mixerVolume: ((j['mixVol'] as num?)?.toDouble() ?? 0.8).clamp(0.0, 1.0),
+    mixerPan: ((j['mixPan'] as num?)?.toDouble() ?? 0.0).clamp(-1.0, 1.0),
+    mixerMute: (j['mixMute'] as bool?) ?? false,
+    mixerSolo: (j['mixSolo'] as bool?) ?? false,
     cells: (j['cells'] as List<dynamic>)
         .map((e) => TrackerCell.fromJson(e as Map<String, dynamic>))
         .toList(),

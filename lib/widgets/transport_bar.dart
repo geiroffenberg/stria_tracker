@@ -37,7 +37,7 @@ class TransportBar extends StatelessWidget {
                 _TransportValueControl(
                   label: 'BEATS',
                   value: state.beats.toString().padLeft(2, '0'),
-                  enabled: state.canChangePatternLength,
+                  enabled: state.canChangeBeats,
                   onStep: (steps) => state.setBeats(state.beats + steps),
                 ),
                 const SizedBox(width: 12),
