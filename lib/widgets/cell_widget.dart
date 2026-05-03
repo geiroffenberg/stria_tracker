@@ -57,6 +57,7 @@ bool cellIsEmpty(CellColumn column, TrackerCell cell) {
 
 /// One interactive cell widget — tap to select, vertical drag to change value.
 class CellWidget extends StatefulWidget {
+  final int trackIndex;
   final int row;
   final CellColumn column;
   final TrackerCell cell;
@@ -64,6 +65,7 @@ class CellWidget extends StatefulWidget {
 
   const CellWidget({
     super.key,
+    required this.trackIndex,
     required this.row,
     required this.column,
     required this.cell,
@@ -109,19 +111,25 @@ class _CellWidgetState extends State<CellWidget> {
     final empty = cellIsEmpty(widget.column, widget.cell);
     final style = empty ? kStyleEmpty : columnStyle(widget.column);
     final state = AppStateScope.of(context);
+    final isBoxSelected = state.isCellInBoxSelection(
+      widget.trackIndex,
+      widget.row,
+      widget.column,
+    );
+    final interactionsEnabled = !state.isBoxSelecting;
 
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
-      onTap: () => _handleTap(state),
-      onVerticalDragStart: (_) {
+      onTap: interactionsEnabled ? () => _handleTap(state) : null,
+      onVerticalDragStart: interactionsEnabled ? (_) {
         if (cellIsEmpty(widget.column, widget.cell)) {
           state.insertDefaultValue(widget.row, widget.column);
         }
         if (cellIsEmpty(widget.column, widget.cell)) return;
         _dragAccum = 0.0;
         state.selectCell(widget.row, widget.column);
-      },
-      onVerticalDragUpdate: (d) {
+      } : null,
+      onVerticalDragUpdate: interactionsEnabled ? (d) {
         if (cellIsEmpty(widget.column, widget.cell)) return;
         _dragAccum -= d.delta.dy;
         final steps = (_dragAccum / _pixelsPerStep).truncate();
@@ -129,11 +137,13 @@ class _CellWidgetState extends State<CellWidget> {
           _dragAccum -= steps * _pixelsPerStep;
           state.nudgeCell(widget.row, widget.column, steps);
         }
-      },
+      } : null,
       child: Container(
-        decoration: widget.isSelected
+        decoration: (widget.isSelected || isBoxSelected)
             ? BoxDecoration(
-                color: kBgSelected,
+                color: isBoxSelected
+                    ? kBgSelected.withAlpha(widget.isSelected ? 255 : 170)
+                    : kBgSelected,
                 border: Border.all(color: kColSelection, width: 1.5),
               )
             : null,

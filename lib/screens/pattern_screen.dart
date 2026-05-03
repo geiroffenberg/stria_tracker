@@ -80,7 +80,9 @@ class _PatternScreenState extends State<PatternScreen> {
                   key: ValueKey<int>(state.currentPatternIndex),
                   controller: _pageCtrl,
                   itemCount: state.trackCount,
-                  physics: const PageScrollPhysics(),
+                  physics: state.isBoxSelecting || state.hasBoxSelection
+                    ? const NeverScrollableScrollPhysics()
+                    : const PageScrollPhysics(),
                   onPageChanged: (i) => state.selectTrack(i),
                   itemBuilder: (_, i) {
                     final track = state.currentPattern.tracks[i];

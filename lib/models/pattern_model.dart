@@ -9,6 +9,10 @@ class PatternModel {
   double? bpm;
   int? beats;
   int? linesPerBeat;
+  /// Per-beat line count overrides. Length always equals [beatCount].
+  /// A null or 0 entry means "use the pattern default [lpb]".
+  /// Any other value (1–16) overrides the subdivision for that beat only.
+  List<int?> beatLineOverrides;
   List<TrackModel> tracks;
 
   PatternModel({
@@ -16,10 +20,14 @@ class PatternModel {
     this.bpm = 120.0,
     this.beats = kDefaultBeats,
     this.linesPerBeat = kDefaultLinesPerBeat,
+    List<int?>? beatLineOverrides,
     List<TrackModel>? tracks,
-  }) : tracks = tracks ?? _defaultTracks(
+  })  : beatLineOverrides = beatLineOverrides ??
+            List.filled(beats ?? kDefaultBeats, null, growable: true),
+        tracks = tracks ?? _defaultTracks(
           _rowCountFor(beats ?? kDefaultBeats, linesPerBeat ?? kDefaultLinesPerBeat),
         ) {
+    _syncBeatOverridesLength();
     syncTrackLengths();
   }
 
@@ -31,11 +39,75 @@ class PatternModel {
 
   int get beatCount => (beats ?? kDefaultBeats).clamp(1, 99);
   int get lpb => (linesPerBeat ?? kDefaultLinesPerBeat).clamp(1, 99);
-  int get rowCount => _rowCountFor(beatCount, lpb);
+
+  /// Lines in a specific beat: override if set, else default [lpb].
+  int linesForBeat(int beat) {
+    if (beat < 0 || beat >= beatLineOverrides.length) return lpb;
+    final v = beatLineOverrides[beat];
+    return (v == null || v == 0) ? lpb : v.clamp(1, 16);
+  }
+
+  /// Which beat (0-based) does [row] fall in?
+  int beatForRow(int row) {
+    int remaining = row;
+    for (int b = 0; b < beatCount; b++) {
+      final lines = linesForBeat(b);
+      if (remaining < lines) return b;
+      remaining -= lines;
+    }
+    return beatCount - 1;
+  }
+
+  /// Total rows = sum of linesForBeat across all beats.
+  int get rowCount {
+    int total = 0;
+    for (int b = 0; b < beatCount; b++) {
+      total += linesForBeat(b);
+    }
+    return total;
+  }
+
   bool get isEmpty =>
       tracks.every((track) => track.cells.every((cell) => cell.isEmpty));
 
+  /// Keep [beatLineOverrides] length in sync with [beatCount].
+  void _syncBeatOverridesLength() {
+    final n = beatCount;
+    while (beatLineOverrides.length < n) {
+      beatLineOverrides.add(null);
+    }
+    if (beatLineOverrides.length > n) {
+      beatLineOverrides.removeRange(n, beatLineOverrides.length);
+    }
+  }
+
+  /// Set (or clear) the per-beat line override for [beat].
+  /// Pass null or 0 to remove the override (revert to pattern default).
+  void setBeatLineOverride(int beat, int? lines) {
+    if (beat < 0 || beat >= beatCount) return;
+    beatLineOverrides[beat] = (lines == null || lines == 0) ? null : lines.clamp(1, 16);
+  }
+
+  /// Returns the time position of [row] measured in beats (fractional).
+  /// This is BPM-independent and correctly handles per-beat line overrides:
+  /// each beat occupies exactly 1.0 beat regardless of how many lines it has.
+  double rowTimeInBeats(int row) {
+    double t = 0.0;
+    int remaining = row;
+    for (int b = 0; b < beatCount; b++) {
+      final lines = linesForBeat(b);
+      if (remaining < lines) {
+        t += remaining / lines; // fractional position within this beat
+        return t;
+      }
+      t += 1.0;
+      remaining -= lines;
+    }
+    return t;
+  }
+
   void syncTrackLengths() {
+    _syncBeatOverridesLength();
     final rows = rowCount;
     for (final track in tracks) {
       track.resizeRows(rows);
@@ -73,6 +145,7 @@ class PatternModel {
       bpm: bpm ?? 120.0,
       beats: beatCount,
       linesPerBeat: lpb,
+      beatLineOverrides: List<int?>.from(beatLineOverrides),
       tracks: tracks
           .map((t) => TrackModel(
                 name: t.name,
@@ -92,6 +165,7 @@ class PatternModel {
     'bpm': bpm ?? 120.0,
     'beats': beats ?? kDefaultBeats,
     'lpb': linesPerBeat ?? kDefaultLinesPerBeat,
+    'beatOverrides': beatLineOverrides,
     'tracks': tracks.map((t) => t.toJson()).toList(),
   };
 
@@ -99,11 +173,18 @@ class PatternModel {
     final loadedTracks = (j['tracks'] as List<dynamic>)
         .map((e) => TrackModel.fromJson(e as Map<String, dynamic>))
         .toList();
+    List<int?>? overrides;
+    if (j['beatOverrides'] != null) {
+      overrides = (j['beatOverrides'] as List<dynamic>)
+          .map((e) => e as int?)
+          .toList(growable: true);
+    }
     return PatternModel(
       name: j['name'] as String,
       bpm: (j['bpm'] as num?)?.toDouble() ?? 120.0,
       beats: (j['beats'] as int?) ?? kDefaultBeats,
       linesPerBeat: (j['lpb'] as int?) ?? kDefaultLinesPerBeat,
+      beatLineOverrides: overrides,
       tracks: loadedTracks,
     );
   }

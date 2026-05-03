@@ -17,6 +17,7 @@ class CellActionBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final state = AppStateScope.of(context);
+    final boxSel = state.boxSelection;
     final selRow = state.selectedRow;
     final selCell = state.selectedCell;
 
@@ -43,7 +44,10 @@ class CellActionBar extends StatelessWidget {
       }
     }
 
-    if (selRow != null) {
+    if (boxSel != null) {
+      body = _BoxSelectionActions(state: state);
+      height = 56;
+    } else if (selRow != null) {
       body = _RowActions(state: state, row: selRow);
       height = 56;
     } else if (selCell != null) {
@@ -96,8 +100,42 @@ class _IdleBar extends StatelessWidget {
   Widget build(BuildContext context) {
     return Center(
       child: Text(
-        'Tap a cell to edit · tap row number to select row',
+        'Tap a cell to edit · long-press drag to box-select',
         style: kStyleHeader.copyWith(color: kColInactive),
+      ),
+    );
+  }
+}
+
+class _BoxSelectionActions extends StatelessWidget {
+  final AppState state;
+
+  const _BoxSelectionActions({required this.state});
+
+  @override
+  Widget build(BuildContext context) {
+    final count = state.boxSelectionCellCount;
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
+      child: Row(
+        children: [
+          _ActionLabel(
+            text: '$count SEL',
+            color: kColAccent,
+            width: 88,
+          ),
+          const SizedBox(width: 4),
+          _ActionBtn(
+            label: 'DEL',
+            color: kColStopBtn,
+            onTap: () => state.deleteBoxSelection(),
+          ),
+          const Spacer(),
+          _ActionBtn(
+            label: '✕',
+            onTap: () => state.clearBoxSelection(),
+          ),
+        ],
       ),
     );
   }
@@ -437,12 +475,19 @@ class _NumericActions extends StatelessWidget {
                   color: kColAccent,
                   onTap: () => state.insertDefaultValue(row, column),
                 )
-              else
+              else ...[
+                if (state.canInterpolate(row, column))
+                  _ActionBtn(
+                    label: 'INTERP',
+                    color: kColAccent,
+                    onTap: () => state.interpolateColumn(row, column),
+                  ),
                 _ActionBtn(
                   label: 'CLR',
                   color: kColStopBtn,
                   onTap: () => state.clearColumnValue(row, column),
                 ),
+              ],
             ],
           ),
         ],

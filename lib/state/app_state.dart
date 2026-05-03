@@ -29,6 +29,46 @@ class CellPosition {
   int get hashCode => Object.hash(row, column);
 }
 
+class CellBoxSelection {
+  final int trackIndex;
+  final int anchorRow;
+  final CellColumn anchorColumn;
+  final int focusRow;
+  final CellColumn focusColumn;
+
+  const CellBoxSelection({
+    required this.trackIndex,
+    required this.anchorRow,
+    required this.anchorColumn,
+    required this.focusRow,
+    required this.focusColumn,
+  });
+
+  int get minRow => math.min(anchorRow, focusRow);
+  int get maxRow => math.max(anchorRow, focusRow);
+  int get minColumnIndex => math.min(anchorColumn.index, focusColumn.index);
+  int get maxColumnIndex => math.max(anchorColumn.index, focusColumn.index);
+
+  bool contains(int track, int row, CellColumn column) {
+    if (track != trackIndex) return false;
+    return row >= minRow &&
+        row <= maxRow &&
+        column.index >= minColumnIndex &&
+        column.index <= maxColumnIndex;
+  }
+
+  CellBoxSelection copyWith({
+    int? focusRow,
+    CellColumn? focusColumn,
+  }) => CellBoxSelection(
+    trackIndex: trackIndex,
+    anchorRow: anchorRow,
+    anchorColumn: anchorColumn,
+    focusRow: focusRow ?? this.focusRow,
+    focusColumn: focusColumn ?? this.focusColumn,
+  );
+}
+
 /// Central application state — passed down via InheritedNotifier.
 class AppState extends ChangeNotifier {
   AppState() {
@@ -59,7 +99,10 @@ class AppState extends ChangeNotifier {
 
   // Drift-corrected playhead clock anchor.
   DateTime? _playClockAnchor;
-  int _linesSinceAnchor = 0;
+  /// Accumulated microseconds from [_playClockAnchor] up to the last fired line.
+  /// Replaces a fixed-duration line counter so per-beat subdivision overrides
+  /// can use different line durations without drifting.
+  int _microsSinceAnchor = 0;
 
   /// Instrument bank — fixed length, indexed by the cell's instrument byte.
   final List<InstrumentModel> instruments = List.generate(
@@ -76,6 +119,18 @@ class AppState extends ChangeNotifier {
   CellPosition? selectedCell;
   int? _selectedRow;
   int? get selectedRow => _selectedRow;
+  CellBoxSelection? _boxSelection;
+  bool _isBoxSelecting = false;
+  CellBoxSelection? get boxSelection => _boxSelection;
+  bool get hasBoxSelection => _boxSelection != null;
+  bool get isBoxSelecting => _isBoxSelecting;
+  int get boxSelectionCellCount {
+    final sel = _boxSelection;
+    if (sel == null) return 0;
+    final rows = (sel.maxRow - sel.minRow) + 1;
+    final cols = (sel.maxColumnIndex - sel.minColumnIndex) + 1;
+    return rows * cols;
+  }
 
   TrackerCell? _rowClipboard;
   bool get hasRowClipboard => _rowClipboard != null;
@@ -281,6 +336,32 @@ class AppState extends ChangeNotifier {
   bool get canChangeBeats => true;
   bool get canChangePatternLength => currentPattern.isEmpty;
 
+  /// Which beat (0-based) a row belongs to.
+  int beatForRow(int row) => currentPattern.beatForRow(row);
+
+  /// Effective line count for a specific beat (override or pattern default).
+  int linesForBeat(int beat) => currentPattern.linesForBeat(beat);
+
+  /// The raw override for a beat — null means no override (using pattern default).
+  int? beatLineOverride(int beat) {
+    final overrides = currentPattern.beatLineOverrides;
+    if (beat < 0 || beat >= overrides.length) return null;
+    final v = overrides[beat];
+    return (v == null || v == 0) ? null : v;
+  }
+
+  /// Returns true if [row] is the first row of a beat.
+  bool isBeatStart(int row) {
+    if (row == 0) return true;
+    int acc = 0;
+    for (int b = 0; b < currentPattern.beatCount; b++) {
+      if (acc == row) return true;
+      acc += currentPattern.linesForBeat(b);
+      if (acc > row) return false;
+    }
+    return false;
+  }
+
   int _minimumBeatsForExistingData() {
     int lastUsedRow = -1;
     for (final track in currentPattern.tracks) {
@@ -330,6 +411,8 @@ class AppState extends ChangeNotifier {
     _currentTrackIndex = index.clamp(0, currentPattern.tracks.length - 1);
     selectedCell = null;
     _selectedRow = null;
+    _boxSelection = null;
+    _isBoxSelecting = false;
     notifyListeners();
   }
 
@@ -407,12 +490,16 @@ class AppState extends ChangeNotifier {
     final pos = CellPosition(row, column);
     selectedCell = (selectedCell == pos) ? null : pos;
     _selectedRow = null;
+    _boxSelection = null;
+    _isBoxSelecting = false;
     notifyListeners();
   }
 
   void clearSelection() {
     selectedCell = null;
     _selectedRow = null;
+    _boxSelection = null;
+    _isBoxSelecting = false;
     notifyListeners();
   }
 
@@ -422,6 +509,8 @@ class AppState extends ChangeNotifier {
     if (row < 0 || row >= rowCount) return;
     _selectedRow = (_selectedRow == row) ? null : row;
     selectedCell = null;
+    _boxSelection = null;
+    _isBoxSelecting = false;
     notifyListeners();
   }
 
@@ -429,6 +518,49 @@ class AppState extends ChangeNotifier {
     if (_selectedRow == null) return;
     _selectedRow = null;
     notifyListeners();
+  }
+
+  void beginBoxSelection(int trackIndex, int row, CellColumn column) {
+    _currentTrackIndex = trackIndex.clamp(0, currentPattern.tracks.length - 1);
+    selectedCell = null;
+    _selectedRow = null;
+    _isBoxSelecting = true;
+    _boxSelection = CellBoxSelection(
+      trackIndex: _currentTrackIndex,
+      anchorRow: row.clamp(0, rowCount - 1),
+      anchorColumn: column,
+      focusRow: row.clamp(0, rowCount - 1),
+      focusColumn: column,
+    );
+    notifyListeners();
+  }
+
+  void updateBoxSelection(int trackIndex, int row, CellColumn column) {
+    final sel = _boxSelection;
+    if (!_isBoxSelecting || sel == null || sel.trackIndex != trackIndex) return;
+    final clampedRow = row.clamp(0, rowCount - 1);
+    if (sel.focusRow == clampedRow && sel.focusColumn == column) return;
+    _boxSelection = sel.copyWith(focusRow: clampedRow, focusColumn: column);
+    notifyListeners();
+  }
+
+  void endBoxSelection() {
+    if (!_isBoxSelecting) return;
+    _isBoxSelecting = false;
+    notifyListeners();
+  }
+
+  void clearBoxSelection() {
+    if (_boxSelection == null && !_isBoxSelecting) return;
+    _boxSelection = null;
+    _isBoxSelecting = false;
+    notifyListeners();
+  }
+
+  bool isCellInBoxSelection(int trackIndex, int row, CellColumn column) {
+    final sel = _boxSelection;
+    if (sel == null) return false;
+    return sel.contains(trackIndex, row, column);
   }
 
   /// Move the currently selected row up/down by [delta] in the current track,
@@ -557,31 +689,133 @@ class AppState extends ChangeNotifier {
   /// Clears a single column value (sets to empty/null). Ignored for fx val columns.
   void clearColumnValue(int row, CellColumn column) {
     final track = currentTrack;
+    _clearColumnValueInTrack(track, row, column);
+    notifyListeners();
+  }
+
+  void _clearColumnValueInTrack(TrackModel track, int row, CellColumn column) {
     switch (column) {
       case CellColumn.note:
         track.cells[row].note = NoteValue.empty;
+        break;
       case CellColumn.instrument:
         track.cells[row].instrument = null;
+        break;
       case CellColumn.volume:
         track.cells[row].volume = null;
+        break;
       case CellColumn.fx0cmd:
         track.cells[row].fxSlots[0].command = null;
+        break;
       case CellColumn.fx0val:
         track.cells[row].fxSlots[0].value = null;
+        break;
       case CellColumn.fx1cmd:
         track.cells[row].fxSlots[1].command = null;
+        break;
       case CellColumn.fx1val:
         track.cells[row].fxSlots[1].value = null;
+        break;
       case CellColumn.fx2cmd:
         track.cells[row].fxSlots[2].command = null;
+        break;
       case CellColumn.fx2val:
         track.cells[row].fxSlots[2].value = null;
+        break;
     }
-    notifyListeners();
   }
 
   void clearCell(int row) {
     currentPattern.tracks[_currentTrackIndex].cells[row] = TrackerCell.empty();
+    notifyListeners();
+  }
+
+  /// Reads the FX command for an fxval column (null if not an fxval column).
+  int? _fxCommandFor(TrackerCell cell, CellColumn col) {
+    switch (col) {
+      case CellColumn.fx0val: return cell.fxSlots[0].command;
+      case CellColumn.fx1val: return cell.fxSlots[1].command;
+      case CellColumn.fx2val: return cell.fxSlots[2].command;
+      default: return null;
+    }
+  }
+
+  /// Find the nearest row BEFORE [toRow] (exclusive) in [col] on [track]
+  /// that has a value. Returns null if none exists.
+  /// For fxval columns, the target row must already have an FX command and
+  /// the previous valued row must carry that same FX command.
+  int? _findInterpolationSource(TrackModel track, int toRow, CellColumn col) {
+    final targetCmd = _fxCommandFor(track.cells[toRow], col);
+    if (col == CellColumn.fx0val ||
+        col == CellColumn.fx1val ||
+        col == CellColumn.fx2val) {
+      if (targetCmd == null) return null;
+    }
+    for (int r = toRow - 1; r >= 0; r--) {
+      final cell = track.cells[r];
+      if (track.readColumnValue(r, col) != null) {
+        // For fxval, require matching command on the previous value row.
+        if (targetCmd != null) {
+          final srcCmd = _fxCommandFor(cell, col);
+          if (srcCmd != targetCmd) return null;
+        }
+        return r;
+      }
+    }
+    return null;
+  }
+
+  /// Returns true if interpolation can be offered for the selected cell.
+  /// Requires: col is volume or fxval, the cell has a value, and there is a
+  /// previous row with a value. For fxval columns, both ends must also carry
+  /// the same FX command.
+  bool canInterpolate(int row, CellColumn col) {
+    if (col == CellColumn.note ||
+        col == CellColumn.instrument ||
+        col == CellColumn.fx0cmd ||
+        col == CellColumn.fx1cmd ||
+        col == CellColumn.fx2cmd) return false;
+    final track = currentTrack;
+    if (row <= 0 || row >= track.cells.length) return false;
+    if (track.readColumnValue(row, col) == null) return false;
+    return _findInterpolationSource(track, row, col) != null;
+  }
+
+  /// Fill every row between the previous valued row and [toRow] (exclusive
+  /// of both endpoints) with linearly interpolated values for [col].
+  /// Interpolation uses time-accurate beat positions so per-beat line
+  /// overrides are handled correctly. For FX value columns, every filled row
+  /// is also stamped with the matching FX command from [toRow].
+  void interpolateColumn(int toRow, CellColumn col) {
+    final track = currentTrack;
+    final fromRow = _findInterpolationSource(track, toRow, col);
+    if (fromRow == null) return;
+
+    final startVal = track.readColumnValue(fromRow, col)!;
+    final endVal   = track.readColumnValue(toRow,   col)!;
+    if (startVal == endVal) return; // nothing to do
+
+    final tStart = currentPattern.rowTimeInBeats(fromRow);
+    final tEnd   = currentPattern.rowTimeInBeats(toRow);
+    if (tEnd <= tStart) return;
+
+    final span = tEnd - tStart;
+    for (int r = fromRow + 1; r < toRow; r++) {
+      final t = currentPattern.rowTimeInBeats(r);
+      final frac = (t - tStart) / span;
+      final interpolated = (startVal + (endVal - startVal) * frac).round();
+      track.writeColumnValue(r, col, interpolated);
+      // For fxval columns, also stamp the FX command so the cell is complete.
+      final cmd = _fxCommandFor(track.cells[toRow], col);
+      if (cmd != null) {
+        switch (col) {
+          case CellColumn.fx0val: track.cells[r].fxSlots[0].command = cmd;
+          case CellColumn.fx1val: track.cells[r].fxSlots[1].command = cmd;
+          case CellColumn.fx2val: track.cells[r].fxSlots[2].command = cmd;
+          default: break;
+        }
+      }
+    }
     notifyListeners();
   }
 
@@ -601,10 +835,30 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  void deleteBoxSelection() {
+    final sel = _boxSelection;
+    if (sel == null) return;
+    final track = currentPattern.tracks[sel.trackIndex];
+    for (int row = sel.minRow; row <= sel.maxRow; row++) {
+      for (int colIndex = sel.minColumnIndex;
+          colIndex <= sel.maxColumnIndex;
+          colIndex++) {
+        _clearColumnValueInTrack(track, row, CellColumn.values[colIndex]);
+      }
+    }
+    _boxSelection = null;
+    _isBoxSelecting = false;
+    notifyListeners();
+  }
+
   // ── Track collapse ────────────────────────────────────────────────────────
 
   void toggleCollapsedView() {
     collapsedView = !collapsedView;
+    if (collapsedView) {
+      _boxSelection = null;
+      _isBoxSelecting = false;
+    }
     notifyListeners();
   }
 
@@ -923,7 +1177,7 @@ class AppState extends ChangeNotifier {
     isPlaying = true;
     await AudioEngine.instance.start(); // wait for Oboe stream to be live
     _playClockAnchor = DateTime.now();
-    _linesSinceAnchor = 0;
+    _microsSinceAnchor = 0;
     _triggerCurrentRow(); // fire row 0 immediately
     _scheduleNextLine();
     notifyListeners();
@@ -937,7 +1191,7 @@ class AppState extends ChangeNotifier {
     _queuedArrangementSlot = null;
     playheadRow = 0;
     _playClockAnchor = null;
-    _linesSinceAnchor = 0;
+    _microsSinceAnchor = 0;
     _resetInstrumentCarry();
     AudioEngine.instance.stop();
     notifyListeners();
@@ -975,34 +1229,50 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
-  Duration _lineDuration() {
-    // BPM is anchored to beats; a "line" is one of [linesPerBeat]
-    // subdivisions of a beat. lines vary per pattern, beats do not.
-    final microsPerLine = (60000000 / (bpm * linesPerBeat)).round().clamp(
+  /// Override (or clear) the line count for a single beat in the current pattern.
+  /// Pass null or 0 to remove the override (beat reverts to pattern default [lpb]).
+  /// Valid range: 1–16.
+  void setBeatLineOverride(int beat, int? lines) {
+    currentPattern.setBeatLineOverride(beat, lines);
+    currentPattern.syncTrackLengths();
+    _clampSelectionToPattern();
+    _restartPlayheadTimerIfNeeded();
+    notifyListeners();
+  }
+
+  /// Duration of one line for a specific row, respecting per-beat overrides.
+  Duration _lineDurationForRow(int row) {
+    final beat = currentPattern.beatForRow(row);
+    final lpbForBeat = currentPattern.linesForBeat(beat);
+    final microsPerLine = (60000000 / (bpm * lpbForBeat)).round().clamp(
       1000,
       60000000,
     );
     return Duration(microseconds: microsPerLine);
   }
 
+  /// Duration of the current playhead row (used by FX schedulers).
+  Duration _lineDuration() => _lineDurationForRow(playheadRow);
+
   /// Schedule the next line trigger using a drift-corrected, single-shot
   /// timer anchored to [_playClockAnchor]. This avoids the cumulative drift
   /// of [Timer.periodic] and keeps tempo accurate at high BPM / high LPB.
+  /// Per-beat subdivision overrides are respected via [_lineDurationForRow].
   void _scheduleNextLine() {
     _playheadTimer?.cancel();
     if (!isPlaying) return;
     final anchor = _playClockAnchor;
     if (anchor == null) return;
 
-    final dur = _lineDuration();
-    final targetMicros = (_linesSinceAnchor + 1) * dur.inMicroseconds;
+    final rowDurMicros = _lineDurationForRow(playheadRow).inMicroseconds;
+    final targetMicros = _microsSinceAnchor + rowDurMicros;
     final elapsedMicros = DateTime.now().difference(anchor).inMicroseconds;
     final delayMicros = targetMicros - elapsedMicros;
     final delay = Duration(microseconds: delayMicros < 0 ? 0 : delayMicros);
 
     _playheadTimer = Timer(delay, () {
       if (!isPlaying) return;
-      _linesSinceAnchor++;
+      _microsSinceAnchor = targetMicros;
       _advanceRow();
       _scheduleNextLine();
     });
@@ -1013,7 +1283,7 @@ class AppState extends ChangeNotifier {
   void _restartPlayheadTimerIfNeeded() {
     if (!isPlaying) return;
     _playClockAnchor = DateTime.now();
-    _linesSinceAnchor = 0;
+    _microsSinceAnchor = 0;
     _scheduleNextLine();
   }
 
@@ -1030,6 +1300,15 @@ class AppState extends ChangeNotifier {
     }
     if (selectedCell != null && selectedCell!.row >= rowCount) {
       selectedCell = null;
+    }
+    final boxSel = _boxSelection;
+    if (boxSel != null) {
+      final trackInvalid = boxSel.trackIndex >= currentPattern.tracks.length;
+      final rowInvalid = boxSel.maxRow >= rowCount;
+      if (trackInvalid || rowInvalid) {
+        _boxSelection = null;
+        _isBoxSelecting = false;
+      }
     }
   }
 
@@ -1055,7 +1334,7 @@ class AppState extends ChangeNotifier {
           _queuedArrangementSlot = null;
           _syncCurrentPatternToSongPlayhead();
           _playClockAnchor = DateTime.now();
-          _linesSinceAnchor = 0;
+          _microsSinceAnchor = 0;
           _triggerCurrentRow();
           notifyListeners();
           return;
@@ -1073,7 +1352,7 @@ class AppState extends ChangeNotifier {
         _syncCurrentPatternToSongPlayhead();
         // Tempo/LPB may have changed across the pattern boundary.
         _playClockAnchor = DateTime.now();
-        _linesSinceAnchor = 0;
+        _microsSinceAnchor = 0;
       }
     } else {
       playheadRow = (playheadRow + 1) % rowCount;
