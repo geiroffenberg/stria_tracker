@@ -22,7 +22,7 @@ class InstrumentScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final state = AppStateScope.of(context);
-    final ins   = state.currentInstrument;
+    final ins = state.currentInstrument;
 
     return Container(
       color: kBgColor,
@@ -32,10 +32,11 @@ class InstrumentScreen extends StatelessWidget {
           Expanded(
             child: switch (ins.type) {
               InstrumentType.simpleSynth => _SimpleSynthEditor(state: state),
-              InstrumentType.sampler     => _SamplerEditor(state: state),
-              InstrumentType.empty       => _EmptyInstrumentPlaceholder(
-                onPick: (t) => state.setInstrumentType(
-                    state.currentInstrumentIndex, t)),
+              InstrumentType.sampler => _SamplerEditor(state: state),
+              InstrumentType.empty => _EmptyInstrumentPlaceholder(
+                onPick: (t) =>
+                    state.setInstrumentType(state.currentInstrumentIndex, t),
+              ),
             },
           ),
         ],
@@ -155,8 +156,7 @@ class _InstrumentHeader extends StatelessWidget {
                   style: kStyleBase.copyWith(
                     fontSize: 12,
                     color: isCurrent ? kColAccent : kColHeader,
-                    fontWeight:
-                        isCurrent ? FontWeight.w700 : FontWeight.normal,
+                    fontWeight: isCurrent ? FontWeight.w700 : FontWeight.normal,
                   ),
                 ),
                 onTap: () {
@@ -190,8 +190,10 @@ class _TypeButton extends StatelessWidget {
               children: [
                 Padding(
                   padding: const EdgeInsets.all(12),
-                  child: Text('INSTRUMENT TYPE',
-                      style: kStyleHeader.copyWith(color: kColAccent)),
+                  child: Text(
+                    'INSTRUMENT TYPE',
+                    style: kStyleHeader.copyWith(color: kColAccent),
+                  ),
                 ),
                 const Divider(height: 1, color: Color(0xFF1A1A1A)),
                 for (final t in InstrumentType.values)
@@ -201,17 +203,20 @@ class _TypeButton extends StatelessWidget {
                       t == InstrumentType.simpleSynth
                           ? Icons.graphic_eq
                           : t == InstrumentType.sampler
-                              ? Icons.audiotrack
-                              : Icons.remove_circle_outline,
+                          ? Icons.audiotrack
+                          : Icons.remove_circle_outline,
                       color: t == type ? kColAccent : kColHeader,
                     ),
-                    title: Text(t.label,
-                        style: kStyleBase.copyWith(
-                          fontSize: 14,
-                          color: t == type ? kColAccent : kColHeader,
-                          fontWeight:
-                              t == type ? FontWeight.w700 : FontWeight.normal,
-                        )),
+                    title: Text(
+                      t.label,
+                      style: kStyleBase.copyWith(
+                        fontSize: 14,
+                        color: t == type ? kColAccent : kColHeader,
+                        fontWeight: t == type
+                            ? FontWeight.w700
+                            : FontWeight.normal,
+                      ),
+                    ),
                     onTap: () => Navigator.of(ctx).pop(t),
                   ),
               ],
@@ -228,12 +233,15 @@ class _TypeButton extends StatelessWidget {
         ),
         child: Row(
           children: [
-            Text(type.label,
-                style: kStyleBase.copyWith(
-                  color: kColAccent, fontSize: 11,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: 1,
-                )),
+            Text(
+              type.label,
+              style: kStyleBase.copyWith(
+                color: kColAccent,
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 1,
+              ),
+            ),
             const SizedBox(width: 4),
             Icon(Icons.arrow_drop_down, color: kColAccent, size: 20),
           ],
@@ -265,7 +273,10 @@ class _EmptyInstrumentPlaceholder extends StatelessWidget {
           Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              for (final t in [InstrumentType.simpleSynth, InstrumentType.sampler])
+              for (final t in [
+                InstrumentType.simpleSynth,
+                InstrumentType.sampler,
+              ])
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 8),
                   child: ElevatedButton(
@@ -433,42 +444,50 @@ class _SimpleSynthEditor extends StatelessWidget {
               children: [
                 Row(
                   children: [
-                    Expanded(child: _Knob(
-                      label: 'A',
-                      value: p.filterAttack,
-                      display: '${(p.filterAttack * 100).round()}',
-                      onChanged: (v) {
-                        p.filterAttack = v;
-                        state.instrumentParamsChanged();
-                      },
-                    )),
-                    Expanded(child: _Knob(
-                      label: 'D',
-                      value: p.filterDecay,
-                      display: '${(p.filterDecay * 100).round()}',
-                      onChanged: (v) {
-                        p.filterDecay = v;
-                        state.instrumentParamsChanged();
-                      },
-                    )),
-                    Expanded(child: _Knob(
-                      label: 'S',
-                      value: p.filterSustain,
-                      display: '${(p.filterSustain * 100).round()}',
-                      onChanged: (v) {
-                        p.filterSustain = v;
-                        state.instrumentParamsChanged();
-                      },
-                    )),
-                    Expanded(child: _Knob(
-                      label: 'R',
-                      value: p.filterRelease,
-                      display: '${(p.filterRelease * 100).round()}',
-                      onChanged: (v) {
-                        p.filterRelease = v;
-                        state.instrumentParamsChanged();
-                      },
-                    )),
+                    Expanded(
+                      child: _Knob(
+                        label: 'A',
+                        value: p.filterAttack,
+                        display: '${(p.filterAttack * 100).round()}',
+                        onChanged: (v) {
+                          p.filterAttack = v;
+                          state.instrumentParamsChanged();
+                        },
+                      ),
+                    ),
+                    Expanded(
+                      child: _Knob(
+                        label: 'D',
+                        value: p.filterDecay,
+                        display: '${(p.filterDecay * 100).round()}',
+                        onChanged: (v) {
+                          p.filterDecay = v;
+                          state.instrumentParamsChanged();
+                        },
+                      ),
+                    ),
+                    Expanded(
+                      child: _Knob(
+                        label: 'S',
+                        value: p.filterSustain,
+                        display: '${(p.filterSustain * 100).round()}',
+                        onChanged: (v) {
+                          p.filterSustain = v;
+                          state.instrumentParamsChanged();
+                        },
+                      ),
+                    ),
+                    Expanded(
+                      child: _Knob(
+                        label: 'R',
+                        value: p.filterRelease,
+                        display: '${(p.filterRelease * 100).round()}',
+                        onChanged: (v) {
+                          p.filterRelease = v;
+                          state.instrumentParamsChanged();
+                        },
+                      ),
+                    ),
                   ],
                 ),
                 const SizedBox(height: 8),
@@ -497,42 +516,50 @@ class _SimpleSynthEditor extends StatelessWidget {
             title: 'AMP ENVELOPE',
             child: Row(
               children: [
-                Expanded(child: _Knob(
-                  label: 'A',
-                  value: p.attack,
-                  display: '${(p.attack * 100).round()}',
-                  onChanged: (v) {
-                    p.attack = v;
-                    state.instrumentParamsChanged();
-                  },
-                )),
-                Expanded(child: _Knob(
-                  label: 'D',
-                  value: p.decay,
-                  display: '${(p.decay * 100).round()}',
-                  onChanged: (v) {
-                    p.decay = v;
-                    state.instrumentParamsChanged();
-                  },
-                )),
-                Expanded(child: _Knob(
-                  label: 'S',
-                  value: p.sustain,
-                  display: '${(p.sustain * 100).round()}',
-                  onChanged: (v) {
-                    p.sustain = v;
-                    state.instrumentParamsChanged();
-                  },
-                )),
-                Expanded(child: _Knob(
-                  label: 'R',
-                  value: p.release,
-                  display: '${(p.release * 100).round()}',
-                  onChanged: (v) {
-                    p.release = v;
-                    state.instrumentParamsChanged();
-                  },
-                )),
+                Expanded(
+                  child: _Knob(
+                    label: 'A',
+                    value: p.attack,
+                    display: '${(p.attack * 100).round()}',
+                    onChanged: (v) {
+                      p.attack = v;
+                      state.instrumentParamsChanged();
+                    },
+                  ),
+                ),
+                Expanded(
+                  child: _Knob(
+                    label: 'D',
+                    value: p.decay,
+                    display: '${(p.decay * 100).round()}',
+                    onChanged: (v) {
+                      p.decay = v;
+                      state.instrumentParamsChanged();
+                    },
+                  ),
+                ),
+                Expanded(
+                  child: _Knob(
+                    label: 'S',
+                    value: p.sustain,
+                    display: '${(p.sustain * 100).round()}',
+                    onChanged: (v) {
+                      p.sustain = v;
+                      state.instrumentParamsChanged();
+                    },
+                  ),
+                ),
+                Expanded(
+                  child: _Knob(
+                    label: 'R',
+                    value: p.release,
+                    display: '${(p.release * 100).round()}',
+                    onChanged: (v) {
+                      p.release = v;
+                      state.instrumentParamsChanged();
+                    },
+                  ),
+                ),
               ],
             ),
           ),
@@ -542,33 +569,39 @@ class _SimpleSynthEditor extends StatelessWidget {
             title: 'MASTER',
             child: Row(
               children: [
-                Expanded(child: _Knob(
-                  label: 'DRIVE',
-                  value: p.drive,
-                  display: '${(p.drive * 100).round()}%',
-                  onChanged: (v) {
-                    p.drive = v;
-                    state.instrumentParamsChanged();
-                  },
-                )),
-                Expanded(child: _Knob(
-                  label: 'GLIDE',
-                  value: p.glide,
-                  display: '${(p.glide * 100).round()}%',
-                  onChanged: (v) {
-                    p.glide = v;
-                    state.instrumentParamsChanged();
-                  },
-                )),
-                Expanded(child: _Knob(
-                  label: 'VOLUME',
-                  value: p.volume,
-                  display: '${(p.volume * 100).round()}%',
-                  onChanged: (v) {
-                    p.volume = v;
-                    state.instrumentParamsChanged();
-                  },
-                )),
+                Expanded(
+                  child: _Knob(
+                    label: 'DRIVE',
+                    value: p.drive,
+                    display: '${(p.drive * 100).round()}%',
+                    onChanged: (v) {
+                      p.drive = v;
+                      state.instrumentParamsChanged();
+                    },
+                  ),
+                ),
+                Expanded(
+                  child: _Knob(
+                    label: 'GLIDE',
+                    value: p.glide,
+                    display: '${(p.glide * 100).round()}%',
+                    onChanged: (v) {
+                      p.glide = v;
+                      state.instrumentParamsChanged();
+                    },
+                  ),
+                ),
+                Expanded(
+                  child: _Knob(
+                    label: 'VOLUME',
+                    value: p.volume,
+                    display: '${(p.volume * 100).round()}%',
+                    onChanged: (v) {
+                      p.volume = v;
+                      state.instrumentParamsChanged();
+                    },
+                  ),
+                ),
               ],
             ),
           ),
@@ -588,24 +621,28 @@ class _SimpleSynthEditor extends StatelessWidget {
                 const SizedBox(height: 8),
                 Row(
                   children: [
-                    Expanded(child: _Knob(
-                      label: 'RATE',
-                      value: p.lfoRate,
-                      display: '${_lfoRateDisplay(p.lfoRate)} Hz',
-                      onChanged: (v) {
-                        p.lfoRate = v;
-                        state.instrumentParamsChanged();
-                      },
-                    )),
-                    Expanded(child: _Knob(
-                      label: 'DEPTH',
-                      value: p.lfoDepth,
-                      display: '${(p.lfoDepth * 100).round()}%',
-                      onChanged: (v) {
-                        p.lfoDepth = v;
-                        state.instrumentParamsChanged();
-                      },
-                    )),
+                    Expanded(
+                      child: _Knob(
+                        label: 'RATE',
+                        value: p.lfoRate,
+                        display: '${_lfoRateDisplay(p.lfoRate)} Hz',
+                        onChanged: (v) {
+                          p.lfoRate = v;
+                          state.instrumentParamsChanged();
+                        },
+                      ),
+                    ),
+                    Expanded(
+                      child: _Knob(
+                        label: 'DEPTH',
+                        value: p.lfoDepth,
+                        display: '${(p.lfoDepth * 100).round()}%',
+                        onChanged: (v) {
+                          p.lfoDepth = v;
+                          state.instrumentParamsChanged();
+                        },
+                      ),
+                    ),
                   ],
                 ),
               ],
@@ -616,8 +653,7 @@ class _SimpleSynthEditor extends StatelessWidget {
           Text(
             'SYNTH params are live in the native audio engine.',
             textAlign: TextAlign.center,
-            style: kStyleBase.copyWith(
-                color: kColInactive, fontSize: 11),
+            style: kStyleBase.copyWith(color: kColInactive, fontSize: 11),
           ),
         ],
       ),
@@ -649,12 +685,13 @@ class _SamplerEditorState extends State<_SamplerEditor> {
 
   bool _busy = false;
   bool _previewBusy = false;
+  bool _slicesOpen = false;
   String? _wavePath;
   String? _lastBrowserFolder;
   List<double>? _wavePeaks;
   bool _waveLoading = false;
   Timer? _playheadTicker;
-  
+
   // Recording state
   bool _isRecording = false;
   Timer? _recordingTimer;
@@ -747,7 +784,11 @@ class _SamplerEditorState extends State<_SamplerEditor> {
 
   /// Returns the single internal-storage root for Android.
   String _internalStorageRoot() {
-    const candidates = ['/storage/emulated/0', '/storage/self/primary', '/sdcard'];
+    const candidates = [
+      '/storage/emulated/0',
+      '/storage/self/primary',
+      '/sdcard',
+    ];
     for (final p in candidates) {
       try {
         if (Directory(p).existsSync()) return p;
@@ -762,10 +803,12 @@ class _SamplerEditorState extends State<_SamplerEditor> {
       final status = await _requestStoragePermission();
       if (!status) {
         if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('Storage permission denied — cannot browse files.'),
-          duration: Duration(seconds: 3),
-        ));
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Storage permission denied — cannot browse files.'),
+            duration: Duration(seconds: 3),
+          ),
+        );
         return;
       }
     }
@@ -773,7 +816,7 @@ class _SamplerEditorState extends State<_SamplerEditor> {
     final internalRoot = _internalStorageRoot();
     final savedDefault = state.defaultSampleFolder;
     final startFolder =
-      (savedDefault != null && Directory(savedDefault).existsSync())
+        (savedDefault != null && Directory(savedDefault).existsSync())
         ? savedDefault
         : internalRoot;
 
@@ -799,7 +842,9 @@ class _SamplerEditorState extends State<_SamplerEditor> {
                         children: [
                           IconButton(
                             onPressed: () {
-                              final parent = Directory(currentFolder).parent.path;
+                              final parent = Directory(
+                                currentFolder,
+                              ).parent.path;
                               if (parent == currentFolder ||
                                   parent.isEmpty ||
                                   currentFolder == internalRoot) {
@@ -830,14 +875,17 @@ class _SamplerEditorState extends State<_SamplerEditor> {
                             ),
                           ),
                           IconButton(
-                            tooltip: 'Set current folder as default sample folder',
+                            tooltip:
+                                'Set current folder as default sample folder',
                             onPressed: () async {
                               await state.setDefaultSampleFolder(currentFolder);
                               _lastBrowserFolder = currentFolder;
                               if (!mounted) return;
                               ScaffoldMessenger.of(context).showSnackBar(
                                 const SnackBar(
-                                  content: Text('Default sample folder updated.'),
+                                  content: Text(
+                                    'Default sample folder updated.',
+                                  ),
                                   duration: Duration(seconds: 2),
                                 ),
                               );
@@ -863,103 +911,126 @@ class _SamplerEditorState extends State<_SamplerEditor> {
                           return ListView(
                             children: [
                               for (final folderPath in folders)
-                            ListTile(
-                              dense: true,
-                              leading: const Icon(Icons.folder),
-                              title: Text(
-                                _folderDisplayName(folderPath),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: kStyleBase.copyWith(color: kColHeader),
-                              ),
-                              onTap: () {
-                                currentFolder = folderPath;
-                                _lastBrowserFolder = folderPath;
-                                setSheetState(() {});
-                              },
-                            ),
-                              if (samples.isEmpty)
-                            Padding(
-                              padding: const EdgeInsets.all(12),
-                              child: Text(
-                                'No playable samples in this folder.',
-                                style: kStyleBase.copyWith(
-                                  color: kColInactive,
-                                  fontSize: 12,
-                                ),
-                              ),
-                            ),
-                              for (final samplePath in samples)
-                            Builder(
-                              builder: (_) {
-                                final name = _sampleDisplayName(samplePath);
-                                final isLoaded =
-                                    state.currentInstrument.sampler.samplePath ==
-                                        samplePath;
-                                final isPlaying =
-                                    isLoaded && state.isPreviewingCurrentSampler;
-                                return ListTile(
+                                ListTile(
                                   dense: true,
-                                  leading: IconButton(
-                                    icon: Icon(
-                                      isPlaying ? Icons.stop : Icons.play_arrow,
-                                    ),
-                                    color: isPlaying ? kColAccent : kColHeader,
-                                    onPressed: () async {
-                                      String? err;
-                                      if (isPlaying) {
-                                        await state.stopPreviewCurrentSampler();
-                                      } else {
-                                        err = await state.loadSamplerSampleFromPath(
-                                          samplePath,
-                                          displayName: name,
-                                        );
-                                        err ??= await state.startPreviewCurrentSampler();
-                                      }
-                                      setSheetState(() {});
-                                      if (!mounted || err == null) return;
-                                      ScaffoldMessenger.of(context).showSnackBar(
-                                        SnackBar(
-                                          content: Text(err),
-                                          duration: const Duration(seconds: 2),
-                                        ),
-                                      );
-                                    },
-                                  ),
+                                  leading: const Icon(Icons.folder),
                                   title: Text(
-                                    name,
+                                    _folderDisplayName(folderPath),
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
                                     style: kStyleBase.copyWith(
-                                      color: isLoaded ? kColAccent : kColHeader,
-                                      fontWeight: isLoaded
-                                          ? FontWeight.w700
-                                          : FontWeight.normal,
+                                      color: kColHeader,
                                     ),
                                   ),
-                                  trailing: TextButton(
-                                    onPressed: () async {
-                                      final err =
-                                          await state.loadSamplerSampleFromPath(
-                                        samplePath,
-                                        displayName: name,
-                                      );
-                                      if (!mounted || err == null) {
-                                        Navigator.of(ctx).pop();
-                                        return;
-                                      }
-                                      ScaffoldMessenger.of(context).showSnackBar(
-                                        SnackBar(
-                                          content: Text(err),
-                                          duration: const Duration(seconds: 2),
-                                        ),
-                                      );
-                                    },
-                                    child: const Text('LOAD'),
+                                  onTap: () {
+                                    currentFolder = folderPath;
+                                    _lastBrowserFolder = folderPath;
+                                    setSheetState(() {});
+                                  },
+                                ),
+                              if (samples.isEmpty)
+                                Padding(
+                                  padding: const EdgeInsets.all(12),
+                                  child: Text(
+                                    'No playable samples in this folder.',
+                                    style: kStyleBase.copyWith(
+                                      color: kColInactive,
+                                      fontSize: 12,
+                                    ),
                                   ),
-                                );
-                              },
-                            ),
+                                ),
+                              for (final samplePath in samples)
+                                Builder(
+                                  builder: (_) {
+                                    final name = _sampleDisplayName(samplePath);
+                                    final isLoaded =
+                                        state
+                                            .currentInstrument
+                                            .sampler
+                                            .samplePath ==
+                                        samplePath;
+                                    final isPlaying =
+                                        isLoaded &&
+                                        state.isPreviewingCurrentSampler;
+                                    return ListTile(
+                                      dense: true,
+                                      leading: IconButton(
+                                        icon: Icon(
+                                          isPlaying
+                                              ? Icons.stop
+                                              : Icons.play_arrow,
+                                        ),
+                                        color: isPlaying
+                                            ? kColAccent
+                                            : kColHeader,
+                                        onPressed: () async {
+                                          String? err;
+                                          if (isPlaying) {
+                                            await state
+                                                .stopPreviewCurrentSampler();
+                                          } else {
+                                            err = await state
+                                                .loadSamplerSampleFromPath(
+                                                  samplePath,
+                                                  displayName: name,
+                                                );
+                                            err ??= await state
+                                                .startPreviewCurrentSampler();
+                                          }
+                                          setSheetState(() {});
+                                          if (!mounted || err == null) return;
+                                          ScaffoldMessenger.of(
+                                            context,
+                                          ).showSnackBar(
+                                            SnackBar(
+                                              content: Text(err),
+                                              duration: const Duration(
+                                                seconds: 2,
+                                              ),
+                                            ),
+                                          );
+                                        },
+                                      ),
+                                      title: Text(
+                                        name,
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: kStyleBase.copyWith(
+                                          color: isLoaded
+                                              ? kColAccent
+                                              : kColHeader,
+                                          fontWeight: isLoaded
+                                              ? FontWeight.w700
+                                              : FontWeight.normal,
+                                        ),
+                                      ),
+                                      trailing: TextButton(
+                                        onPressed: () async {
+                                          final err = await state
+                                              .loadSamplerSampleFromPath(
+                                                samplePath,
+                                                displayName: name,
+                                              );
+                                          if (!mounted || err == null) {
+                                            Navigator.of(ctx).pop();
+                                            return;
+                                          }
+                                          ScaffoldMessenger.of(
+                                            context,
+                                          ).showSnackBar(
+                                            SnackBar(
+                                              content: Text(err),
+                                              duration: const Duration(
+                                                seconds: 2,
+                                              ),
+                                            ),
+                                          );
+                                        },
+                                        child: const Text('LOAD'),
+                                      ),
+                                    );
+                                  },
+                                ),
                             ],
                           );
                         },
@@ -981,10 +1052,12 @@ class _SamplerEditorState extends State<_SamplerEditor> {
       final status = await _requestStoragePermission();
       if (!status) {
         if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('Storage permission denied — cannot record files.'),
-          duration: Duration(seconds: 3),
-        ));
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Storage permission denied — cannot record files.'),
+            duration: Duration(seconds: 3),
+          ),
+        );
         return;
       }
     }
@@ -1025,7 +1098,10 @@ class _SamplerEditorState extends State<_SamplerEditor> {
                         padding: const EdgeInsets.all(20),
                         decoration: BoxDecoration(
                           color: Colors.red.withAlpha(30),
-                          border: Border.all(color: Colors.red.shade700, width: 2),
+                          border: Border.all(
+                            color: Colors.red.shade700,
+                            width: 2,
+                          ),
                           borderRadius: BorderRadius.circular(8),
                         ),
                         child: Column(
@@ -1056,7 +1132,10 @@ class _SamplerEditorState extends State<_SamplerEditor> {
                               _recordingStart == null
                                   ? '0:00'
                                   : _formatDuration(
-                                      DateTime.now().difference(_recordingStart!)),
+                                      DateTime.now().difference(
+                                        _recordingStart!,
+                                      ),
+                                    ),
                               style: kStyleBase.copyWith(
                                 fontSize: 16,
                                 fontWeight: FontWeight.w600,
@@ -1125,22 +1204,24 @@ class _SamplerEditorState extends State<_SamplerEditor> {
     final status = await Permission.microphone.request();
     if (!status.isGranted) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('Microphone permission denied'),
-          duration: Duration(seconds: 2),
-        ));
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Microphone permission denied'),
+            duration: Duration(seconds: 2),
+          ),
+        );
       }
       return;
     }
 
     try {
       await AudioEngine.instance.startRecording();
-      
+
       setState(() {
         _isRecording = true;
         _recordingStart = DateTime.now();
       });
-      
+
       setSheetState(() {});
 
       // Update timer for duration display
@@ -1152,15 +1233,20 @@ class _SamplerEditorState extends State<_SamplerEditor> {
     } catch (e) {
       if (mounted) {
         setState(() => _isRecording = false);
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('Recording failed: $e'),
-          duration: const Duration(seconds: 2),
-        ));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Recording failed: $e'),
+            duration: const Duration(seconds: 2),
+          ),
+        );
       }
     }
   }
 
-  Future<void> _stopRecording(BuildContext context, StateSetter setSheetState) async {
+  Future<void> _stopRecording(
+    BuildContext context,
+    StateSetter setSheetState,
+  ) async {
     _recordingTimer?.cancel();
     _recordingTimer = null;
 
@@ -1168,16 +1254,18 @@ class _SamplerEditorState extends State<_SamplerEditor> {
 
     try {
       final recordingResult = await AudioEngine.instance.stopRecording();
-      
+
       setState(() => _isRecording = false);
       setSheetState(() {});
 
       if (recordingResult == null) {
         if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('Recording failed: no audio data'),
-          duration: Duration(seconds: 2),
-        ));
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Recording failed: no audio data'),
+            duration: Duration(seconds: 2),
+          ),
+        );
         return;
       }
 
@@ -1186,32 +1274,36 @@ class _SamplerEditorState extends State<_SamplerEditor> {
 
       if (samples.isEmpty) {
         if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('Recording is empty'),
-          duration: Duration(seconds: 2),
-        ));
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Recording is empty'),
+            duration: Duration(seconds: 2),
+          ),
+        );
         return;
       }
 
       // Normalize to peak 0.9 so quiet mic input is brought up to a useful level
       final rawSamples = samples.cast<double>();
-      final peak = rawSamples.fold<double>(0.0, (m, s) => s.abs() > m ? s.abs() : m);
+      final peak = rawSamples.fold<double>(
+        0.0,
+        (m, s) => s.abs() > m ? s.abs() : m,
+      );
       final normalizedSamples = peak > 0.0
           ? rawSamples.map((s) => (s / peak) * 0.9).toList()
           : rawSamples;
 
       // Encode as WAV and save
-      final wavPath = await _saveRecordedSample(
-        normalizedSamples,
-        sampleRate,
-      );
+      final wavPath = await _saveRecordedSample(normalizedSamples, sampleRate);
 
       if (wavPath == null) {
         if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('Failed to save recording'),
-          duration: Duration(seconds: 2),
-        ));
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Failed to save recording'),
+            duration: Duration(seconds: 2),
+          ),
+        );
         return;
       }
 
@@ -1225,26 +1317,32 @@ class _SamplerEditorState extends State<_SamplerEditor> {
       if (!mounted) return;
 
       if (err != null) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('Load failed: $err'),
-          duration: const Duration(seconds: 2),
-        ));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Load failed: $err'),
+            duration: const Duration(seconds: 2),
+          ),
+        );
         return;
       }
 
       // Close the recording window
       Navigator.of(context).pop();
 
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-        content: Text('Recording saved and loaded'),
-        duration: Duration(seconds: 2),
-      ));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Recording saved and loaded'),
+          duration: Duration(seconds: 2),
+        ),
+      );
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text('Error: $e'),
-        duration: const Duration(seconds: 2),
-      ));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error: $e'),
+          duration: const Duration(seconds: 2),
+        ),
+      );
       setState(() => _isRecording = false);
       setSheetState(() {});
     }
@@ -1256,10 +1354,11 @@ class _SamplerEditorState extends State<_SamplerEditor> {
   ) async {
     try {
       final lib = await state.samplerLibraryDir();
-      
+
       // Generate filename with timestamp
       final now = DateTime.now();
-      final timestamp = '${now.year}${now.month.toString().padLeft(2, '0')}'
+      final timestamp =
+          '${now.year}${now.month.toString().padLeft(2, '0')}'
           '${now.day.toString().padLeft(2, '0')}_'
           '${now.hour.toString().padLeft(2, '0')}'
           '${now.minute.toString().padLeft(2, '0')}'
@@ -1354,7 +1453,10 @@ class _SamplerEditorState extends State<_SamplerEditor> {
         pos = body + chunkSize + (chunkSize.isOdd ? 1 : 0);
       }
 
-      if (dataOffset < 0 || dataSize <= 0 || channels <= 0 || bitsPerSample <= 0) {
+      if (dataOffset < 0 ||
+          dataSize <= 0 ||
+          channels <= 0 ||
+          bitsPerSample <= 0) {
         return null;
       }
 
@@ -1387,7 +1489,8 @@ class _SamplerEditorState extends State<_SamplerEditor> {
             } else if (audioFormat == 1 && bitsPerSample == 16) {
               sample = bd.getInt16(sampleOff, Endian.little) / 32768.0;
             } else if (audioFormat == 1 && bitsPerSample == 24) {
-              final raw = bytes[sampleOff] |
+              final raw =
+                  bytes[sampleOff] |
                   (bytes[sampleOff + 1] << 8) |
                   (bytes[sampleOff + 2] << 16);
               final signed = (raw & 0x800000) != 0 ? (raw | ~0xFFFFFF) : raw;
@@ -1419,15 +1522,19 @@ class _SamplerEditorState extends State<_SamplerEditor> {
       final err = await state.chopToNewSlot();
       if (!mounted) return;
       if (err != null) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('Chop failed: $err'),
-          duration: const Duration(seconds: 3),
-        ));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Chop failed: $err'),
+            duration: const Duration(seconds: 3),
+          ),
+        );
       } else {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('Chopped to new slot'),
-          duration: Duration(seconds: 2),
-        ));
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Chopped to new slot'),
+            duration: Duration(seconds: 2),
+          ),
+        );
       }
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -1441,34 +1548,186 @@ class _SamplerEditorState extends State<_SamplerEditor> {
       final err = await state.cropCurrentSamplerToNewSample();
       if (!mounted) return;
       if (err != null) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('Crop failed: $err'),
-          duration: const Duration(seconds: 3),
-        ));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Crop failed: $err'),
+            duration: const Duration(seconds: 3),
+          ),
+        );
       } else {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('Cropped current sample'),
-          duration: Duration(seconds: 2),
-        ));
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Cropped current sample'),
+            duration: Duration(seconds: 2),
+          ),
+        );
       }
     } finally {
       if (mounted) setState(() => _busy = false);
     }
   }
 
-  Future<void> _previewSample(BuildContext context) async {
-    if (_previewBusy) return;
+  Future<void> _previewFromWaveTap(
+    BuildContext context,
+    TapDownDetails details,
+    double width,
+    SamplerParams p,
+  ) async {
+    if (_previewBusy || p.samplePath == null || width <= 0) return;
     setState(() => _previewBusy = true);
     try {
-      final err = await state.togglePreviewCurrentSampler();
+      final tapNorm = (details.localPosition.dx / width).clamp(0.0, 1.0);
+      final regionStart = p.start.clamp(0.0, 1.0);
+      final regionEnd = p.end.clamp(regionStart + 0.001, 1.0);
+
+      final activeSlices = <MapEntry<int, double>>[];
+      for (int i = 0; i < p.sliceStarts.length; i++) {
+        final v = p.sliceStarts[i];
+        if (v <= 0) continue;
+        final start = (v / 99.0).clamp(regionStart, regionEnd);
+        activeSlices.add(MapEntry(i + 1, start));
+      }
+      activeSlices.sort((a, b) => a.value.compareTo(b.value));
+
+      final boundaries = <double>[regionStart];
+      boundaries.addAll(activeSlices.map((e) => e.value));
+      boundaries.add(regionEnd);
+
+      double start = regionStart;
+      double end = regionEnd;
+      for (int i = 0; i < boundaries.length - 1; i++) {
+        final segStart = boundaries[i];
+        final segEnd = boundaries[i + 1];
+        final isLast = i == boundaries.length - 2;
+        if ((tapNorm >= segStart && tapNorm < segEnd) ||
+            (isLast && tapNorm >= segEnd)) {
+          start = segStart;
+          end = segEnd;
+          break;
+        }
+      }
+
+      if (end < start + 0.001) {
+        end = (start + 0.01).clamp(start + 0.001, 1.0);
+      }
+
+      final err = await state.previewCurrentSamplerRegion(
+        startNorm: start,
+        endNorm: end,
+      );
       if (!mounted || err == null) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text('Preview failed: $err'),
-        duration: const Duration(seconds: 2),
-      ));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Preview failed: $err'),
+          duration: const Duration(seconds: 2),
+        ),
+      );
     } finally {
       if (mounted) setState(() => _previewBusy = false);
     }
+  }
+
+  Widget _buildSliceEditor(SamplerParams p) {
+    return _Section(
+      title: 'SLICES',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          GestureDetector(
+            onTap: () => setState(() => _slicesOpen = !_slicesOpen),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              decoration: BoxDecoration(
+                color: kBgColor.withAlpha(60),
+                border: Border.all(color: kColInactive.withAlpha(90)),
+                borderRadius: BorderRadius.circular(4),
+              ),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      _slicesOpen
+                          ? 'SL0 = normal start, SL1-SL9 = slice starts'
+                          : 'Open slice starts (SL1-SL9)',
+                      style: kStyleBase.copyWith(
+                        color: kColHeader,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                  Text(
+                    _slicesOpen ? 'HIDE' : 'OPEN',
+                    style: kStyleHeader.copyWith(
+                      fontSize: 11,
+                      color: kColAccent,
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  Icon(
+                    _slicesOpen ? Icons.expand_less : Icons.expand_more,
+                    color: kColAccent,
+                  ),
+                ],
+              ),
+            ),
+          ),
+          if (_slicesOpen) ...[
+            const SizedBox(height: 8),
+            for (int i = 0; i < SamplerParams.sliceCount; i++)
+              Padding(
+                padding: EdgeInsets.only(
+                  bottom: i == SamplerParams.sliceCount - 1 ? 0 : 8,
+                ),
+                child: Row(
+                  children: [
+                    SizedBox(
+                      width: 38,
+                      child: Text(
+                        'SL${i + 1}',
+                        style: kStyleHeader.copyWith(
+                          fontSize: 11,
+                          color: kColHeader,
+                        ),
+                      ),
+                    ),
+                    Expanded(
+                      child: Slider(
+                        value: p.sliceStarts[i].toDouble(),
+                        min: 0,
+                        max: 99,
+                        divisions: 99,
+                        activeColor: Colors.amber.shade600,
+                        inactiveColor: kColInactive.withAlpha(70),
+                        onChanged: (v) {
+                          setState(() {
+                            p.setSliceStart(i, v.round());
+                          });
+                          state.instrumentParamsChanged();
+                        },
+                      ),
+                    ),
+                    SizedBox(
+                      width: 28,
+                      child: Text(
+                        p.sliceStarts[i].toString().padLeft(2, '0'),
+                        textAlign: TextAlign.right,
+                        style: kStyleBase.copyWith(
+                          color: p.sliceStarts[i] == 0
+                              ? kColInactive
+                              : Colors.amber.shade600,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+          ],
+        ],
+      ),
+    );
   }
 
   @override
@@ -1498,7 +1757,9 @@ class _SamplerEditorState extends State<_SamplerEditor> {
                 const SizedBox(width: 8),
                 Expanded(
                   child: ElevatedButton.icon(
-                    onPressed: _busy ? null : () => _showRecordingWindow(context),
+                    onPressed: _busy
+                        ? null
+                        : () => _showRecordingWindow(context),
                     icon: const Icon(Icons.mic),
                     label: const Text('RECORD'),
                   ),
@@ -1513,63 +1774,81 @@ class _SamplerEditorState extends State<_SamplerEditor> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Container(
-                  height: 92,
-                  decoration: BoxDecoration(
-                    color: kBgColor.withAlpha(70),
-                    border: Border.all(color: kColInactive.withAlpha(90)),
-                    borderRadius: BorderRadius.circular(4),
-                  ),
-                  child: _waveLoading
-                      ? Center(
-                          child: Text(
-                            'Loading waveform...',
-                            style: kStyleBase.copyWith(
-                              color: kColInactive,
-                              fontSize: 12,
-                            ),
-                          ),
-                        )
-                      : (_wavePeaks == null || _wavePeaks!.isEmpty)
-                          ? Center(
-                              child: Text(
-                                'Empty',
-                                style: kStyleBase.copyWith(
-                                  color: kColInactive,
-                                  fontSize: 12,
+                LayoutBuilder(
+                  builder: (context, constraints) {
+                    return GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onTapDown: (details) {
+                        _previewFromWaveTap(
+                          context,
+                          details,
+                          constraints.maxWidth,
+                          p,
+                        );
+                      },
+                      child: Container(
+                        height: 92,
+                        decoration: BoxDecoration(
+                          color: kBgColor.withAlpha(70),
+                          border: Border.all(color: kColInactive.withAlpha(90)),
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: _waveLoading
+                            ? Center(
+                                child: Text(
+                                  'Loading waveform...',
+                                  style: kStyleBase.copyWith(
+                                    color: kColInactive,
+                                    fontSize: 12,
+                                  ),
                                 ),
+                              )
+                            : (_wavePeaks == null || _wavePeaks!.isEmpty)
+                            ? Center(
+                                child: Text(
+                                  'Empty',
+                                  style: kStyleBase.copyWith(
+                                    color: kColInactive,
+                                    fontSize: 12,
+                                  ),
+                                ),
+                              )
+                            : CustomPaint(
+                                painter: _SampleWaveformPainter(
+                                  peaks: _wavePeaks!,
+                                  waveColor: kColAccent,
+                                  axisColor: kColInactive,
+                                  startNorm: p.start,
+                                  endNorm: p.end,
+                                  sliceMarkers: [
+                                    for (
+                                      int i = 0;
+                                      i < p.sliceStarts.length;
+                                      i++
+                                    )
+                                      if (p.sliceStarts[i] > 0)
+                                        MapEntry(
+                                          i + 1,
+                                          p.sliceStarts[i] / 99.0,
+                                        ),
+                                  ],
+                                  previewStartNorm:
+                                      state.currentSamplerPreviewStartNorm,
+                                  previewEndNorm:
+                                      state.currentSamplerPreviewEndNorm,
+                                  playheadNorm: state.currentSamplerPreviewNorm,
+                                  showPlayhead: isPreviewing,
+                                ),
+                                child: const SizedBox.expand(),
                               ),
-                            )
-                          : CustomPaint(
-                              painter: _SampleWaveformPainter(
-                                peaks: _wavePeaks!,
-                                waveColor: kColAccent,
-                                axisColor: kColInactive,
-                                startNorm: p.start,
-                                endNorm: p.end,
-                                playheadNorm: state.currentSamplerPreviewNorm,
-                                showPlayhead: isPreviewing,
-                              ),
-                              child: const SizedBox.expand(),
-                            ),
-                ),
-                const SizedBox(height: 8),
-                ElevatedButton.icon(
-                  onPressed: (_previewBusy || p.samplePath == null)
-                      ? null
-                      : () => _previewSample(context),
-                  icon: Icon(
-                    isPreviewing
-                        ? Icons.stop
-                        : Icons.play_arrow,
-                  ),
-                  label: Text(
-                    isPreviewing ? 'STOP' : 'PREVIEW',
-                  ),
+                      ),
+                    );
+                  },
                 ),
               ],
             ),
           ),
+          _buildSliceEditor(p),
           _Section(
             title: 'PARAMS',
             child: Column(
@@ -1637,42 +1916,50 @@ class _SamplerEditorState extends State<_SamplerEditor> {
                 // ── Knob row: Pitch · Volume · Attack · Release ──────────
                 Row(
                   children: [
-                    Expanded(child: _Knob(
-                      label: 'PITCH',
-                      value: (p.pitch + 1) / 2,
-                      display: '${(p.pitch * 12).toStringAsFixed(1)} st',
-                      onChanged: (v) {
-                        p.pitch = (v * 2) - 1;
-                        state.instrumentParamsChanged();
-                      },
-                    )),
-                    Expanded(child: _Knob(
-                      label: 'VOLUME',
-                      value: p.volume,
-                      display: '${(p.volume * 100).round()}%',
-                      onChanged: (v) {
-                        p.volume = v;
-                        state.instrumentParamsChanged();
-                      },
-                    )),
-                    Expanded(child: _Knob(
-                      label: 'ATTACK',
-                      value: p.attack,
-                      display: '${(p.attack * 500).round()} ms',
-                      onChanged: (v) {
-                        p.attack = v;
-                        state.instrumentParamsChanged();
-                      },
-                    )),
-                    Expanded(child: _Knob(
-                      label: 'RELEASE',
-                      value: p.release,
-                      display: '${(p.release * 500).round()} ms',
-                      onChanged: (v) {
-                        p.release = v;
-                        state.instrumentParamsChanged();
-                      },
-                    )),
+                    Expanded(
+                      child: _Knob(
+                        label: 'PITCH',
+                        value: (p.pitch + 1) / 2,
+                        display: '${(p.pitch * 12).toStringAsFixed(1)} st',
+                        onChanged: (v) {
+                          p.pitch = (v * 2) - 1;
+                          state.instrumentParamsChanged();
+                        },
+                      ),
+                    ),
+                    Expanded(
+                      child: _Knob(
+                        label: 'VOLUME',
+                        value: p.volume,
+                        display: '${(p.volume * 100).round()}%',
+                        onChanged: (v) {
+                          p.volume = v;
+                          state.instrumentParamsChanged();
+                        },
+                      ),
+                    ),
+                    Expanded(
+                      child: _Knob(
+                        label: 'ATTACK',
+                        value: p.attack,
+                        display: '${(p.attack * 500).round()} ms',
+                        onChanged: (v) {
+                          p.attack = v;
+                          state.instrumentParamsChanged();
+                        },
+                      ),
+                    ),
+                    Expanded(
+                      child: _Knob(
+                        label: 'RELEASE',
+                        value: p.release,
+                        display: '${(p.release * 500).round()} ms',
+                        onChanged: (v) {
+                          p.release = v;
+                          state.instrumentParamsChanged();
+                        },
+                      ),
+                    ),
                   ],
                 ),
                 const SizedBox(height: 10),
@@ -1681,7 +1968,10 @@ class _SamplerEditorState extends State<_SamplerEditor> {
                   children: [
                     Text(
                       'LOOP',
-                      style: kStyleHeader.copyWith(fontSize: 11, color: kColHeader),
+                      style: kStyleHeader.copyWith(
+                        fontSize: 11,
+                        color: kColHeader,
+                      ),
                     ),
                     const SizedBox(width: 12),
                     for (final mode in SamplerLoopMode.values)
@@ -1694,7 +1984,9 @@ class _SamplerEditorState extends State<_SamplerEditor> {
                           },
                           child: Container(
                             padding: const EdgeInsets.symmetric(
-                                horizontal: 10, vertical: 4),
+                              horizontal: 10,
+                              vertical: 4,
+                            ),
                             decoration: BoxDecoration(
                               color: p.loopMode == mode
                                   ? kColAccent.withAlpha(40)
@@ -1735,6 +2027,9 @@ class _SampleWaveformPainter extends CustomPainter {
   final Color axisColor;
   final double startNorm;
   final double endNorm;
+  final List<MapEntry<int, double>> sliceMarkers;
+  final double previewStartNorm;
+  final double previewEndNorm;
   final double playheadNorm;
   final bool showPlayhead;
 
@@ -1744,6 +2039,9 @@ class _SampleWaveformPainter extends CustomPainter {
     required this.axisColor,
     required this.startNorm,
     required this.endNorm,
+    required this.sliceMarkers,
+    required this.previewStartNorm,
+    required this.previewEndNorm,
     required this.playheadNorm,
     required this.showPlayhead,
   });
@@ -1779,9 +2077,45 @@ class _SampleWaveformPainter extends CustomPainter {
     canvas.drawLine(Offset(leftX, 0), Offset(leftX, size.height), marker);
     canvas.drawLine(Offset(rightX, 0), Offset(rightX, size.height), marker);
 
+    final sliceMarker = Paint()
+      ..color = Colors.amber.shade600.withAlpha(230)
+      ..strokeWidth = 1.2;
+    for (final markerData in sliceMarkers) {
+      final sliceNorm = markerData.value;
+      final x = size.width * sliceNorm.clamp(0.0, 1.0);
+      canvas.drawLine(Offset(x, 0), Offset(x, size.height), sliceMarker);
+
+      final label = '${markerData.key}';
+      final labelPainter = TextPainter(
+        text: TextSpan(
+          text: label,
+          style: kStyleBase.copyWith(
+            color: Colors.amber.shade600,
+            fontSize: 9,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        textDirection: TextDirection.ltr,
+      )..layout();
+
+      final dx = (x + 3.0).clamp(
+        1.0,
+        math.max(1.0, size.width - labelPainter.width - 1),
+      ).toDouble();
+      final dy = size.height - labelPainter.height - 1;
+      labelPainter.paint(canvas, Offset(dx, dy));
+    }
+
     if (showPlayhead) {
       final ph = playheadNorm.clamp(0.0, 1.0);
-      final x = leftX + (rightX - leftX) * ph;
+      final playStart = previewStartNorm.clamp(0.0, 1.0);
+      final playEnd = previewEndNorm.clamp(
+        (playStart + 0.001).clamp(0.0, 1.0),
+        1.0,
+      );
+      final playLeftX = size.width * math.min(playStart, playEnd);
+      final playRightX = size.width * math.max(playStart, playEnd);
+      final x = playLeftX + (playRightX - playLeftX) * ph;
       final playhead = Paint()
         ..color = Colors.white.withAlpha(230)
         ..strokeWidth = 1.2;
@@ -1809,6 +2143,9 @@ class _SampleWaveformPainter extends CustomPainter {
         oldDelegate.axisColor != axisColor ||
         oldDelegate.startNorm != startNorm ||
         oldDelegate.endNorm != endNorm ||
+        oldDelegate.sliceMarkers != sliceMarkers ||
+        oldDelegate.previewStartNorm != previewStartNorm ||
+        oldDelegate.previewEndNorm != previewEndNorm ||
         oldDelegate.playheadNorm != playheadNorm ||
         oldDelegate.showPlayhead != showPlayhead;
   }
@@ -1836,10 +2173,13 @@ class _Section extends StatelessWidget {
         children: [
           Padding(
             padding: const EdgeInsets.only(bottom: 6),
-            child: Text(title,
-                style: kStyleHeader.copyWith(
-                  color: kColAccent, letterSpacing: 1.2,
-                )),
+            child: Text(
+              title,
+              style: kStyleHeader.copyWith(
+                color: kColAccent,
+                letterSpacing: 1.2,
+              ),
+            ),
           ),
           child,
         ],
@@ -1863,8 +2203,7 @@ class _WaveformPicker extends StatelessWidget {
           GestureDetector(
             onTap: () => onChanged(w),
             child: Container(
-              padding: const EdgeInsets.symmetric(
-                horizontal: 12, vertical: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
               decoration: BoxDecoration(
                 color: w == value
                     ? kColAccent.withAlpha(40)
@@ -1879,8 +2218,7 @@ class _WaveformPicker extends StatelessWidget {
                 style: kStyleBase.copyWith(
                   fontSize: 12,
                   color: w == value ? kColAccent : kColHeader,
-                  fontWeight:
-                      w == value ? FontWeight.w700 : FontWeight.normal,
+                  fontWeight: w == value ? FontWeight.w700 : FontWeight.normal,
                 ),
               ),
             ),
@@ -1913,8 +2251,12 @@ class _FilterModePicker extends StatelessWidget {
                 padding: const EdgeInsets.symmetric(vertical: 7),
                 alignment: Alignment.center,
                 decoration: BoxDecoration(
-                  color: m == value ? kColAccent.withAlpha(40) : Colors.transparent,
-                  border: Border.all(color: m == value ? kColAccent : kColInactive),
+                  color: m == value
+                      ? kColAccent.withAlpha(40)
+                      : Colors.transparent,
+                  border: Border.all(
+                    color: m == value ? kColAccent : kColInactive,
+                  ),
                   borderRadius: BorderRadius.circular(3),
                 ),
                 child: Text(
@@ -1922,7 +2264,9 @@ class _FilterModePicker extends StatelessWidget {
                   style: kStyleBase.copyWith(
                     fontSize: 13,
                     color: m == value ? kColAccent : kColHeader,
-                    fontWeight: m == value ? FontWeight.w700 : FontWeight.normal,
+                    fontWeight: m == value
+                        ? FontWeight.w700
+                        : FontWeight.normal,
                   ),
                 ),
               ),
@@ -1951,8 +2295,12 @@ class _LfoTargetPicker extends StatelessWidget {
                 padding: const EdgeInsets.symmetric(vertical: 7),
                 alignment: Alignment.center,
                 decoration: BoxDecoration(
-                  color: t == value ? kColAccent.withAlpha(40) : Colors.transparent,
-                  border: Border.all(color: t == value ? kColAccent : kColInactive),
+                  color: t == value
+                      ? kColAccent.withAlpha(40)
+                      : Colors.transparent,
+                  border: Border.all(
+                    color: t == value ? kColAccent : kColInactive,
+                  ),
                   borderRadius: BorderRadius.circular(3),
                 ),
                 child: Text(
@@ -1960,7 +2308,9 @@ class _LfoTargetPicker extends StatelessWidget {
                   style: kStyleBase.copyWith(
                     fontSize: 11,
                     color: t == value ? kColAccent : kColHeader,
-                    fontWeight: t == value ? FontWeight.w700 : FontWeight.normal,
+                    fontWeight: t == value
+                        ? FontWeight.w700
+                        : FontWeight.normal,
                   ),
                 ),
               ),
@@ -1975,7 +2325,7 @@ class _LfoTargetPicker extends StatelessWidget {
 /// Drag up to increase, drag down to decrease. Double-tap to reset to mid.
 class _Knob extends StatelessWidget {
   final String label;
-  final double value;     // 0..1
+  final double value; // 0..1
   final String display;
   final ValueChanged<double> onChanged;
 
@@ -1999,18 +2349,27 @@ class _Knob extends StatelessWidget {
         child: Column(
           children: [
             SizedBox(
-              width: 56, height: 56,
+              width: 56,
+              height: 56,
               child: CustomPaint(painter: _KnobPainter(value)),
             ),
             const SizedBox(height: 4),
-            Text(label,
-                style: kStyleBase.copyWith(
-                    color: kColHeader, fontSize: 10,
-                    letterSpacing: 0.8)),
-            Text(display,
-                style: kStyleBase.copyWith(
-                    color: kColAccent, fontSize: 11,
-                    fontWeight: FontWeight.w700)),
+            Text(
+              label,
+              style: kStyleBase.copyWith(
+                color: kColHeader,
+                fontSize: 10,
+                letterSpacing: 0.8,
+              ),
+            ),
+            Text(
+              display,
+              style: kStyleBase.copyWith(
+                color: kColAccent,
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
           ],
         ),
       ),
@@ -2040,8 +2399,8 @@ class _KnobPainter extends CustomPainter {
 
     // -135° .. +135° sweep (in screen space, with 0° at +x axis).
     final startAngle = math.pi * 3 / 4 + math.pi / 2; // bottom-left
-    const sweep      = math.pi * 3 / 2;
-    final angle      = startAngle + sweep * value;
+    const sweep = math.pi * 3 / 2;
+    final angle = startAngle + sweep * value;
 
     // Filled arc showing value
     canvas.drawArc(

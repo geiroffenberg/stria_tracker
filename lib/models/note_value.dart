@@ -6,8 +6,18 @@
 ///   121     = OFF   "OFF"
 class NoteValue {
   static const _noteNames = [
-    'C', 'C#', 'D', 'D#', 'E', 'F',
-    'F#', 'G', 'G#', 'A', 'A#', 'B',
+    'C',
+    'C#',
+    'D',
+    'D#',
+    'E',
+    'F',
+    'F#',
+    'G',
+    'G#',
+    'A',
+    'A#',
+    'B',
   ];
 
   static const int _minScroll = 0;
@@ -18,14 +28,14 @@ class NoteValue {
   const NoteValue._(this.scrollIndex);
 
   static const NoteValue empty = NoteValue._(0);
-  static const NoteValue off   = NoteValue._(121);
+  static const NoteValue off = NoteValue._(121);
 
   static NoteValue fromScrollIndex(int i) =>
       NoteValue._(i.clamp(_minScroll, _maxScroll));
 
   bool get isEmpty => scrollIndex == 0;
-  bool get isOff   => scrollIndex == 121;
-  bool get isNote  => scrollIndex >= 1 && scrollIndex <= 120;
+  bool get isOff => scrollIndex == 121;
+  bool get isNote => scrollIndex >= 1 && scrollIndex <= 120;
 
   /// Standard MIDI note number (0–127). C-0 = 12, C-4 = 60.
   /// Only meaningful when [isNote] is true.
@@ -37,10 +47,10 @@ class NoteValue {
   /// Always 3-character string for display.
   String get display {
     if (isEmpty) return '---';
-    if (isOff)   return 'OFF';
-    final idx    = scrollIndex - 1; // 0–119
+    if (isOff) return 'OFF';
+    final idx = scrollIndex - 1; // 0–119
     final octave = idx ~/ 12;
-    final name   = _noteNames[idx % 12];
+    final name = _noteNames[idx % 12];
     // Natural note: "C-4"; sharp note: "C#4" (already 3 chars)
     return name.length == 1 ? '$name-$octave' : '$name$octave';
   }

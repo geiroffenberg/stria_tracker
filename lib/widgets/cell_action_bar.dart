@@ -28,11 +28,12 @@ class CellActionBar extends StatelessWidget {
       height = 56;
     } else if (selCell != null) {
       body = _buildForColumn(state, selCell.row, selCell.column);
-      // FX cmd needs more height for the chip strip below the label row.
-      height = (selCell.column == CellColumn.fx0cmd ||
+      // FX cmd uses stacked horizontal strips for command categories.
+      height =
+          (selCell.column == CellColumn.fx0cmd ||
               selCell.column == CellColumn.fx1cmd ||
               selCell.column == CellColumn.fx2cmd)
-          ? 96
+          ? 208
           : 56;
     } else {
       body = const _IdleBar();
@@ -42,9 +43,7 @@ class CellActionBar extends StatelessWidget {
     return AnimatedContainer(
       duration: const Duration(milliseconds: 100),
       height: height,
-      decoration: const BoxDecoration(
-        color: kBgTrackHeader,
-      ),
+      decoration: const BoxDecoration(color: kBgTrackHeader),
       child: body,
     );
   }
@@ -243,10 +242,8 @@ class _NumericActions extends StatelessWidget {
                 inactiveTrackColor: color.withAlpha(50),
                 thumbColor: color,
                 overlayColor: color.withAlpha(40),
-                thumbShape:
-                    const RoundSliderThumbShape(enabledThumbRadius: 9),
-                overlayShape:
-                    const RoundSliderOverlayShape(overlayRadius: 18),
+                thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 9),
+                overlayShape: const RoundSliderOverlayShape(overlayRadius: 18),
               ),
               child: Slider(
                 value: value.clamp(minV, maxV).toDouble(),
@@ -283,6 +280,12 @@ class _NumericActions extends StatelessWidget {
 // ─── FX-CMD: chip picker ──────────────────────────────────────────────────
 
 class _FxCmdActions extends StatelessWidget {
+  static const int _classicCount = 10;
+  static const int _instrumentStart = 10;
+  static const int _instrumentEnd = 31;
+  static const int _masterStart = 32;
+  static const int _masterEnd = 44;
+
   final AppState state;
   final int row;
   final CellColumn column;
@@ -304,6 +307,63 @@ class _FxCmdActions extends StatelessWidget {
       default:
         return 0;
     }
+  }
+
+  List<int> _indexRange(int start, int endInclusive) {
+    return List<int>.generate(endInclusive - start + 1, (i) => start + i);
+  }
+
+  Widget _sectionLabel(String text) {
+    return Text(
+      text,
+      style: kStyleBase.copyWith(
+        color: kColHeader,
+        fontSize: 11,
+        fontWeight: FontWeight.w700,
+      ),
+    );
+  }
+
+  Widget _commandStrip(List<int> indices, int? current) {
+    return SizedBox(
+      height: 28,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        itemCount: indices.length,
+        separatorBuilder: (_, _) => const SizedBox(width: 4),
+        itemBuilder: (_, i) {
+          final cmd = indices[i];
+          final selected = current == cmd;
+          return GestureDetector(
+            onTap: () {
+              state.currentTrack.writeColumnValue(row, column, cmd);
+              state.instrumentParamsChanged();
+            },
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10),
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: selected ? kColFxCmd.withAlpha(60) : Colors.transparent,
+                border: Border.all(
+                  color: selected ? kColFxCmd : kColInactive,
+                  width: 1,
+                ),
+                borderRadius: BorderRadius.circular(4),
+              ),
+              child: Text(
+                kFxCommandNames[cmd],
+                style: kStyleBase.copyWith(
+                  color: selected ? kColFxCmd : kColHeader,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 0.5,
+                ),
+              ),
+            ),
+          );
+        },
+      ),
+    );
   }
 
   @override
@@ -349,45 +409,20 @@ class _FxCmdActions extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 6),
-          SizedBox(
-            height: 28,
-            child: ListView.separated(
-              scrollDirection: Axis.horizontal,
-              itemCount: kFxCommandNames.length,
-              separatorBuilder: (_, __) => const SizedBox(width: 4),
-              itemBuilder: (_, i) {
-                final selected = current == i;
-                return GestureDetector(
-                  onTap: () {
-                    state.currentTrack.writeColumnValue(row, column, i);
-                    state.instrumentParamsChanged();
-                  },
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10),
-                    alignment: Alignment.center,
-                    decoration: BoxDecoration(
-                      color:
-                          selected ? kColFxCmd.withAlpha(60) : Colors.transparent,
-                      border: Border.all(
-                        color: selected ? kColFxCmd : kColInactive,
-                        width: 1,
-                      ),
-                      borderRadius: BorderRadius.circular(4),
-                    ),
-                    child: Text(
-                      kFxCommandNames[i],
-                      style: kStyleBase.copyWith(
-                        color: selected ? kColFxCmd : kColHeader,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w700,
-                        letterSpacing: 0.5,
-                      ),
-                    ),
-                  ),
-                );
-              },
-            ),
-          ),
+          _sectionLabel('Classic FX'),
+          const SizedBox(height: 3),
+          _commandStrip(List<int>.generate(_classicCount, (i) => i), current),
+          const SizedBox(height: 5),
+          _sectionLabel('Instrument FX (Axx synth, SLx slices)'),
+          const SizedBox(height: 3),
+          _commandStrip([
+            ..._indexRange(_instrumentStart, 15),
+            ..._indexRange(22, _instrumentEnd),
+          ], current),
+          const SizedBox(height: 5),
+          _sectionLabel('Mixer FX (Mxx bus, 1xx-9xx inserts)'),
+          const SizedBox(height: 3),
+          _commandStrip(_indexRange(_masterStart, _masterEnd), current),
         ],
       ),
     );

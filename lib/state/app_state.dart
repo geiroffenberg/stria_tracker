@@ -42,6 +42,8 @@ class AppState extends ChangeNotifier {
   Timer? _synthPreviewStopTimer;
   DateTime? _previewStartedAt;
   int _previewDurationMs = 1000;
+  double? _previewRegionStartNorm;
+  double? _previewRegionEndNorm;
   bool _playbackFollowsSong = false;
   int _currentArrangementSlotIndex = 0;
   int _playheadArrangementSlot = 0;
@@ -99,8 +101,36 @@ class AppState extends ChangeNotifier {
   int get playheadArrangementSlot => _playheadArrangementSlot;
   int? get queuedArrangementSlot => _queuedArrangementSlot;
   bool get playbackFollowsSong => _playbackFollowsSong;
-  bool get isPreviewingCurrentSampler => _previewSamplerSlot == _currentInstrumentIndex;
+  bool get isPreviewingCurrentSampler =>
+      _previewSamplerSlot == _currentInstrumentIndex;
   String? get defaultSampleFolder => _defaultSampleFolder;
+  double get currentSamplerPreviewStartNorm {
+    final slot = _previewSamplerSlot;
+    if (slot < 0 || slot >= instruments.length) {
+      return currentInstrument.sampler.start.clamp(0.0, 1.0);
+    }
+    return (_previewRegionStartNorm ?? instruments[slot].sampler.start).clamp(
+      0.0,
+      1.0,
+    );
+  }
+
+  double get currentSamplerPreviewEndNorm {
+    final slot = _previewSamplerSlot;
+    if (slot < 0 || slot >= instruments.length) {
+      final s = currentInstrument.sampler.start.clamp(0.0, 1.0);
+      return currentInstrument.sampler.end.clamp(
+        (s + 0.001).clamp(0.0, 1.0),
+        1.0,
+      );
+    }
+    final start = currentSamplerPreviewStartNorm;
+    return (_previewRegionEndNorm ?? instruments[slot].sampler.end).clamp(
+      (start + 0.001).clamp(0.0, 1.0),
+      1.0,
+    );
+  }
+
   double get currentSamplerPreviewNorm {
     if (_previewSamplerSlot < 0) return 0.0;
     final started = _previewStartedAt;
@@ -118,7 +148,11 @@ class AppState extends ChangeNotifier {
     return (wrapped / d).clamp(0.0, 1.0);
   }
 
-  Future<int?> _estimatePreviewDurationMs(InstrumentModel ins) async {
+  Future<int?> _estimatePreviewDurationMs(
+    InstrumentModel ins, {
+    double? startNorm,
+    double? endNorm,
+  }) async {
     final srcPath = ins.sampler.samplePath;
     if (srcPath == null || srcPath.isEmpty) return null;
     final f = File(srcPath);
@@ -164,7 +198,10 @@ class AppState extends ChangeNotifier {
         pos = body + chunkSize + (chunkSize.isOdd ? 1 : 0);
       }
 
-      if (channels <= 0 || bitsPerSample <= 0 || dataSize <= 0 || sampleRate <= 0) {
+      if (channels <= 0 ||
+          bitsPerSample <= 0 ||
+          dataSize <= 0 ||
+          sampleRate <= 0) {
         return null;
       }
 
@@ -174,10 +211,16 @@ class AppState extends ChangeNotifier {
       final totalFrames = dataSize ~/ frameSize;
       if (totalFrames <= 0) return null;
 
-      final start = ins.sampler.start.clamp(0.0, 1.0);
-      final end = ins.sampler.end.clamp(0.0, 1.0);
-      final startFrame = (start * (totalFrames - 1)).round().clamp(0, totalFrames - 1);
-      final endFrame = (end * totalFrames).round().clamp(startFrame + 1, totalFrames);
+      final start = (startNorm ?? ins.sampler.start).clamp(0.0, 1.0);
+      final end = (endNorm ?? ins.sampler.end).clamp(0.0, 1.0);
+      final startFrame = (start * (totalFrames - 1)).round().clamp(
+        0,
+        totalFrames - 1,
+      );
+      final endFrame = (end * totalFrames).round().clamp(
+        startFrame + 1,
+        totalFrames,
+      );
       final frames = endFrame - startFrame;
       if (frames <= 0) return null;
 
@@ -191,11 +234,20 @@ class AppState extends ChangeNotifier {
     }
   }
 
-  Future<void> _schedulePreviewAutoStop(int slot, InstrumentModel ins) async {
+  Future<void> _schedulePreviewAutoStop(
+    int slot,
+    InstrumentModel ins, {
+    double? startNorm,
+    double? endNorm,
+  }) async {
     _previewAutoStopTimer?.cancel();
     _previewAutoStopTimer = null;
 
-    final ms = await _estimatePreviewDurationMs(ins);
+    final ms = await _estimatePreviewDurationMs(
+      ins,
+      startNorm: startNorm,
+      endNorm: endNorm,
+    );
     if (ms != null) _previewDurationMs = ms;
 
     if (ins.sampler.loopMode != SamplerLoopMode.off) return;
@@ -279,7 +331,10 @@ class AppState extends ChangeNotifier {
 
   PatternModel _playbackPattern() {
     if (_playbackFollowsSong && song.patterns.isNotEmpty) {
-      return song.patterns[_playheadArrangementSlot.clamp(0, song.patterns.length - 1)];
+      return song.patterns[_playheadArrangementSlot.clamp(
+        0,
+        song.patterns.length - 1,
+      )];
     }
     return currentPattern;
   }
@@ -290,8 +345,8 @@ class AppState extends ChangeNotifier {
     bool? hasSoloOverride,
   }) {
     if (trackIndex < 0 || trackIndex >= pattern.tracks.length) return false;
-    final hasSolo = hasSoloOverride ??
-        pattern.tracks.any((track) => track.mixerSolo);
+    final hasSolo =
+        hasSoloOverride ?? pattern.tracks.any((track) => track.mixerSolo);
     final track = pattern.tracks[trackIndex];
     if (track.mixerMute) return true;
     if (hasSolo && !track.mixerSolo) return true;
@@ -430,7 +485,11 @@ class AppState extends ChangeNotifier {
         track.setNote(row, NoteValue.fromScrollIndex(49)); // C-4
         break;
       case CellColumn.instrument:
-        track.writeColumnValue(row, column, _defaultInstrumentForRow(track, row));
+        track.writeColumnValue(
+          row,
+          column,
+          _defaultInstrumentForRow(track, row),
+        );
         break;
       case CellColumn.volume:
         track.writeColumnValue(row, column, 80);
@@ -444,8 +503,11 @@ class AppState extends ChangeNotifier {
       case CellColumn.fx1val:
       case CellColumn.fx2val:
         // Default value depends on the paired cmd: PAN defaults to 50.
-        final fxIndex = column == CellColumn.fx0val ? 0
-            : column == CellColumn.fx1val ? 1 : 2;
+        final fxIndex = column == CellColumn.fx0val
+            ? 0
+            : column == CellColumn.fx1val
+            ? 1
+            : 2;
         final cmd = track.cells[row].fxSlots[fxIndex].command;
         track.writeColumnValue(row, column, cmd == kFxPAN ? 50 : 0x00);
         break;
@@ -460,7 +522,11 @@ class AppState extends ChangeNotifier {
       case CellColumn.note:
         track.setNote(row, NoteValue.fromScrollIndex(49)); // C-4
       case CellColumn.instrument:
-        track.writeColumnValue(row, column, _defaultInstrumentForRow(track, row));
+        track.writeColumnValue(
+          row,
+          column,
+          _defaultInstrumentForRow(track, row),
+        );
       case CellColumn.volume:
         track.writeColumnValue(row, column, 80);
       case CellColumn.fx0cmd:
@@ -470,8 +536,11 @@ class AppState extends ChangeNotifier {
       case CellColumn.fx0val:
       case CellColumn.fx1val:
       case CellColumn.fx2val:
-        final fxIndex = column == CellColumn.fx0val ? 0
-            : column == CellColumn.fx1val ? 1 : 2;
+        final fxIndex = column == CellColumn.fx0val
+            ? 0
+            : column == CellColumn.fx1val
+            ? 1
+            : 2;
         final cmd = track.cells[row].fxSlots[fxIndex].command;
         track.writeColumnValue(row, column, cmd == kFxPAN ? 50 : 0);
     }
@@ -622,8 +691,10 @@ class AppState extends ChangeNotifier {
     if (_currentPatternIndex >= song.patterns.length) {
       _currentPatternIndex = song.patterns.length - 1;
     }
-    _currentArrangementSlotIndex =
-        _currentArrangementSlotIndex.clamp(0, song.patterns.length - 1);
+    _currentArrangementSlotIndex = _currentArrangementSlotIndex.clamp(
+      0,
+      song.patterns.length - 1,
+    );
     notifyListeners();
   }
 
@@ -655,8 +726,9 @@ class AppState extends ChangeNotifier {
     // While song-follow playback is running, tapping a slot queues a jump
     // to happen on the next pattern boundary instead of an immediate seek.
     if (isPlaying && _playbackFollowsSong) {
-      _queuedArrangementSlot =
-          patternIndex == _playheadArrangementSlot ? null : patternIndex;
+      _queuedArrangementSlot = patternIndex == _playheadArrangementSlot
+          ? null
+          : patternIndex;
       notifyListeners();
       return;
     }
@@ -674,8 +746,9 @@ class AppState extends ChangeNotifier {
   /// local redraw without forcing a whole-app rebuild during playback.
   void queueSongPatternJump(int patternIndex) {
     if (patternIndex < 0 || patternIndex >= song.patterns.length) return;
-    _queuedArrangementSlot =
-        patternIndex == _playheadArrangementSlot ? null : patternIndex;
+    _queuedArrangementSlot = patternIndex == _playheadArrangementSlot
+        ? null
+        : patternIndex;
   }
 
   void setPlaybackFollowsSong(bool enabled) {
@@ -729,14 +802,29 @@ class AppState extends ChangeNotifier {
 
   int _norm01ToAudio255(double v) => (v.clamp(0.0, 1.0) * 255.0).round();
 
-  List<int> _synthParamsForInstrumentSlot(int slot) {
+  List<int> _synthParamsForInstrumentSlot(
+    int slot, {
+    int samplerSlice = 0,
+    bool samplerPlayThrough = false,
+    double? samplerStartNorm,
+    double? samplerEndNorm,
+  }) {
     final safe = slot.clamp(0, instruments.length - 1);
     final ins = instruments[safe];
     if (ins.type != InstrumentType.simpleSynth) {
       final sp = ins.sampler;
       final detuneNorm = ((sp.pitch + 1.0) / 2.0).clamp(0.0, 1.0);
-      final startNorm = sp.start.clamp(0.0, 1.0);
-      final endNorm = sp.end.clamp(0.0, 1.0);
+      double startNorm = (samplerStartNorm ?? sp.start).clamp(0.0, 1.0);
+      double endNorm = (samplerEndNorm ?? sp.end).clamp(0.0, 1.0);
+      if (samplerSlice > 0) {
+        final sliceStart = sp.sliceStartNorm(samplerSlice);
+        if (sliceStart != null) {
+          startNorm = sliceStart.clamp(0.0, 1.0);
+          endNorm = sp
+              .sliceEndNorm(samplerSlice, playThrough: samplerPlayThrough)
+              .clamp(startNorm, 1.0);
+        }
+      }
       return <int>[
         _norm01ToAudio255(detuneNorm), // sampler pitch / synth detune
         _norm01ToAudio255(0.70), // cutoff
@@ -747,7 +835,7 @@ class AppState extends ChangeNotifier {
         _norm01ToAudio255(0.00), // filterSus
         _norm01ToAudio255(0.25), // filterRel
         _norm01ToAudio255(0.50), // filterAmt
-        _norm01ToAudio255(sp.attack),  // atk  ← sampler attack
+        _norm01ToAudio255(sp.attack), // atk  ← sampler attack
         _norm01ToAudio255(0.30), // dec
         _norm01ToAudio255(0.80), // sus
         _norm01ToAudio255(sp.release), // rel  ← sampler release
@@ -801,7 +889,7 @@ class AppState extends ChangeNotifier {
     }
     _resetInstrumentCarry();
     isPlaying = true;
-    await AudioEngine.instance.start();   // wait for Oboe stream to be live
+    await AudioEngine.instance.start(); // wait for Oboe stream to be live
     _playClockAnchor = DateTime.now();
     _linesSinceAnchor = 0;
     _triggerCurrentRow(); // fire row 0 immediately
@@ -875,14 +963,10 @@ class AppState extends ChangeNotifier {
     if (anchor == null) return;
 
     final dur = _lineDuration();
-    final targetMicros =
-        (_linesSinceAnchor + 1) * dur.inMicroseconds;
-    final elapsedMicros =
-        DateTime.now().difference(anchor).inMicroseconds;
+    final targetMicros = (_linesSinceAnchor + 1) * dur.inMicroseconds;
+    final elapsedMicros = DateTime.now().difference(anchor).inMicroseconds;
     final delayMicros = targetMicros - elapsedMicros;
-    final delay = Duration(
-      microseconds: delayMicros < 0 ? 0 : delayMicros,
-    );
+    final delay = Duration(microseconds: delayMicros < 0 ? 0 : delayMicros);
 
     _playheadTimer = Timer(delay, () {
       if (!isPlaying) return;
@@ -922,7 +1006,10 @@ class AppState extends ChangeNotifier {
     _cancelRowFxTimers();
     if (_playbackFollowsSong && song.patterns.isNotEmpty) {
       final curPat =
-          song.patterns[_playheadArrangementSlot.clamp(0, song.patterns.length - 1)];
+          song.patterns[_playheadArrangementSlot.clamp(
+            0,
+            song.patterns.length - 1,
+          )];
       playheadRow += 1;
       if (playheadRow >= curPat.rowCount) {
         playheadRow = 0;
@@ -1006,9 +1093,11 @@ class AppState extends ChangeNotifier {
       int waveCmd = _waveCodeForInstrumentSlot(currentSlot);
       int instrumentTypeCmd = _instrumentTypeCodeForSlot(currentSlot);
       var synthParams = _synthParamsForInstrumentSlot(currentSlot);
-      int delayPct = 0;   // 0 = no delay, 1..99 = % into the line
-      int killPct = -1;   // -1 = no KIL, 0 = immediate, 1..99 = % into line
+      int delayPct = 0; // 0 = no delay, 1..99 = % into the line
+      int killPct = -1; // -1 = no KIL, 0 = immediate, 1..99 = % into line
       bool immediateKill = false;
+      int samplerSlice = 0;
+      bool samplerPlayThrough = false;
 
       if (playheadRow < track.cells.length) {
         final cell = track.cells[playheadRow];
@@ -1043,7 +1132,19 @@ class AppState extends ChangeNotifier {
           if (fx.command == kFxKIL) {
             killPct = (fx.value ?? 0).clamp(0, 99);
           }
+          if (fx.command != null &&
+              fx.command! >= kFxSL0 &&
+              fx.command! <= kFxSL9) {
+            samplerSlice = fx.command! - kFxSL0;
+            samplerPlayThrough = (fx.value ?? 0) > 0;
+          }
         }
+
+        synthParams = _synthParamsForInstrumentSlot(
+          currentSlot,
+          samplerSlice: samplerSlice,
+          samplerPlayThrough: samplerPlayThrough,
+        );
 
         if (killPct == 0) immediateKill = true;
       }
@@ -1062,7 +1163,14 @@ class AppState extends ChangeNotifier {
       }
 
       // Build the per-track segment (with real noteCmd) for DEL replay.
-      final segment = [noteCmd, volCmd, panCmd, waveCmd, instrumentTypeCmd, ...synthParams];
+      final segment = [
+        noteCmd,
+        volCmd,
+        panCmd,
+        waveCmd,
+        instrumentTypeCmd,
+        ...synthParams,
+      ];
       _rowSegments.add(segment);
 
       // DEL: if delay > 0 and there's a real note, hold now and fire later.
@@ -1115,21 +1223,27 @@ class AppState extends ChangeNotifier {
         final segments = _rowSegments
             .map((s) => List<int>.from(s))
             .toList(growable: false);
-        _rowFxTimers.add(Timer(delay, () {
-          if (!isPlaying) return;
-          final out = <int>[];
-          final hasSoloNow = pattern.tracks.any((track) => track.mixerSolo);
-          for (int t = 0; t < segments.length; t++) {
-            final seg = segments[t];
-            if (_isTrackMutedByMixer(pattern, t, hasSoloOverride: hasSoloNow)) {
-              seg[0] = -1;
-            } else {
-              seg[0] = perTrack[t] ?? -1; // fire delayed note(s), hold others
+        _rowFxTimers.add(
+          Timer(delay, () {
+            if (!isPlaying) return;
+            final out = <int>[];
+            final hasSoloNow = pattern.tracks.any((track) => track.mixerSolo);
+            for (int t = 0; t < segments.length; t++) {
+              final seg = segments[t];
+              if (_isTrackMutedByMixer(
+                pattern,
+                t,
+                hasSoloOverride: hasSoloNow,
+              )) {
+                seg[0] = -1;
+              } else {
+                seg[0] = perTrack[t] ?? -1; // fire delayed note(s), hold others
+              }
+              out.addAll(seg);
             }
-            out.addAll(seg);
-          }
-          AudioEngine.instance.setRowData(out);
-        }));
+            AudioEngine.instance.setRowData(out);
+          }),
+        );
       });
 
       pendingKills.forEach((pct, tracks) {
@@ -1138,29 +1252,41 @@ class AppState extends ChangeNotifier {
         for (final t in tracks) {
           if (t < trackCount) mask[t] = 1;
         }
-        _rowFxTimers.add(Timer(delay, () {
-          if (!isPlaying) return;
-          AudioEngine.instance.killVoices(mask);
-        }));
+        _rowFxTimers.add(
+          Timer(delay, () {
+            if (!isPlaying) return;
+            AudioEngine.instance.killVoices(mask);
+          }),
+        );
       });
     }
   }
 
   void _syncCurrentPatternToSongPlayhead() {
     if (song.patterns.isEmpty) return;
-    _currentPatternIndex =
-        _playheadArrangementSlot.clamp(0, song.patterns.length - 1);
+    _currentPatternIndex = _playheadArrangementSlot.clamp(
+      0,
+      song.patterns.length - 1,
+    );
     _clampSelectionToPattern();
   }
 
   // ── Sampler library ───────────────────────────────────────────────────────
 
   static const _kSamplerExts = <String>{
-    '.wav', '.aif', '.aiff', '.flac', '.ogg', '.mp3', '.m4a', '.aac'
+    '.wav',
+    '.aif',
+    '.aiff',
+    '.flac',
+    '.ogg',
+    '.mp3',
+    '.m4a',
+    '.aac',
   };
 
   Future<Directory> samplerLibraryDir() async {
-    final base = await getExternalStorageDirectory() ??
+    final base =
+        await getExternalStorageDirectory() ??
         await getApplicationDocumentsDirectory();
     final d = Directory('${base.path}/samples');
     if (!d.existsSync()) d.createSync(recursive: true);
@@ -1172,17 +1298,18 @@ class AppState extends ChangeNotifier {
   Future<List<String>> listSamplerLibrarySamples() async {
     try {
       final d = await samplerLibraryDir();
-      final names = d
-          .listSync()
-          .whereType<File>()
-          .map((f) => f.path.split(Platform.pathSeparator).last)
-          .where((n) {
-            final dot = n.lastIndexOf('.');
-            if (dot < 0) return false;
-            return _kSamplerExts.contains(n.substring(dot).toLowerCase());
-          })
-          .toList()
-        ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+      final names =
+          d
+              .listSync()
+              .whereType<File>()
+              .map((f) => f.path.split(Platform.pathSeparator).last)
+              .where((n) {
+                final dot = n.lastIndexOf('.');
+                if (dot < 0) return false;
+                return _kSamplerExts.contains(n.substring(dot).toLowerCase());
+              })
+              .toList()
+            ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
       return names;
     } catch (_) {
       return [];
@@ -1291,8 +1418,9 @@ class AppState extends ChangeNotifier {
 
     // Find next empty slot
     final nextEmpty = instruments.indexWhere(
-        (ins) => ins.type == InstrumentType.empty,
-        (currentInstrumentIndex + 1) % instruments.length);
+      (ins) => ins.type == InstrumentType.empty,
+      (currentInstrumentIndex + 1) % instruments.length,
+    );
     if (nextEmpty < 0) return 'No empty instrument slots available';
 
     // Read source WAV
@@ -1309,6 +1437,7 @@ class AppState extends ChangeNotifier {
       }
       return true;
     }
+
     if (!matchAscii(0, 'RIFF') || !matchAscii(8, 'WAVE')) {
       return 'Not a WAV file';
     }
@@ -1324,17 +1453,19 @@ class AppState extends ChangeNotifier {
       final body = pos + 8;
       if (body + chunkSize > bytes.length) break;
       if (matchAscii(pos, 'fmt ') && chunkSize >= 16) {
-        audioFormat  = readLe16(body + 0);
-        channels     = readLe16(body + 2);
-        sampleRate   = readLe32(body + 4);
-        bitsPerSample= readLe16(body + 14);
+        audioFormat = readLe16(body + 0);
+        channels = readLe16(body + 2);
+        sampleRate = readLe32(body + 4);
+        bitsPerSample = readLe16(body + 14);
       } else if (matchAscii(pos, 'data')) {
         dataOffset = body;
-        dataSize   = chunkSize;
+        dataSize = chunkSize;
       }
       pos = body + chunkSize + (chunkSize.isOdd ? 1 : 0);
     }
-    if (dataOffset < 0 || channels <= 0 || bitsPerSample <= 0 ||
+    if (dataOffset < 0 ||
+        channels <= 0 ||
+        bitsPerSample <= 0 ||
         !(audioFormat == 1 || audioFormat == 3)) {
       return 'Unsupported WAV format';
     }
@@ -1345,10 +1476,13 @@ class AppState extends ChangeNotifier {
     if (totalFrames <= 0) return 'Empty audio data';
 
     // Compute frame range from start/end normalised values
-    final startFrame =
-        (src.start.clamp(0.0, 1.0) * (totalFrames - 1)).round().clamp(0, totalFrames - 1);
-    final endFrame =
-        (src.end.clamp(0.0, 1.0) * totalFrames).round().clamp(startFrame + 1, totalFrames);
+    final startFrame = (src.start.clamp(0.0, 1.0) * (totalFrames - 1))
+        .round()
+        .clamp(0, totalFrames - 1);
+    final endFrame = (src.end.clamp(0.0, 1.0) * totalFrames).round().clamp(
+      startFrame + 1,
+      totalFrames,
+    );
     final chopFrames = endFrame - startFrame;
     if (chopFrames <= 0) return 'Start/end region is empty';
 
@@ -1386,17 +1520,18 @@ class AppState extends ChangeNotifier {
         wavOut.setUint8(off + i, s.codeUnitAt(i));
       }
     }
+
     writeFourCC(0, 'RIFF');
     wavOut.setUint32(4, 36 + dataBytes, Endian.little);
     writeFourCC(8, 'WAVE');
     writeFourCC(12, 'fmt ');
-    wavOut.setUint32(16, 16, Endian.little);      // chunk size
-    wavOut.setUint16(20, 1, Endian.little);       // PCM
-    wavOut.setUint16(22, 1, Endian.little);       // mono
+    wavOut.setUint32(16, 16, Endian.little); // chunk size
+    wavOut.setUint16(20, 1, Endian.little); // PCM
+    wavOut.setUint16(22, 1, Endian.little); // mono
     wavOut.setUint32(24, outSampleRate, Endian.little);
     wavOut.setUint32(28, outSampleRate * 2, Endian.little); // byte rate
-    wavOut.setUint16(32, 2, Endian.little);       // block align
-    wavOut.setUint16(34, 16, Endian.little);      // bits per sample
+    wavOut.setUint16(32, 2, Endian.little); // block align
+    wavOut.setUint16(34, 16, Endian.little); // bits per sample
     writeFourCC(36, 'data');
     wavOut.setUint32(40, dataBytes, Endian.little);
     for (int f = 0; f < chopFrames; f++) {
@@ -1404,7 +1539,8 @@ class AppState extends ChangeNotifier {
     }
 
     // Build output filename: "<srcname>_chop_N.wav"
-    final srcName = (src.sampleName ?? srcPath.split(Platform.pathSeparator).last);
+    final srcName =
+        (src.sampleName ?? srcPath.split(Platform.pathSeparator).last);
     final dot = srcName.lastIndexOf('.');
     final base = dot > 0 ? srcName.substring(0, dot) : srcName;
     final lib = await _songSamplesDir();
@@ -1421,15 +1557,15 @@ class AppState extends ChangeNotifier {
     final destIns = instruments[nextEmpty];
     destIns.type = InstrumentType.sampler;
     destIns.sampler
-      ..samplePath   = outPath
-      ..sampleName   = outName
-      ..pitch        = src.pitch
-      ..volume       = src.volume
-      ..loopMode     = src.loopMode
-      ..start        = 0.0
-      ..end          = 1.0
-      ..attack       = src.attack
-      ..release      = src.release;
+      ..samplePath = outPath
+      ..sampleName = outName
+      ..pitch = src.pitch
+      ..volume = src.volume
+      ..loopMode = src.loopMode
+      ..start = 0.0
+      ..end = 1.0
+      ..attack = src.attack
+      ..release = src.release;
 
     // Load into the engine slot
     await AudioEngine.instance.setSamplerSample(nextEmpty, outPath);
@@ -1462,6 +1598,7 @@ class AppState extends ChangeNotifier {
       }
       return true;
     }
+
     if (!matchAscii(0, 'RIFF') || !matchAscii(8, 'WAVE')) {
       return 'Not a WAV file';
     }
@@ -1477,17 +1614,19 @@ class AppState extends ChangeNotifier {
       final body = pos + 8;
       if (body + chunkSize > bytes.length) break;
       if (matchAscii(pos, 'fmt ') && chunkSize >= 16) {
-        audioFormat  = readLe16(body + 0);
-        channels     = readLe16(body + 2);
-        sampleRate   = readLe32(body + 4);
-        bitsPerSample= readLe16(body + 14);
+        audioFormat = readLe16(body + 0);
+        channels = readLe16(body + 2);
+        sampleRate = readLe32(body + 4);
+        bitsPerSample = readLe16(body + 14);
       } else if (matchAscii(pos, 'data')) {
         dataOffset = body;
-        dataSize   = chunkSize;
+        dataSize = chunkSize;
       }
       pos = body + chunkSize + (chunkSize.isOdd ? 1 : 0);
     }
-    if (dataOffset < 0 || channels <= 0 || bitsPerSample <= 0 ||
+    if (dataOffset < 0 ||
+        channels <= 0 ||
+        bitsPerSample <= 0 ||
         !(audioFormat == 1 || audioFormat == 3)) {
       return 'Unsupported WAV format';
     }
@@ -1498,10 +1637,13 @@ class AppState extends ChangeNotifier {
     if (totalFrames <= 0) return 'Empty audio data';
 
     // Compute frame range from start/end normalised values
-    final startFrame =
-        (src.start.clamp(0.0, 1.0) * (totalFrames - 1)).round().clamp(0, totalFrames - 1);
-    final endFrame =
-        (src.end.clamp(0.0, 1.0) * totalFrames).round().clamp(startFrame + 1, totalFrames);
+    final startFrame = (src.start.clamp(0.0, 1.0) * (totalFrames - 1))
+        .round()
+        .clamp(0, totalFrames - 1);
+    final endFrame = (src.end.clamp(0.0, 1.0) * totalFrames).round().clamp(
+      startFrame + 1,
+      totalFrames,
+    );
     final cropFrames = endFrame - startFrame;
     if (cropFrames <= 0) return 'Start/end region is empty';
 
@@ -1538,6 +1680,7 @@ class AppState extends ChangeNotifier {
         wavOut.setUint8(off + i, s.codeUnitAt(i));
       }
     }
+
     writeFourCC(0, 'RIFF');
     wavOut.setUint32(4, 36 + dataBytes, Endian.little);
     writeFourCC(8, 'WAVE');
@@ -1556,7 +1699,8 @@ class AppState extends ChangeNotifier {
     }
 
     // Build output filename: "<srcname>_crop_N.wav"
-    final srcName = (src.sampleName ?? srcPath.split(Platform.pathSeparator).last);
+    final srcName =
+        (src.sampleName ?? srcPath.split(Platform.pathSeparator).last);
     final dot = srcName.lastIndexOf('.');
     final base = dot > 0 ? srcName.substring(0, dot) : srcName;
     final projectDir = await _songSamplesDir();
@@ -1577,12 +1721,22 @@ class AppState extends ChangeNotifier {
       ..start = 0.0
       ..end = 1.0;
 
-    await AudioEngine.instance.setSamplerSample(currentInstrumentIndex, outPath);
+    await AudioEngine.instance.setSamplerSample(
+      currentInstrumentIndex,
+      outPath,
+    );
     _notifyListenersSafe();
     return null;
   }
 
   Future<String?> startPreviewCurrentSampler() async {
+    return previewCurrentSamplerRegion();
+  }
+
+  Future<String?> previewCurrentSamplerRegion({
+    double? startNorm,
+    double? endNorm,
+  }) async {
     try {
       final slot = currentInstrumentIndex.clamp(0, instruments.length - 1);
       final ins = instruments[slot];
@@ -1593,18 +1747,46 @@ class AppState extends ChangeNotifier {
         return 'No sample loaded';
       }
 
+      if (_previewSamplerSlot >= 0) {
+        await stopPreviewCurrentSampler();
+      }
+
+      final clampedStart = (startNorm ?? ins.sampler.start).clamp(0.0, 1.0);
+      final clampedEnd = (endNorm ?? ins.sampler.end).clamp(
+        (clampedStart + 0.001).clamp(0.0, 1.0),
+        1.0,
+      );
+
       final waveCmd = _waveCodeForInstrumentSlot(slot);
       final instrumentTypeCmd = _instrumentTypeCodeForSlot(slot);
-      final synthParams = _synthParamsForInstrumentSlot(slot);
+      final synthParams = _synthParamsForInstrumentSlot(
+        slot,
+        samplerStartNorm: clampedStart,
+        samplerEndNorm: clampedEnd,
+      );
 
-      final noteOn = <int>[60, 255, 128, waveCmd, instrumentTypeCmd, ...synthParams];
+      final noteOn = <int>[
+        60,
+        255,
+        128,
+        waveCmd,
+        instrumentTypeCmd,
+        ...synthParams,
+      ];
 
       await AudioEngine.instance.start();
       await AudioEngine.instance.setRowData(noteOn);
       _previewSamplerSlot = slot;
       _previewStartedAt = DateTime.now();
+      _previewRegionStartNorm = clampedStart;
+      _previewRegionEndNorm = clampedEnd;
       notifyListeners();
-      await _schedulePreviewAutoStop(slot, ins);
+      await _schedulePreviewAutoStop(
+        slot,
+        ins,
+        startNorm: clampedStart,
+        endNorm: clampedEnd,
+      );
       return null;
     } catch (e) {
       return e.toString();
@@ -1634,7 +1816,14 @@ class AppState extends ChangeNotifier {
       final instrumentTypeCmd = _instrumentTypeCodeForSlot(slot);
       final synthParams = _synthParamsForInstrumentSlot(slot);
 
-      final noteOff = <int>[-2, -1, -1, waveCmd, instrumentTypeCmd, ...synthParams];
+      final noteOff = <int>[
+        -2,
+        -1,
+        -1,
+        waveCmd,
+        instrumentTypeCmd,
+        ...synthParams,
+      ];
       final noteOn = <int>[
         midiNote.clamp(0, 127),
         255,
@@ -1667,13 +1856,25 @@ class AppState extends ChangeNotifier {
     _previewAutoStopTimer?.cancel();
     _previewAutoStopTimer = null;
     _previewStartedAt = null;
+    _previewRegionStartNorm = null;
+    _previewRegionEndNorm = null;
 
-    final slot = (_previewSamplerSlot >= 0 ? _previewSamplerSlot : currentInstrumentIndex)
-        .clamp(0, instruments.length - 1);
+    final slot =
+        (_previewSamplerSlot >= 0
+                ? _previewSamplerSlot
+                : currentInstrumentIndex)
+            .clamp(0, instruments.length - 1);
     final waveCmd = _waveCodeForInstrumentSlot(slot);
     final instrumentTypeCmd = _instrumentTypeCodeForSlot(slot);
     final synthParams = _synthParamsForInstrumentSlot(slot);
-    final noteOff = <int>[-2, -1, -1, waveCmd, instrumentTypeCmd, ...synthParams];
+    final noteOff = <int>[
+      -2,
+      -1,
+      -1,
+      waveCmd,
+      instrumentTypeCmd,
+      ...synthParams,
+    ];
     await AudioEngine.instance.setRowData(noteOff);
     _previewSamplerSlot = -1;
     notifyListeners();
@@ -1698,6 +1899,8 @@ class AppState extends ChangeNotifier {
     _previewAutoStopTimer?.cancel();
     _previewAutoStopTimer = null;
     _previewStartedAt = null;
+    _previewRegionStartNorm = null;
+    _previewRegionEndNorm = null;
     if (isPreviewingCurrentSampler) {
       stopPreviewCurrentSampler();
     }
@@ -1759,9 +1962,7 @@ class AppState extends ChangeNotifier {
   Future<void> _saveAppSettings() async {
     try {
       final file = await _appSettingsFile();
-      final payload = jsonEncode({
-        'defaultSampleFolder': _defaultSampleFolder,
-      });
+      final payload = jsonEncode({'defaultSampleFolder': _defaultSampleFolder});
       await file.writeAsString(payload, flush: true);
     } catch (_) {
       // Non-fatal: app continues with in-memory setting.
@@ -1825,10 +2026,12 @@ class AppState extends ChangeNotifier {
         continue;
       }
 
-      final srcName = ins.sampler.sampleName ??
-          absSrc.split(Platform.pathSeparator).last;
+      final srcName =
+          ins.sampler.sampleName ?? absSrc.split(Platform.pathSeparator).last;
       final dot = srcName.lastIndexOf('.');
-      final stem = _sanitizeFileStem(dot > 0 ? srcName.substring(0, dot) : srcName);
+      final stem = _sanitizeFileStem(
+        dot > 0 ? srcName.substring(0, dot) : srcName,
+      );
       final ext = dot > 0 ? srcName.substring(dot) : '.wav';
 
       var candidate = '$stem$ext';
@@ -1887,7 +2090,9 @@ class AppState extends ChangeNotifier {
   Future<List<String>> listSavedSongs() async {
     try {
       final dir = await _songsDir();
-      final files = dir.listSync().whereType<File>()
+      final files = dir
+          .listSync()
+          .whereType<File>()
           .where((f) => f.path.endsWith('.json'))
           .toList();
       final names = <String>[];
@@ -1911,21 +2116,25 @@ class AppState extends ChangeNotifier {
       if (!file.existsSync()) return false;
       final raw = await file.readAsString();
       final j = jsonDecode(raw) as Map<String, dynamic>;
-      final loadedSong =
-          SongModel.fromJson(j['song'] as Map<String, dynamic>);
+      final loadedSong = SongModel.fromJson(j['song'] as Map<String, dynamic>);
       final loadedInstruments = (j['instruments'] as List<dynamic>)
           .map((e) => InstrumentModel.fromJson(e as Map<String, dynamic>))
           .toList();
       song = loadedSong;
-      for (var i = 0;
-          i < instruments.length && i < loadedInstruments.length;
-          i++) {
+      for (
+        var i = 0;
+        i < instruments.length && i < loadedInstruments.length;
+        i++
+      ) {
         instruments[i] = loadedInstruments[i];
       }
       for (var i = 0; i < instruments.length; i++) {
         final ins = instruments[i];
         if (ins.type == InstrumentType.sampler) {
-          await AudioEngine.instance.setSamplerSample(i, ins.sampler.samplePath);
+          await AudioEngine.instance.setSamplerSample(
+            i,
+            ins.sampler.samplePath,
+          );
         }
       }
       _currentPatternIndex = 0;

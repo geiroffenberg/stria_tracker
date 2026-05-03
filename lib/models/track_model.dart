@@ -2,9 +2,9 @@ import 'cell.dart';
 import 'note_value.dart';
 
 const int kDefaultRowsPerPattern = 64;
-const int kMaxTracks      = 16;
-const int kDefaultTracks  = 16;
-const int kFxSlots        = 3;
+const int kMaxTracks = 16;
+const int kDefaultTracks = 16;
+const int kFxSlots = 3;
 
 class TrackModel {
   String name;
@@ -30,7 +30,9 @@ class TrackModel {
     final target = rowCount.clamp(1, 9801);
     if (cells.length == target) return;
     if (cells.length < target) {
-      cells.addAll(List.generate(target - cells.length, (_) => TrackerCell.empty()));
+      cells.addAll(
+        List.generate(target - cells.length, (_) => TrackerCell.empty()),
+      );
       return;
     }
     cells = cells.sublist(0, target);
@@ -146,8 +148,7 @@ class TrackModel {
   /// Max value for clamping scroll input.
   int maxValue(CellColumn column) {
     if (column == CellColumn.note) return 121; // 0=empty … 121=OFF
-    if (column == CellColumn.instrument ||
-        column == CellColumn.volume) {
+    if (column == CellColumn.instrument || column == CellColumn.volume) {
       return 99;
     }
     return 255; // FX fields are 0–255

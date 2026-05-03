@@ -22,8 +22,8 @@ class FxSlot {
       v == null ? '--' : v.toRadixString(16).toUpperCase().padLeft(2, '0');
 
   /// 2-digit decimal display for FX values (00–99), always shows 00 if empty.
-    /// 2-digit decimal display for FX values (00–99), or '--' if empty.
-    static String fxValueDisplay(int? v) =>
+  /// 2-digit decimal display for FX values (00–99), or '--' if empty.
+  static String fxValueDisplay(int? v) =>
       v == null ? '--' : (v % 100).toString().padLeft(2, '0');
 }
 
@@ -40,6 +40,46 @@ const List<String> kFxCommandNames = [
   'REV', // 07 – reverse
   'VIB', // 08 – vibrato
   'VOL', // 09 – volume ramp
+  // Instrument synth FX (Axx)
+  'A01',
+  'A02',
+  'A03',
+  'A04',
+  'A05',
+  'A06',
+  // Instrument sample FX (Sxx)
+  'S01',
+  'S02',
+  'S03',
+  'S04',
+  'S05',
+  'S06',
+  // Sample slicer select FX (SLx)
+  'SL0',
+  'SL1',
+  'SL2',
+  'SL3',
+  'SL4',
+  'SL5',
+  'SL6',
+  'SL7',
+  'SL8',
+  'SL9',
+  // Mixer channel-strip FX (Mxx)
+  'M01',
+  'M02',
+  'M03',
+  'M04',
+  // Master insert routing (numeric)
+  '101',
+  '201',
+  '301',
+  '401',
+  '501',
+  '601',
+  '701',
+  '801',
+  '901',
 ];
 
 const List<String> kFxCommandDescriptions = [
@@ -53,6 +93,41 @@ const List<String> kFxCommandDescriptions = [
   'Play sample backwards',
   'Add vibrato modulation',
   'Ramp volume over time',
+  'Synth FX A01 (reserved)',
+  'Synth FX A02 (reserved)',
+  'Synth FX A03 (reserved)',
+  'Synth FX A04 (reserved)',
+  'Synth FX A05 (reserved)',
+  'Synth FX A06 (reserved)',
+  'Sample FX S01 (reserved)',
+  'Sample FX S02 (reserved)',
+  'Sample FX S03 (reserved)',
+  'Sample FX S04 (reserved)',
+  'Sample FX S05 (reserved)',
+  'Sample FX S06 (reserved)',
+  'Select Slice 0 (sample start)',
+  'Select Slice 1',
+  'Select Slice 2',
+  'Select Slice 3',
+  'Select Slice 4',
+  'Select Slice 5',
+  'Select Slice 6',
+  'Select Slice 7',
+  'Select Slice 8',
+  'Select Slice 9',
+  'Mixer volume (00-99)',
+  'Mixer pan (00-99)',
+  'Mixer mute (00=off, >00=on)',
+  'Mixer solo (00=off, >00=on)',
+  'Insert 1 param 01 (reserved)',
+  'Insert 2 param 01 (reserved)',
+  'Insert 3 param 01 (reserved)',
+  'Insert 4 param 01 (reserved)',
+  'Insert 5 param 01 (reserved)',
+  'Insert 6 param 01 (reserved)',
+  'Insert 7 param 01 (reserved)',
+  'Insert 8 param 01 (reserved)',
+  'Insert 9 param 01 (reserved)',
 ];
 
 /// FX command byte constants (indices into kFxCommandNames).
@@ -66,6 +141,8 @@ const int kFxRET = 6;
 const int kFxREV = 7;
 const int kFxVIB = 8;
 const int kFxVOL = 9;
+const int kFxSL0 = 22;
+const int kFxSL9 = 31;
 
 /// Returns the 3-letter FX command name, or '---' if null/unknown.
 String fxCommandName(int? cmd) {
@@ -131,7 +208,8 @@ class TrackerCell {
     instrument: j['inst'] as int?,
     volume: j['vol'] as int?,
     pan: j['pan'] as int?,
-    fxSlots: (j['fx'] as List<dynamic>?)
+    fxSlots:
+        (j['fx'] as List<dynamic>?)
             ?.map((e) => FxSlot.fromJson(e as Map<String, dynamic>))
             .toList() ??
         List.generate(3, (_) => FxSlot()),
@@ -140,15 +218,15 @@ class TrackerCell {
 
 /// Column indices used throughout the UI.
 enum CellColumn {
-  note,       // 0
+  note, // 0
   instrument, // 1
-  volume,     // 2
-  fx0cmd,     // 3
-  fx0val,     // 4
-  fx1cmd,     // 5
-  fx1val,     // 6
-  fx2cmd,     // 7
-  fx2val,     // 8
+  volume, // 2
+  fx0cmd, // 3
+  fx0val, // 4
+  fx1cmd, // 5
+  fx1val, // 6
+  fx2cmd, // 7
+  fx2val, // 8
 }
 
 extension CellColumnLabel on CellColumn {
