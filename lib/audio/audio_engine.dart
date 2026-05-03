@@ -63,6 +63,39 @@ class AudioEngine {
     await _channel.invokeMethod('killVoices', {'mask': killMask});
   }
 
+  /// Queue sample-accurate retrigger events for the current row.
+  /// [data] is packed in groups of 4: [sampleOffset, trackIdx, note, volume].
+  /// The C++ engine fires each event when its sample offset is reached inside
+  /// the audio callback — giving buffer-level precision (~5 ms) instead of
+  /// relying on Dart Timer jitter.
+  Future<void> queueRetrigs(List<int> data) async {
+    if (!_initialised) return;
+    await _channel.invokeMethod('queueRetrigs', {'data': data});
+  }
+
+  /// Queue sample-accurate pitch-only ARP events for the current row.
+  /// [data] is packed in groups of 3: [sampleOffset, trackIdx, note].
+  /// The C++ engine applies these as pitch-only updates without retriggering
+  /// envelopes, preserving ARP smoothness while improving timing precision.
+  Future<void> queueArp(List<int> data) async {
+    if (!_initialised) return;
+    await _channel.invokeMethod('queueArp', {'data': data});
+  }
+
+  /// Queue sample-accurate delayed note events (DEL).
+  /// [data] is packed in groups of 4: [sampleOffset, trackIdx, note, volume].
+  Future<void> queueDelays(List<int> data) async {
+    if (!_initialised) return;
+    await _channel.invokeMethod('queueDelays', {'data': data});
+  }
+
+  /// Queue sample-accurate kill events (KIL).
+  /// [data] is packed in groups of 2: [sampleOffset, trackIdx].
+  Future<void> queueKills(List<int> data) async {
+    if (!_initialised) return;
+    await _channel.invokeMethod('queueKills', {'data': data});
+  }
+
   /// Assigns a sample file to a sampler instrument slot.
   /// [slot] is 0-based instrument index.
   /// Pass null or empty [path] to clear sample assignment.

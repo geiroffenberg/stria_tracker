@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:flutter/scheduler.dart';
@@ -81,6 +82,10 @@ class AppState extends ChangeNotifier {
 
   // Playback carry state for IN column per track.
   List<int> _carryInstrumentByTrack = const [];
+  List<int?> _carryNoteByTrack = const [];
+  List<int?> _carryVolumeByTrack = const [];
+  List<({List<int> cycle, int notesPerLine, int phase})?> _carryArpByTrack =
+      const [];
   int _carryPatternIndex = -1;
 
   bool isPlaying = false;
@@ -797,7 +802,14 @@ class AppState extends ChangeNotifier {
 
   int _instrumentTypeCodeForSlot(int slot) {
     final safe = slot.clamp(0, instruments.length - 1);
-    return instruments[safe].type == InstrumentType.sampler ? 1 : 0;
+    final ins = instruments[safe];
+    if (ins.type == InstrumentType.sampler) return 1;
+    // Fallback: if a sample is actually loaded, treat it as a sampler even
+    // if the type enum was never promoted (e.g. loaded before the fix, or
+    // restored from JSON with a stale type value).
+    final sp = ins.sampler;
+    if (sp.samplePath != null && sp.samplePath!.isNotEmpty) return 1;
+    return 0;
   }
 
   int _norm01ToAudio255(double v) => (v.clamp(0.0, 1.0) * 255.0).round();
@@ -805,9 +817,13 @@ class AppState extends ChangeNotifier {
   List<int> _synthParamsForInstrumentSlot(
     int slot, {
     int samplerSlice = 0,
+    bool samplerSliceActive = false,
     bool samplerPlayThrough = false,
     double? samplerStartNorm,
     double? samplerEndNorm,
+    bool samplerReverse = false,
+    double? vibSpeedNorm,  // VIB: overrides lfoRate (pitch target)
+    double? vibDepthNorm,  // VIB: overrides lfoDepth
   }) {
     final safe = slot.clamp(0, instruments.length - 1);
     final ins = instruments[safe];
@@ -816,14 +832,21 @@ class AppState extends ChangeNotifier {
       final detuneNorm = ((sp.pitch + 1.0) / 2.0).clamp(0.0, 1.0);
       double startNorm = (samplerStartNorm ?? sp.start).clamp(0.0, 1.0);
       double endNorm = (samplerEndNorm ?? sp.end).clamp(0.0, 1.0);
-      if (samplerSlice > 0) {
-        final sliceStart = sp.sliceStartNorm(samplerSlice);
-        if (sliceStart != null) {
-          startNorm = sliceStart.clamp(0.0, 1.0);
-          endNorm = sp
-              .sliceEndNorm(samplerSlice, playThrough: samplerPlayThrough)
-              .clamp(startNorm, 1.0);
+      if (samplerSliceActive) {
+        if (samplerSlice == 0) {
+          // SL0: start stays at sp.start (sampler start knob) — same as a plain note.
+          // startNorm is already set to sp.start above, nothing to override.
+        } else {
+          final sliceStart = sp.sliceStartNorm(samplerSlice);
+          if (sliceStart != null) {
+            startNorm = sliceStart.clamp(0.0, 1.0);
+          }
+          // If the slice marker is unset (sliceStart == null), startNorm stays
+          // at sp.start — the user hasn't placed this slice yet.
         }
+        endNorm = sp
+            .sliceEndNorm(samplerSlice, playThrough: samplerPlayThrough)
+            .clamp(startNorm, 1.0);
       }
       return <int>[
         _norm01ToAudio255(detuneNorm), // sampler pitch / synth detune
@@ -844,7 +867,8 @@ class AppState extends ChangeNotifier {
         _norm01ToAudio255(startNorm), // lfoRate reused as sampler start
         _norm01ToAudio255(endNorm), // lfoDepth reused as sampler end
         0, // lfoTarget: pitch
-        sp.loopMode.index, // loop mode: 0=off, 1=forward, 2=pingpong
+        sp.loopMode.index, // drive reused as loop mode: 0=off, 1=forward, 2=pingpong
+        samplerReverse ? 1 : 0, // reverse flag (REV FX)
       ];
     }
     final p = ins.synth;
@@ -864,15 +888,19 @@ class AppState extends ChangeNotifier {
       _norm01ToAudio255(p.release),
       _norm01ToAudio255(p.glide),
       _norm01ToAudio255(p.volume),
-      _norm01ToAudio255(p.lfoRate),
-      _norm01ToAudio255(p.lfoDepth),
-      p.lfoTarget.index2,
+      _norm01ToAudio255(vibSpeedNorm ?? p.lfoRate),
+      _norm01ToAudio255(vibDepthNorm ?? p.lfoDepth),
+      vibSpeedNorm != null ? 0 : p.lfoTarget.index2, // force pitch target for VIB
       _norm01ToAudio255(p.drive),
+      0, // reverse: not applicable for synth
     ];
   }
 
   void _resetInstrumentCarry() {
     _carryInstrumentByTrack = const [];
+    _carryNoteByTrack = const [];
+    _carryVolumeByTrack = const [];
+    _carryArpByTrack = const [];
     _carryPatternIndex = -1;
   }
 
@@ -1054,6 +1082,18 @@ class AppState extends ChangeNotifier {
   /// sends packed note/volume/pan/wave + synth params to the audio engine.
   void _triggerCurrentRow() {
     int ui99ToAudio255(int v) => ((v.clamp(0, 99) * 255) / 99).round();
+    int pitchOnlyNoteCmd(int midi) => -1000 - midi.clamp(0, 127);
+    int retrigVolumeForStep(int baseVolume, int mode, int step) {
+      if (mode <= 0 || step <= 0) return baseVolume.clamp(0, 255);
+      const downFactors = [1.0, 0.88, 0.72, 0.58, 0.42];
+      const upFactors = [1.0, 1.08, 1.18, 1.32, 1.5];
+      final clampedMode = mode.clamp(0, 9);
+      final factor = clampedMode <= 4
+          ? math.pow(downFactors[clampedMode], step).toDouble()
+          : math.pow(upFactors[clampedMode - 5], step).toDouble();
+      return (baseVolume * factor).round().clamp(0, 255);
+    }
+    final rng = math.Random();
 
     final PatternModel pattern;
     final int patternIdx;
@@ -1070,14 +1110,31 @@ class AppState extends ChangeNotifier {
         playheadRow == 0) {
       _carryPatternIndex = patternIdx;
       _carryInstrumentByTrack = List<int>.filled(pattern.tracks.length, 0);
+      _carryNoteByTrack = List<int?>.filled(pattern.tracks.length, null);
+      _carryVolumeByTrack = List<int?>.filled(pattern.tracks.length, null);
+      _carryArpByTrack =
+          List<({List<int> cycle, int notesPerLine, int phase})?>.filled(
+            pattern.tracks.length,
+            null,
+          );
     }
 
     _rowSegments = [];
-    // Pending mid-line DEL fires for this row, keyed by % into line (1..99)
-    // → {trackIndex → noteCmd}. Scheduled as one-shot timers below.
-    final Map<int, Map<int, int>> pendingDelays = {};
-    // Pending mid-line KIL events: % into line (1..99) → trackIndex set.
-    final Map<int, Set<int>> pendingKills = {};
+    // Pending DEL events: [sampleOffset, trackIdx, note, volume, ...]
+    // queued natively for sample-accurate firing.
+    final List<int> delayQueue = [];
+    // Pending KIL events: [sampleOffset, trackIdx, ...]
+    // queued natively for sample-accurate firing.
+    final List<int> killQueue = [];
+    // Pending RET events: flat list [sampleOffset, trackIdx, note, volume, ...]
+    // passed directly to the C++ engine for sample-accurate firing.
+    final List<int> retrigQueue = [];
+    // Pending ARP events: flat list [sampleOffset, trackIdx, note, ...]
+    // passed directly to the C++ engine as pitch-only updates.
+    final List<int> arpQueue = [];
+    // Pending ARP events: trackIndex → (expanded cycle, notesPerLine, phase).
+    final Map<int, ({List<int> cycle, int notesPerLine, int phase})> pendingArp =
+      {};
 
     final rowData = <int>[];
     final immediateKillData = <int>[];
@@ -1097,7 +1154,20 @@ class AppState extends ChangeNotifier {
       int killPct = -1; // -1 = no KIL, 0 = immediate, 1..99 = % into line
       bool immediateKill = false;
       int samplerSlice = 0;
+      bool samplerSliceActive = false;
       bool samplerPlayThrough = false;
+      int? ranChancePct;  // RAN: if set, % chance to override slice with random active slice
+      bool samplerReverse = false; // REV: play sample/slice backward
+      double? vibSpeedNorm;  // VIB: lfo speed override
+      double? vibDepthNorm;  // VIB: lfo depth override
+      int retrigVolumeMode = 0;
+      int retrigNotesPerLine = 0;
+      int arpInterval1 = -1;
+      int arpInterval2 = -1;
+      int arcOctaveLayers = 0;
+      int arcNotesPerLine = 0;
+      int? chancePct;
+      int delayedSampleOffset = -1;
 
       if (playheadRow < track.cells.length) {
         final cell = track.cells[playheadRow];
@@ -1120,6 +1190,7 @@ class AppState extends ChangeNotifier {
 
         if (cell.volume != null) {
           volCmd = ui99ToAudio255(cell.volume!);
+          _carryVolumeByTrack[t] = volCmd;
         }
 
         for (final fx in cell.fxSlots) {
@@ -1132,18 +1203,78 @@ class AppState extends ChangeNotifier {
           if (fx.command == kFxKIL) {
             killPct = (fx.value ?? 0).clamp(0, 99);
           }
+          if (fx.command == kFxCHA && fx.value != null) {
+            chancePct = fx.value!.clamp(0, 99);
+          }
+          if (fx.command == kFxRAN && fx.value != null) {
+            ranChancePct = fx.value!.clamp(0, 99);
+          }
+          if (fx.command == kFxREV) {
+            samplerReverse = true;
+          }
+          if (fx.command == kFxVOL && fx.value != null) {
+            // Override volume for this row only — does not update carry state.
+            volCmd = ui99ToAudio255(fx.value!.clamp(0, 99));
+          }
+          if (fx.command == kFxVIB && fx.value != null) {
+            // XY: X = speed (tens digit, 0-9), Y = depth (ones digit, 0-9).
+            final xy = fx.value!.clamp(0, 99);
+            final x = xy ~/ 10; // speed digit
+            final y = xy % 10;  // depth digit
+            vibSpeedNorm = x / 9.0;
+            vibDepthNorm = y / 9.0;
+          }
+          if (fx.command == kFxRET) {
+            final value = (fx.value ?? 0).clamp(0, 99);
+            retrigVolumeMode = (value ~/ 10).clamp(0, 9);
+            retrigNotesPerLine = (value % 10).clamp(0, 9);
+          }
+          if (fx.command == kFxARP && fx.value != null && fx.value! > 0) {
+            // Digits are diatonic major scale degrees (1=root, 2=M2nd, 3=M3rd,
+            // 4=P4th, 5=P5th, 6=M6th, 7=M7th, 8=octave, 9=M9th).
+            // Digit 0 = repeat the base note (unison).
+            const semitones = [0, 0, 2, 4, 5, 7, 9, 11, 12, 14];
+            arpInterval1 = semitones[(fx.value! ~/ 10).clamp(0, 9)];
+            arpInterval2 = semitones[(fx.value! % 10).clamp(0, 9)];
+          }
+          if (fx.command == kFxARC && fx.value != null) {
+            arcOctaveLayers = (fx.value! ~/ 10).clamp(0, 9);
+            arcNotesPerLine = (fx.value! % 10).clamp(0, 9);
+          }
           if (fx.command != null &&
               fx.command! >= kFxSL0 &&
               fx.command! <= kFxSL9) {
+            samplerSliceActive = true;
             samplerSlice = fx.command! - kFxSL0;
-            samplerPlayThrough = (fx.value ?? 0) > 0;
+            samplerPlayThrough = (fx.value ?? 0) == 0; // 00=play through, 01=stop at next slice
+          }
+        }
+
+        // RAN: probabilistic random active slice override (sampler only).
+        // Applied after SL so RAN can override an explicit slice selection.
+        if (ranChancePct != null && ranChancePct > 0 && noteCmd >= 0) {
+          final instr = instruments[currentSlot];
+          if (instr.type == InstrumentType.sampler) {
+            final sp = instr.sampler;
+            final activeSlices = <int>[];
+            for (int s = 1; s <= SamplerParams.sliceCount; s++) {
+              if (sp.sliceStartValue(s) > 0) activeSlices.add(s);
+            }
+            if (activeSlices.isNotEmpty &&
+                rng.nextInt(100) < ranChancePct) {
+              samplerSlice = activeSlices[rng.nextInt(activeSlices.length)];
+            }
           }
         }
 
         synthParams = _synthParamsForInstrumentSlot(
           currentSlot,
           samplerSlice: samplerSlice,
+          samplerSliceActive: samplerSliceActive,
           samplerPlayThrough: samplerPlayThrough,
+          samplerReverse: samplerReverse,
+          vibSpeedNorm: vibSpeedNorm,
+          vibDepthNorm: vibDepthNorm,
         );
 
         if (killPct == 0) immediateKill = true;
@@ -1162,6 +1293,64 @@ class AppState extends ChangeNotifier {
         immediateKill = true;
       }
 
+      // CHA: 00..99 chance that a note-on this row will play.
+      // If chance fails, treat as hold (no new note trigger).
+      if (!isMixerMuted && noteCmd >= 0 && chancePct != null) {
+        final pct = chancePct.clamp(0, 99);
+        if (rng.nextInt(100) >= pct) {
+          noteCmd = -1;
+          delayPct = 0;
+        }
+      }
+
+      if (noteCmd >= 0) {
+        _carryNoteByTrack[t] = noteCmd;
+        _carryVolumeByTrack[t] = volCmd;
+      } else if (noteCmd == -2) {
+        _carryNoteByTrack[t] = null;
+        _carryVolumeByTrack[t] = null;
+      }
+
+      final retBaseNote = _carryNoteByTrack[t];
+      final retBaseVolume = _carryVolumeByTrack[t] ?? volCmd;
+      if (retrigNotesPerLine > 0 &&
+          noteCmd == -1 &&
+          retBaseNote != null &&
+          !isMixerMuted) {
+        // RET on held rows retriggers the last carried note.
+        noteCmd = retBaseNote;
+        volCmd = retBaseVolume;
+      }
+
+      // ARP carry: resolve noteCmd before building the segment/rowData.
+      if (arpInterval1 >= 0 && noteCmd >= 0) {
+        // New note with ARP: (re)start the carry.
+        final layers = arcOctaveLayers > 0 ? arcOctaveLayers : 1;
+        final cycle = <int>[];
+        for (int oct = 0; oct < layers; oct++) {
+          final offset = 12 * oct;
+          cycle.add((noteCmd + offset).clamp(0, 127));
+          cycle.add((noteCmd + arpInterval1 + offset).clamp(0, 127));
+          cycle.add((noteCmd + arpInterval2 + offset).clamp(0, 127));
+        }
+        final notesPerLine = arcNotesPerLine > 0 ? arcNotesPerLine : cycle.length;
+        _carryArpByTrack[t] = (
+          cycle: List<int>.unmodifiable(cycle),
+          notesPerLine: notesPerLine,
+          phase: 0,
+        );
+        pendingArp[t] = _carryArpByTrack[t]!;
+      } else if (noteCmd == -2 || noteCmd >= 0) {
+        // Note-off or new note without ARP: clear carry.
+        _carryArpByTrack[t] = null;
+      } else if (noteCmd == -1 && _carryArpByTrack[t] != null && !isMixerMuted) {
+        // Held empty line with active carry: continue the ARP phase instead of
+        // restarting from the first note.
+        final carry = _carryArpByTrack[t]!;
+        noteCmd = pitchOnlyNoteCmd(carry.cycle[carry.phase % carry.cycle.length]);
+        pendingArp[t] = carry;
+      }
+
       // Build the per-track segment (with real noteCmd) for DEL replay.
       final segment = [
         noteCmd,
@@ -1176,7 +1365,17 @@ class AppState extends ChangeNotifier {
       // DEL: if delay > 0 and there's a real note, hold now and fire later.
       final int sentNote;
       if (delayPct > 0 && noteCmd >= 0) {
-        pendingDelays.putIfAbsent(delayPct, () => {})[t] = noteCmd;
+        // DEL uses 00..99 where 99 means "end of line" (basically 100%).
+        // Internal scheduling is in audio samples, not 99 ticks.
+        const int kSampleRate = 48000;
+        final int lineSamples =
+            (_lineDuration().inMicroseconds * kSampleRate) ~/ 1000000;
+        final int clampedPct = delayPct.clamp(0, 99);
+        final double norm = clampedPct >= 99 ? 1.0 : (clampedPct / 100.0);
+        delayedSampleOffset = (lineSamples * norm).round().clamp(
+          0,
+          (lineSamples - 1).clamp(0, lineSamples),
+        );
         sentNote = -1; // hold at row trigger
       } else {
         sentNote = noteCmd;
@@ -1184,7 +1383,35 @@ class AppState extends ChangeNotifier {
 
       // KIL: any positive % schedules a per-track note-off mid-line.
       if (killPct > 0) {
-        pendingKills.putIfAbsent(killPct, () => <int>{}).add(t);
+        const int kSampleRate = 48000;
+        final int lineSamples =
+            (_lineDuration().inMicroseconds * kSampleRate) ~/ 1000000;
+        final int clampedPct = killPct.clamp(0, 99);
+        final double norm = clampedPct >= 99 ? 1.0 : (clampedPct / 100.0);
+        final int sampleOffset = (lineSamples * norm).round().clamp(
+          0,
+          (lineSamples - 1).clamp(0, lineSamples),
+        );
+        killQueue.addAll([sampleOffset, t]);
+      }
+
+      // RET: value N means N evenly spaced note-ons per line.
+      final retrigBaseNote = noteCmd >= 0 ? noteCmd : retBaseNote;
+      final retrigBaseVolume = noteCmd >= 0 ? volCmd : retBaseVolume;
+      if (retrigNotesPerLine > 1 && retrigBaseNote != null && !isMixerMuted) {
+        // 48000 Hz matches the Oboe stream sample rate.
+        const int kSampleRate = 48000;
+        final int lineSamples =
+            (_lineDuration().inMicroseconds * kSampleRate) ~/ 1000000;
+        for (int step = 1; step < retrigNotesPerLine; step++) {
+          final int sampleOffset = (lineSamples * step) ~/ retrigNotesPerLine;
+          retrigQueue.addAll([
+            sampleOffset,
+            t,
+            retrigBaseNote,
+            retrigVolumeForStep(retrigBaseVolume, retrigVolumeMode, step),
+          ]);
+        }
       }
 
       // Apply master mute / master volume multiplier.
@@ -1194,6 +1421,10 @@ class AppState extends ChangeNotifier {
         finalNote = -1;
       } else if (volCmd > 0) {
         finalVol = (volCmd * song.masterVolume).round().clamp(0, 255);
+      }
+
+      if (delayedSampleOffset >= 0 && !song.masterMute) {
+        delayQueue.addAll([delayedSampleOffset, t, noteCmd, finalVol]);
       }
 
       rowData.add(finalNote);
@@ -1211,55 +1442,45 @@ class AppState extends ChangeNotifier {
     if (anyImmediateKill) {
       AudioEngine.instance.killVoices(immediateKillData);
     }
+    // Pass retrig events to C++ for sample-accurate firing inside the audio
+    // callback. The native engine resets its counter on every setRowData call,
+    // so these sample offsets are always relative to the current row start.
+    if (retrigQueue.isNotEmpty) {
+      AudioEngine.instance.queueRetrigs(retrigQueue);
+    }
+    if (delayQueue.isNotEmpty) {
+      AudioEngine.instance.queueDelays(delayQueue);
+    }
+    if (killQueue.isNotEmpty) {
+      AudioEngine.instance.queueKills(killQueue);
+    }
 
-    // Schedule mid-line FX as one-shot timers based on the current line's
-    // duration. % values are interpreted as 0..99% into the line.
-    if (pendingDelays.isNotEmpty || pendingKills.isNotEmpty) {
-      final lineMicros = _lineDuration().inMicroseconds;
-      final trackCount = pattern.tracks.length;
-
-      pendingDelays.forEach((pct, perTrack) {
-        final delay = Duration(microseconds: (lineMicros * pct) ~/ 100);
-        final segments = _rowSegments
-            .map((s) => List<int>.from(s))
-            .toList(growable: false);
-        _rowFxTimers.add(
-          Timer(delay, () {
-            if (!isPlaying) return;
-            final out = <int>[];
-            final hasSoloNow = pattern.tracks.any((track) => track.mixerSolo);
-            for (int t = 0; t < segments.length; t++) {
-              final seg = segments[t];
-              if (_isTrackMutedByMixer(
-                pattern,
-                t,
-                hasSoloOverride: hasSoloNow,
-              )) {
-                seg[0] = -1;
-              } else {
-                seg[0] = perTrack[t] ?? -1; // fire delayed note(s), hold others
-              }
-              out.addAll(seg);
-            }
-            AudioEngine.instance.setRowData(out);
-          }),
-        );
-      });
-
-      pendingKills.forEach((pct, tracks) {
-        final delay = Duration(microseconds: (lineMicros * pct) ~/ 100);
-        final mask = List<int>.filled(trackCount, 0);
-        for (final t in tracks) {
-          if (t < trackCount) mask[t] = 1;
+    if (pendingArp.isNotEmpty) {
+      // 48000 Hz matches the Oboe stream sample rate.
+      const int kSampleRate = 48000;
+      final int lineSamples =
+          (_lineDuration().inMicroseconds * kSampleRate) ~/ 1000000;
+      pendingArp.forEach((trackIdx, cfg) {
+        for (int step = 1; step < cfg.notesPerLine; step++) {
+          final int sampleOffset = (lineSamples * step) ~/ cfg.notesPerLine;
+          final int midi = cfg.cycle[(cfg.phase + step) % cfg.cycle.length];
+          arpQueue.addAll([sampleOffset, trackIdx, midi]);
         }
-        _rowFxTimers.add(
-          Timer(delay, () {
-            if (!isPlaying) return;
-            AudioEngine.instance.killVoices(mask);
-          }),
-        );
+        final carry = _carryArpByTrack[trackIdx];
+        if (carry != null) {
+          _carryArpByTrack[trackIdx] = (
+            cycle: carry.cycle,
+            notesPerLine: carry.notesPerLine,
+            phase: (carry.phase + carry.notesPerLine) % carry.cycle.length,
+          );
+        }
       });
     }
+    if (arpQueue.isNotEmpty) {
+      AudioEngine.instance.queueArp(arpQueue);
+    }
+
+    // DEL/KIL/ARP/RET are now sample-queued natively.
   }
 
   void _syncCurrentPatternToSongPlayhead() {
@@ -1388,6 +1609,8 @@ class AppState extends ChangeNotifier {
       sp.sampleName =
           displayName ?? file.path.split(Platform.pathSeparator).last;
       sp.samplePath = file.path;
+      // Ensure the instrument type is set to sampler when a sample is loaded.
+      currentInstrument.type = InstrumentType.sampler;
       notifyListeners();
       return null;
     } catch (e) {

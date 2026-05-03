@@ -23,6 +23,26 @@ class CellActionBar extends StatelessWidget {
     Widget body;
     double height;
 
+    bool isFxValColumn(CellColumn c) {
+      return c == CellColumn.fx0val ||
+          c == CellColumn.fx1val ||
+          c == CellColumn.fx2val;
+    }
+
+    int? selectedFxCommand(CellPosition pos) {
+      final cell = state.currentTrack.cells[pos.row];
+      switch (pos.column) {
+        case CellColumn.fx0val:
+          return cell.fxSlots[0].command;
+        case CellColumn.fx1val:
+          return cell.fxSlots[1].command;
+        case CellColumn.fx2val:
+          return cell.fxSlots[2].command;
+        default:
+          return null;
+      }
+    }
+
     if (selRow != null) {
       body = _RowActions(state: state, row: selRow);
       height = 56;
@@ -35,6 +55,9 @@ class CellActionBar extends StatelessWidget {
               selCell.column == CellColumn.fx2cmd)
           ? 208
           : 56;
+      if (isFxValColumn(selCell.column) && selectedFxCommand(selCell) != null) {
+        height = 78;
+      }
     } else {
       body = const _IdleBar();
       height = 56;
@@ -212,6 +235,110 @@ class _NumericActions extends StatelessWidget {
     state.instrumentParamsChanged();
   }
 
+  String _entryLabel() {
+    switch (column) {
+      case CellColumn.instrument:
+        return 'Instrument';
+      case CellColumn.volume:
+        return 'Volume';
+      case CellColumn.fx0val:
+      case CellColumn.fx1val:
+      case CellColumn.fx2val:
+        return 'FX value';
+      default:
+        return 'Value';
+    }
+  }
+
+  Future<void> _showManualValueDialog(
+    BuildContext context,
+    int current,
+    int minV,
+    int maxV,
+  ) async {
+    final controller = TextEditingController(text: current.toString());
+    final entered = await showDialog<int>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          backgroundColor: kBgTrackHeader,
+          title: Text(
+            '${_entryLabel()} ($minV-$maxV)',
+            style: kStyleBase.copyWith(
+              color: kColHeader,
+              fontSize: 16,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          content: TextField(
+            controller: controller,
+            autofocus: true,
+            keyboardType: TextInputType.number,
+            style: kStyleBase.copyWith(
+              color: kColHeader,
+              fontSize: 18,
+              fontWeight: FontWeight.w700,
+            ),
+            decoration: InputDecoration(
+              hintText: '$minV-$maxV',
+              hintStyle: kStyleBase.copyWith(color: kColInactive),
+              enabledBorder: const OutlineInputBorder(
+                borderSide: BorderSide(color: kColInactive),
+              ),
+              focusedBorder: const OutlineInputBorder(
+                borderSide: BorderSide(color: kColAccent),
+              ),
+            ),
+            onSubmitted: (raw) {
+              final parsed = int.tryParse(raw.trim());
+              if (parsed != null) {
+                Navigator.of(context).pop(parsed.clamp(minV, maxV));
+              }
+            },
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: Text(
+                'Cancel',
+                style: kStyleBase.copyWith(color: kColInactive),
+              ),
+            ),
+            TextButton(
+              onPressed: () {
+                final parsed = int.tryParse(controller.text.trim());
+                Navigator.of(
+                  context,
+                ).pop((parsed ?? current).clamp(minV, maxV));
+              },
+              child: Text(
+                'Set',
+                style: kStyleBase.copyWith(color: kColAccent),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (entered != null) {
+      _writeValue(entered);
+    }
+  }
+
+  int? _fxCommandForCell(TrackerCell cell) {
+    switch (column) {
+      case CellColumn.fx0val:
+        return cell.fxSlots[0].command;
+      case CellColumn.fx1val:
+        return cell.fxSlots[1].command;
+      case CellColumn.fx2val:
+        return cell.fxSlots[2].command;
+      default:
+        return null;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final track = state.currentTrack;
@@ -222,55 +349,102 @@ class _NumericActions extends StatelessWidget {
     final value = _readValue(cell);
     final maxV = track.maxValue(column);
     final minV = track.minValue(column);
+    final fxCmd = _fxCommandForCell(cell);
+    final fxHint = switch (fxCmd) {
+      kFxARP => 'XY: X=1st interval, Y=2nd interval (1-9=diatonic degrees)',
+      kFxCHA => '00=never, 99=always, 50=50% chance to play',
+      kFxDEL => '00=line start, 99=line end (delayed note-on)',
+      kFxKIL => '00=immediate kill, 99=end of row',
+      kFxPAN => '00=left, 50=centre, 99=right',
+      kFxRAN => '00=off, 01-99=chance % to pick a random active slice',
+      kFxRET => 'XY: X=vol curve (0-9), Y=retrigs per line (1-9)',
+      kFxREV => 'No value needed — plays sample/slice backwards',
+      kFxVIB => 'XY: X=speed (0-9), Y=depth (0-9)',
+      kFxVOL => '00=silent, 99=full — sets level for this row only',
+      kFxARC => 'XY: X=octave layers, Y=notes/line (Y0=full cycle)',
+      _ => null,
+    };
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
-      child: Row(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          _ActionLabel(text: display, color: color, width: 56),
-          const SizedBox(width: 6),
-          _ActionBtn(
-            label: '−',
-            onTap: () => state.nudgeCell(row, column, -1),
-            enabled: !empty,
-          ),
-          Expanded(
-            child: SliderTheme(
-              data: SliderThemeData(
-                trackHeight: 4,
-                activeTrackColor: color,
-                inactiveTrackColor: color.withAlpha(50),
-                thumbColor: color,
-                overlayColor: color.withAlpha(40),
-                thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 9),
-                overlayShape: const RoundSliderOverlayShape(overlayRadius: 18),
-              ),
-              child: Slider(
-                value: value.clamp(minV, maxV).toDouble(),
-                min: minV.toDouble(),
-                max: maxV.toDouble(),
-                onChanged: empty ? null : (v) => _writeValue(v.round()),
+          if (fxHint != null) ...[
+            Padding(
+              padding: const EdgeInsets.only(left: 2, right: 2, bottom: 4),
+              child: Text(
+                fxHint,
+                style: kStyleBase.copyWith(
+                  color: kColFxCmd,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                ),
+                overflow: TextOverflow.ellipsis,
               ),
             ),
+          ],
+          Row(
+            children: [
+              GestureDetector(
+                onTap: () => _showManualValueDialog(
+                  context,
+                  value.clamp(minV, maxV),
+                  minV,
+                  maxV,
+                ),
+                child: _ActionLabel(text: display, color: color, width: 56),
+              ),
+              const SizedBox(width: 6),
+              _ActionBtn(
+                label: '−',
+                onTap: () => state.nudgeCell(row, column, -1),
+                enabled: !empty,
+              ),
+              Expanded(
+                child: SliderTheme(
+                  data: SliderThemeData(
+                    trackHeight: 4,
+                    activeTrackColor: color,
+                    inactiveTrackColor: color.withAlpha(50),
+                    thumbColor: color,
+                    overlayColor: color.withAlpha(40),
+                    thumbShape: const RoundSliderThumbShape(
+                      enabledThumbRadius: 9,
+                    ),
+                    overlayShape: const RoundSliderOverlayShape(
+                      overlayRadius: 18,
+                    ),
+                  ),
+                  child: Slider(
+                    value: value.clamp(minV, maxV).toDouble(),
+                    min: minV.toDouble(),
+                    max: maxV.toDouble(),
+                    onChanged: empty ? null : (v) => _writeValue(v.round()),
+                  ),
+                ),
+              ),
+              _ActionBtn(
+                label: '+',
+                onTap: () => state.nudgeCell(row, column, 1),
+                enabled: !empty,
+              ),
+              const SizedBox(width: 6),
+              if (empty)
+                _ActionBtn(
+                  label: 'SET',
+                  color: kColAccent,
+                  onTap: () => state.insertDefaultValue(row, column),
+                )
+              else
+                _ActionBtn(
+                  label: 'CLR',
+                  color: kColStopBtn,
+                  onTap: () => state.clearColumnValue(row, column),
+                ),
+            ],
           ),
-          _ActionBtn(
-            label: '+',
-            onTap: () => state.nudgeCell(row, column, 1),
-            enabled: !empty,
-          ),
-          const SizedBox(width: 6),
-          if (empty)
-            _ActionBtn(
-              label: 'SET',
-              color: kColAccent,
-              onTap: () => state.insertDefaultValue(row, column),
-            )
-          else
-            _ActionBtn(
-              label: 'CLR',
-              color: kColStopBtn,
-              onTap: () => state.clearColumnValue(row, column),
-            ),
         ],
       ),
     );
@@ -411,7 +585,10 @@ class _FxCmdActions extends StatelessWidget {
           const SizedBox(height: 6),
           _sectionLabel('Classic FX'),
           const SizedBox(height: 3),
-          _commandStrip(List<int>.generate(_classicCount, (i) => i), current),
+          _commandStrip([
+            ...List<int>.generate(_classicCount, (i) => i),
+            kFxARC,
+          ], current),
           const SizedBox(height: 5),
           _sectionLabel('Instrument FX (Axx synth, SLx slices)'),
           const SizedBox(height: 3),

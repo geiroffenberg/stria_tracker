@@ -267,8 +267,27 @@ class SamplerParams {
   void setSliceStart(int index, int value) {
     if (index < 0 || index >= sliceStarts.length) return;
     final next = List<int>.from(sliceStarts);
-    next[index] = value.clamp(0, 99);
-    sliceStarts = _normalizedSliceStarts(next);
+    int safe = value.clamp(0, 99);
+    if (safe > 0) {
+      // Clamp only this slider so it cannot cross already-set neighbors.
+      int minBound = 1;
+      for (int i = index - 1; i >= 0; i--) {
+        if (next[i] > 0) {
+          minBound = next[i];
+          break;
+        }
+      }
+      int maxBound = 99;
+      for (int i = index + 1; i < next.length; i++) {
+        if (next[i] > 0) {
+          maxBound = next[i];
+          break;
+        }
+      }
+      safe = safe.clamp(minBound, maxBound);
+    }
+    next[index] = safe;
+    sliceStarts = next;
   }
 
   int sliceStartValue(int sliceNumber) {
@@ -283,12 +302,15 @@ class SamplerParams {
   }
 
   double sliceEndNorm(int sliceNumber, {bool playThrough = false}) {
-    if (playThrough) return end.clamp(0.0, 1.0);
-    for (int i = sliceNumber; i < sliceStarts.length; i++) {
+    // For SLxx commands, 00 should play through to full sample end,
+    // independent of the sampler region end knob.
+    if (playThrough) return 1.0;
+    final startIndex = sliceNumber.clamp(0, sliceStarts.length);
+    for (int i = startIndex; i < sliceStarts.length; i++) {
       final next = sliceStarts[i];
       if (next > 0) return next / 99.0;
     }
-    return end.clamp(0.0, 1.0);
+    return 1.0;
   }
 
   Map<String, dynamic> toJson() => {

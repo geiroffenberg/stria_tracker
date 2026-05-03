@@ -67,6 +67,30 @@ class AudioEnginePlugin : FlutterPlugin, MethodCallHandler {
                 if (enginePtr != 0L) nativeKillVoices(enginePtr, mask.toIntArray())
                 result.success(null)
             }
+            "queueRetrigs" -> {
+                @Suppress("UNCHECKED_CAST")
+                val data = call.argument<List<Int>>("data") ?: emptyList()
+                if (enginePtr != 0L) nativeQueueRetrigs(enginePtr, data.toIntArray())
+                result.success(null)
+            }
+            "queueArp" -> {
+                @Suppress("UNCHECKED_CAST")
+                val data = call.argument<List<Int>>("data") ?: emptyList()
+                if (enginePtr != 0L) nativeQueueArp(enginePtr, data.toIntArray())
+                result.success(null)
+            }
+            "queueDelays" -> {
+                @Suppress("UNCHECKED_CAST")
+                val data = call.argument<List<Int>>("data") ?: emptyList()
+                if (enginePtr != 0L) nativeQueueDelays(enginePtr, data.toIntArray())
+                result.success(null)
+            }
+            "queueKills" -> {
+                @Suppress("UNCHECKED_CAST")
+                val data = call.argument<List<Int>>("data") ?: emptyList()
+                if (enginePtr != 0L) nativeQueueKills(enginePtr, data.toIntArray())
+                result.success(null)
+            }
             "setSamplerSample" -> {
                 val slot = call.argument<Int>("slot") ?: -1
                 val path = call.argument<String>("path")
@@ -112,6 +136,10 @@ class AudioEnginePlugin : FlutterPlugin, MethodCallHandler {
     private external fun nativeSetTempo(ptr: Long, bpm: Double)
     private external fun nativeSetRowData(ptr: Long, data: IntArray)
     private external fun nativeKillVoices(ptr: Long, mask: IntArray)
+    private external fun nativeQueueRetrigs(ptr: Long, data: IntArray)
+    private external fun nativeQueueArp(ptr: Long, data: IntArray)
+    private external fun nativeQueueDelays(ptr: Long, data: IntArray)
+    private external fun nativeQueueKills(ptr: Long, data: IntArray)
     private external fun nativeSetSamplerSample(ptr: Long, slot: Int, path: String): Boolean
     private external fun nativeStartRecording(ptr: Long)
     private external fun nativeStopRecording(ptr: Long, outSampleRate: IntArray): FloatArray?

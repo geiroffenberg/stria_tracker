@@ -17,20 +17,23 @@ class MixerScreen extends StatefulWidget {
 class _MixerScreenState extends State<MixerScreen> {
   // Insert slots are still local placeholders for now.
   late List<List<String?>> _inserts; // [track][slot] => fx name or null
-  List<String?> _masterInserts = List<String?>.filled(kInsertSlots, null);
+  final List<String?> _masterInserts = List<String?>.filled(kInsertSlots, null);
   bool _insertsInitialized = false;
 
   static const int kInsertSlots = 6;
 
   void _ensureSized(int n) {
     if (_insertsInitialized && _inserts.length == n) return;
-    _inserts = List.generate(n, (_) => List<String?>.filled(kInsertSlots, null));
+    _inserts = List.generate(
+      n,
+      (_) => List<String?>.filled(kInsertSlots, null),
+    );
     _insertsInitialized = true;
   }
 
   @override
   Widget build(BuildContext context) {
-    final state  = AppStateScope.of(context);
+    final state = AppStateScope.of(context);
     final tracks = state.currentPattern.tracks;
     _ensureSized(tracks.length);
 
@@ -44,12 +47,12 @@ class _MixerScreenState extends State<MixerScreen> {
           children: [
             // ── Master strip (first, scrolls with tracks) ─────────────
             _MasterStrip(
-              volume:   state.masterVolume,
-              muted:    state.masterMute,
-              inserts:  _masterInserts,
+              volume: state.masterVolume,
+              muted: state.masterMute,
+              inserts: _masterInserts,
               onVolume: state.setMasterVolume,
-              onMute:   state.toggleMasterMute,
-              onInsertTap:   (slot) => _onMasterInsertTap(slot),
+              onMute: state.toggleMasterMute,
+              onInsertTap: (slot) => _onMasterInsertTap(slot),
               onInsertClear: (slot) =>
                   setState(() => _masterInserts[slot] = null),
             ),
@@ -57,18 +60,18 @@ class _MixerScreenState extends State<MixerScreen> {
             // ── Channel strips ─────────────────────────────────────────
             for (int i = 0; i < tracks.length; i++)
               _ChannelStrip(
-                index:    i,
-                name:     tracks[i].name,
-                volume:   tracks[i].mixerVolume,
-                pan:      tracks[i].mixerPan,
-                muted:    tracks[i].mixerMute,
-                soloed:   tracks[i].mixerSolo,
-                inserts:  _inserts[i],
+                index: i,
+                name: tracks[i].name,
+                volume: tracks[i].mixerVolume,
+                pan: tracks[i].mixerPan,
+                muted: tracks[i].mixerMute,
+                soloed: tracks[i].mixerSolo,
+                inserts: _inserts[i],
                 onVolume: (v) => state.setTrackMixerVolume(i, v),
-                onPan:    (v) => state.setTrackMixerPan(i, v),
-                onMute:   () => state.toggleTrackMixerMute(i),
-                onSolo:   () => state.toggleTrackMixerSolo(i),
-                onInsertTap:   (slot) => _onInsertSlotTap(i, slot),
+                onPan: (v) => state.setTrackMixerPan(i, v),
+                onMute: () => state.toggleTrackMixerMute(i),
+                onSolo: () => state.toggleTrackMixerSolo(i),
+                onInsertTap: (slot) => _onInsertSlotTap(i, slot),
                 onInsertClear: (slot) =>
                     setState(() => _inserts[i][slot] = null),
               ),
@@ -126,16 +129,19 @@ class _FxPicker extends StatelessWidget {
           children: [
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-              child: Text('SELECT FX',
-                  style: kStyleHeader.copyWith(color: kColAccent)),
+              child: Text(
+                'SELECT FX',
+                style: kStyleHeader.copyWith(color: kColAccent),
+              ),
             ),
             const Divider(height: 1, color: Color(0xFF1A1A1A)),
             for (final fx in _options)
               ListTile(
                 dense: true,
-                title: Text(fx,
-                    style: kStyleBase.copyWith(
-                        fontSize: 14, color: kColHeader)),
+                title: Text(
+                  fx,
+                  style: kStyleBase.copyWith(fontSize: 14, color: kColHeader),
+                ),
                 onTap: () => Navigator.of(context).pop(fx),
               ),
           ],
@@ -149,12 +155,12 @@ class _FxPicker extends StatelessWidget {
 
 class _MasterStrip extends StatelessWidget {
   final double volume;
-  final bool   muted;
+  final bool muted;
   final List<String?> inserts;
-  final ValueChanged<double>     onVolume;
-  final VoidCallback             onMute;
-  final void Function(int slot)  onInsertTap;
-  final void Function(int slot)  onInsertClear;
+  final ValueChanged<double> onVolume;
+  final VoidCallback onMute;
+  final void Function(int slot) onInsertTap;
+  final void Function(int slot) onInsertClear;
 
   const _MasterStrip({
     required this.volume,
@@ -177,10 +183,7 @@ class _MasterStrip extends StatelessWidget {
       margin: const EdgeInsets.symmetric(horizontal: 3),
       decoration: BoxDecoration(
         color: kBgTrackHeader,
-        border: Border.all(
-          color: kColInactive.withAlpha(80),
-          width: 1,
-        ),
+        border: Border.all(color: kColInactive.withAlpha(80), width: 1),
         borderRadius: BorderRadius.circular(4),
       ),
       child: Column(
@@ -227,15 +230,12 @@ class _MasterStrip extends StatelessWidget {
                           thumbShape: const RoundSliderThumbShape(
                             enabledThumbRadius: 8,
                           ),
-                          overlayShape:       SliderComponentShape.noOverlay,
-                          activeTrackColor:   kColAccent,
+                          overlayShape: SliderComponentShape.noOverlay,
+                          activeTrackColor: kColAccent,
                           inactiveTrackColor: kColInactive,
-                          thumbColor:         kColAccent,
+                          thumbColor: kColAccent,
                         ),
-                        child: Slider(
-                          value: volume,
-                          onChanged: onVolume,
-                        ),
+                        child: Slider(value: volume, onChanged: onVolume),
                       ),
                     ),
                   ),
@@ -256,20 +256,23 @@ class _MasterStrip extends StatelessWidget {
               padding: const EdgeInsets.fromLTRB(4, 6, 4, 6),
               child: Column(
                 children: [
-                  Text('FX',
-                      style: kStyleHeader.copyWith(
-                          color: kColAccent, fontSize: 9)),
+                  Text(
+                    'FX',
+                    style: kStyleHeader.copyWith(
+                      color: kColAccent,
+                      fontSize: 9,
+                    ),
+                  ),
                   const SizedBox(height: 4),
                   Expanded(
                     child: ListView.separated(
                       padding: EdgeInsets.zero,
                       itemCount: inserts.length,
-                      separatorBuilder: (_, _) =>
-                          const SizedBox(height: 3),
+                      separatorBuilder: (_, _) => const SizedBox(height: 3),
                       itemBuilder: (_, slot) => _StripInsertSlot(
-                        index:   slot,
-                        fxName:  inserts[slot],
-                        onTap:   () => onInsertTap(slot),
+                        index: slot,
+                        fxName: inserts[slot],
+                        onTap: () => onInsertTap(slot),
                         onClear: () => onInsertClear(slot),
                       ),
                     ),
@@ -285,17 +288,17 @@ class _MasterStrip extends StatelessWidget {
 }
 
 class _ChannelStrip extends StatelessWidget {
-  final int    index;
+  final int index;
   final String name;
   final double volume;
   final double pan;
-  final bool   muted;
-  final bool   soloed;
+  final bool muted;
+  final bool soloed;
   final List<String?> inserts;
   final ValueChanged<double> onVolume;
   final ValueChanged<double> onPan;
-  final VoidCallback         onMute;
-  final VoidCallback         onSolo;
+  final VoidCallback onMute;
+  final VoidCallback onSolo;
   final void Function(int slot) onInsertTap;
   final void Function(int slot) onInsertClear;
 
@@ -320,135 +323,127 @@ class _ChannelStrip extends StatelessWidget {
     final db = volume <= 0
         ? '-INF'
         : (20 * (volume == 0 ? -100 : (math.log(volume) / math.ln10)))
-            .toStringAsFixed(1);
+              .toStringAsFixed(1);
 
     return Container(
       width: 70,
       margin: const EdgeInsets.symmetric(horizontal: 3),
       decoration: BoxDecoration(
-        color:  kBgTrackHeader,
-        border: Border.all(
-          color: kColInactive.withAlpha(80),
-          width: 1,
-        ),
+        color: kBgTrackHeader,
+        border: Border.all(color: kColInactive.withAlpha(80), width: 1),
         borderRadius: BorderRadius.circular(4),
       ),
       child: Column(
-          children: [
-            // ── Top half: mixer controls ─────────────────────────────
-            Expanded(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 6),
-                child: Column(
-                  children: [
-                    Text(
-                      'T${(index + 1).toString().padLeft(2, '0')}',
-                      style: kStyleHeader.copyWith(color: kColHeader),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      name,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: kStyleBase.copyWith(
-                          fontSize: 10, color: kColHeader),
-                    ),
-                    const SizedBox(height: 6),
-                    _PanKnob(value: pan, onChanged: onPan),
-                    const SizedBox(height: 6),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        _MiniBtn(
-                          label: 'M',
-                          active: muted,
-                          activeColor: kColRecBtn,
-                          onTap: onMute,
-                        ),
-                        const SizedBox(width: 4),
-                        _MiniBtn(
-                          label: 'S',
-                          active: soloed,
-                          activeColor: kColPlayBtn,
-                          onTap: onSolo,
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 6),
-                    Expanded(
-                      child: RotatedBox(
-                        quarterTurns: 3,
-                        child: SliderTheme(
-                          data: SliderTheme.of(context).copyWith(
-                            trackHeight: 3,
-                            thumbShape: const RoundSliderThumbShape(
-                              enabledThumbRadius: 7,
-                            ),
-                            overlayShape:       SliderComponentShape.noOverlay,
-                            activeTrackColor:   kColAccent,
-                            inactiveTrackColor: kColInactive,
-                            thumbColor:         kColAccent,
+        children: [
+          // ── Top half: mixer controls ─────────────────────────────
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 6),
+              child: Column(
+                children: [
+                  Text(
+                    'T${(index + 1).toString().padLeft(2, '0')}',
+                    style: kStyleHeader.copyWith(color: kColHeader),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: kStyleBase.copyWith(fontSize: 10, color: kColHeader),
+                  ),
+                  const SizedBox(height: 6),
+                  _PanKnob(value: pan, onChanged: onPan),
+                  const SizedBox(height: 6),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      _MiniBtn(
+                        label: 'M',
+                        active: muted,
+                        activeColor: kColRecBtn,
+                        onTap: onMute,
+                      ),
+                      const SizedBox(width: 4),
+                      _MiniBtn(
+                        label: 'S',
+                        active: soloed,
+                        activeColor: kColPlayBtn,
+                        onTap: onSolo,
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  Expanded(
+                    child: RotatedBox(
+                      quarterTurns: 3,
+                      child: SliderTheme(
+                        data: SliderTheme.of(context).copyWith(
+                          trackHeight: 3,
+                          thumbShape: const RoundSliderThumbShape(
+                            enabledThumbRadius: 7,
                           ),
-                          child: Slider(
-                            value: volume,
-                            onChanged: onVolume,
-                          ),
+                          overlayShape: SliderComponentShape.noOverlay,
+                          activeTrackColor: kColAccent,
+                          inactiveTrackColor: kColInactive,
+                          thumbColor: kColAccent,
                         ),
+                        child: Slider(value: volume, onChanged: onVolume),
                       ),
                     ),
-                    const SizedBox(height: 4),
-                    Text(
-                      '${db}dB',
-                      style: kStyleBase.copyWith(
-                          fontSize: 9, color: kColHeader),
-                    ),
-                  ],
-                ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    '${db}dB',
+                    style: kStyleBase.copyWith(fontSize: 9, color: kColHeader),
+                  ),
+                ],
               ),
             ),
+          ),
 
-            // ── Divider ──────────────────────────────────────────────
-            Container(
-              height: 1,
-              color: kColInactive.withAlpha(120),
-            ),
+          // ── Divider ──────────────────────────────────────────────
+          Container(height: 1, color: kColInactive.withAlpha(120)),
 
-            // ── Bottom half: per-strip FX insert slots ───────────────
-            Expanded(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(4, 6, 4, 6),
-                child: Column(
-                  children: [
-                    Text('FX',
-                        style: kStyleHeader.copyWith(
-                            color: kColAccent, fontSize: 9)),
-                    const SizedBox(height: 4),
-                    Expanded(
-                      child: ListView.separated(
-                        padding: EdgeInsets.zero,
-                        itemCount: inserts.length,
-                        separatorBuilder: (_, _) =>
-                            const SizedBox(height: 3),
-                        itemBuilder: (_, slot) => _StripInsertSlot(
-                          index:   slot,
-                          fxName:  inserts[slot],
-                          onTap:   () => onInsertTap(slot),
-                          onClear: () => onInsertClear(slot),
-                        ),
+          // ── Bottom half: per-strip FX insert slots ───────────────
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(4, 6, 4, 6),
+              child: Column(
+                children: [
+                  Text(
+                    'FX',
+                    style: kStyleHeader.copyWith(
+                      color: kColAccent,
+                      fontSize: 9,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Expanded(
+                    child: ListView.separated(
+                      padding: EdgeInsets.zero,
+                      itemCount: inserts.length,
+                      separatorBuilder: (_, _) => const SizedBox(height: 3),
+                      itemBuilder: (_, slot) => _StripInsertSlot(
+                        index: slot,
+                        fxName: inserts[slot],
+                        onTap: () => onInsertTap(slot),
+                        onClear: () => onInsertClear(slot),
                       ),
                     ),
-                  ],
-                ),
+                  ),
+                ],
               ),
             ),
-          ],
-        ),
-      );
+          ),
+        ],
+      ),
+    );
   }
 }
 
 class _StripInsertSlot extends StatelessWidget {
-  final int     index;
+  final int index;
   final String? fxName;
   final VoidCallback onTap;
   final VoidCallback onClear;
@@ -495,7 +490,7 @@ class _StripInsertSlot extends StatelessWidget {
 }
 
 class _PanKnob extends StatelessWidget {
-  final double value;          // -1..1
+  final double value; // -1..1
   final ValueChanged<double> onChanged;
   const _PanKnob({required this.value, required this.onChanged});
 
@@ -504,8 +499,8 @@ class _PanKnob extends StatelessWidget {
     final label = value.abs() < 0.02
         ? 'C'
         : (value < 0
-            ? 'L${(value.abs() * 100).round()}'
-            : 'R${(value * 100).round()}');
+              ? 'L${(value.abs() * 100).round()}'
+              : 'R${(value * 100).round()}');
 
     return GestureDetector(
       onHorizontalDragUpdate: (d) {
@@ -516,7 +511,8 @@ class _PanKnob extends StatelessWidget {
       child: Column(
         children: [
           Container(
-            width: 28, height: 28,
+            width: 28,
+            height: 28,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
               color: kBgColor,
@@ -525,8 +521,10 @@ class _PanKnob extends StatelessWidget {
             child: CustomPaint(painter: _PanIndicator(value)),
           ),
           const SizedBox(height: 2),
-          Text(label,
-              style: kStyleBase.copyWith(fontSize: 9, color: kColHeader)),
+          Text(
+            label,
+            style: kStyleBase.copyWith(fontSize: 9, color: kColHeader),
+          ),
         ],
       ),
     );
@@ -542,7 +540,7 @@ class _PanIndicator extends CustomPainter {
     final center = size.center(Offset.zero);
     final radius = size.shortestSide / 2 - 2;
     // angle: -135deg (full L) .. +135deg (full R)
-    final angle  = (-math.pi * 3 / 4) + ((value + 1) / 2) * (math.pi * 3 / 2);
+    final angle = (-math.pi * 3 / 4) + ((value + 1) / 2) * (math.pi * 3 / 2);
     final p = Offset(
       center.dx + radius * math.cos(angle),
       center.dy + radius * math.sin(angle),
@@ -560,8 +558,8 @@ class _PanIndicator extends CustomPainter {
 
 class _MiniBtn extends StatelessWidget {
   final String label;
-  final bool   active;
-  final Color  activeColor;
+  final bool active;
+  final Color activeColor;
   final VoidCallback onTap;
   const _MiniBtn({
     required this.label,
@@ -575,13 +573,12 @@ class _MiniBtn extends StatelessWidget {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        width: 22, height: 18,
+        width: 22,
+        height: 18,
         alignment: Alignment.center,
         decoration: BoxDecoration(
           color: active ? activeColor.withAlpha(60) : Colors.transparent,
-          border: Border.all(
-            color: active ? activeColor : kColInactive,
-          ),
+          border: Border.all(color: active ? activeColor : kColInactive),
           borderRadius: BorderRadius.circular(2),
         ),
         child: Text(
@@ -596,4 +593,3 @@ class _MiniBtn extends StatelessWidget {
     );
   }
 }
-

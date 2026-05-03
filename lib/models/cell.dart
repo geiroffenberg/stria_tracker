@@ -80,19 +80,20 @@ const List<String> kFxCommandNames = [
   '701',
   '801',
   '901',
+  'ARC', // octave span + arp speed config
 ];
 
 const List<String> kFxCommandDescriptions = [
-  'Fast arpeggio',
-  'Random note chance',
-  'Repeat with delay',
-  'Kill note early',
-  'Stereo pan sweep',
-  'Randomize pitch',
-  'Retrigger pattern',
-  'Play sample backwards',
-  'Add vibrato modulation',
-  'Ramp volume over time',
+  'Arpeggio — XY: X=1st interval, Y=2nd interval (1-9 = diatonic degrees)',
+  'Chance — 00=never play, 99=always play, 50=50% chance',
+  'Delay — 00=line start, 99=line end (note-on offset within row)',
+  'Kill — cut note at % through row (00=immediate, 99=end of row)',
+  'Pan — set stereo position (00=left, 50=centre, 99=right)',
+  'Random slice — 00=off, 01-99=chance % to pick a random active slice',
+  'Retrigger — XY: X=volume curve, Y=retrigs per line',
+  'Reverse — play sample/slice backwards',
+  'Vibrato — XY: X=speed (0-9), Y=depth (0-9), pitch LFO',
+  'Volume — set level for this row only (00=silent, 99=full)',
   'Synth FX A01 (reserved)',
   'Synth FX A02 (reserved)',
   'Synth FX A03 (reserved)',
@@ -128,6 +129,7 @@ const List<String> kFxCommandDescriptions = [
   'Insert 7 param 01 (reserved)',
   'Insert 8 param 01 (reserved)',
   'Insert 9 param 01 (reserved)',
+  'Arp config XY (X=octave layers, Y=notes/line, Y0=full cycle)',
 ];
 
 /// FX command byte constants (indices into kFxCommandNames).
@@ -143,6 +145,7 @@ const int kFxVIB = 8;
 const int kFxVOL = 9;
 const int kFxSL0 = 22;
 const int kFxSL9 = 31;
+const int kFxARC = 45;
 
 /// Returns the 3-letter FX command name, or '---' if null/unknown.
 String fxCommandName(int? cmd) {

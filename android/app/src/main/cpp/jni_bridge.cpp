@@ -51,6 +51,46 @@ Java_com_example_tracker_AudioEnginePlugin_nativeKillVoices(
     reinterpret_cast<AudioEngine*>(ptr)->killVoices(vec);
 }
 
+JNIEXPORT void JNICALL
+Java_com_example_tracker_AudioEnginePlugin_nativeQueueRetrigs(
+        JNIEnv* env, jobject, jlong ptr, jintArray data) {
+    jsize len  = env->GetArrayLength(data);
+    jint* elms = env->GetIntArrayElements(data, nullptr);
+    std::vector<int> vec(elms, elms + len);
+    env->ReleaseIntArrayElements(data, elms, JNI_ABORT);
+    reinterpret_cast<AudioEngine*>(ptr)->queueRetrigs(vec);
+}
+
+JNIEXPORT void JNICALL
+Java_com_example_tracker_AudioEnginePlugin_nativeQueueArp(
+        JNIEnv* env, jobject, jlong ptr, jintArray data) {
+    jsize len  = env->GetArrayLength(data);
+    jint* elms = env->GetIntArrayElements(data, nullptr);
+    std::vector<int> vec(elms, elms + len);
+    env->ReleaseIntArrayElements(data, elms, JNI_ABORT);
+    reinterpret_cast<AudioEngine*>(ptr)->queueArp(vec);
+}
+
+JNIEXPORT void JNICALL
+Java_com_example_tracker_AudioEnginePlugin_nativeQueueDelays(
+        JNIEnv* env, jobject, jlong ptr, jintArray data) {
+    jsize len  = env->GetArrayLength(data);
+    jint* elms = env->GetIntArrayElements(data, nullptr);
+    std::vector<int> vec(elms, elms + len);
+    env->ReleaseIntArrayElements(data, elms, JNI_ABORT);
+    reinterpret_cast<AudioEngine*>(ptr)->queueDelays(vec);
+}
+
+JNIEXPORT void JNICALL
+Java_com_example_tracker_AudioEnginePlugin_nativeQueueKills(
+        JNIEnv* env, jobject, jlong ptr, jintArray data) {
+    jsize len  = env->GetArrayLength(data);
+    jint* elms = env->GetIntArrayElements(data, nullptr);
+    std::vector<int> vec(elms, elms + len);
+    env->ReleaseIntArrayElements(data, elms, JNI_ABORT);
+    reinterpret_cast<AudioEngine*>(ptr)->queueKills(vec);
+}
+
 JNIEXPORT jboolean JNICALL
 Java_com_example_tracker_AudioEnginePlugin_nativeSetSamplerSample(
         JNIEnv* env, jobject, jlong ptr, jint slot, jstring path) {

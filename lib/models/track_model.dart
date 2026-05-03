@@ -151,7 +151,13 @@ class TrackModel {
     if (column == CellColumn.instrument || column == CellColumn.volume) {
       return 99;
     }
-    return 255; // FX fields are 0–255
+    // FX value columns cap at 99; FX command columns allow full range.
+    if (column == CellColumn.fx0val ||
+        column == CellColumn.fx1val ||
+        column == CellColumn.fx2val) {
+      return 99;
+    }
+    return 255; // FX command columns
   }
 
   /// Min value for clamping scroll input.

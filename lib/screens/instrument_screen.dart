@@ -1674,6 +1674,32 @@ class _SamplerEditorState extends State<_SamplerEditor> {
           ),
           if (_slicesOpen) ...[
             const SizedBox(height: 8),
+            Align(
+              alignment: Alignment.centerRight,
+              child: GestureDetector(
+                onTap: () {
+                  setState(() {
+                    for (int i = 0; i < SamplerParams.sliceCount; i++) {
+                      p.setSliceStart(i, 0);
+                    }
+                  });
+                  state.instrumentParamsChanged();
+                },
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: kBgColor.withAlpha(60),
+                    border: Border.all(color: kColInactive.withAlpha(90)),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: Text(
+                    'RESET ALL',
+                    style: kStyleHeader.copyWith(fontSize: 11, color: kColAccent),
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 8),
             for (int i = 0; i < SamplerParams.sliceCount; i++)
               Padding(
                 padding: EdgeInsets.only(

@@ -291,11 +291,19 @@ bool AudioEngine::setSamplerSample(int slot, const std::string& path) {
 
 void AudioEngine::triggerRow(const std::vector<int>& rowData) {
     std::lock_guard<std::mutex> lock(mVoiceMutex);
-    // Current canonical stride is 24:
-    // [note, vol, pan, wave, instrumentType, 19 params].
-    // Fall back to legacy stride 23 / 18 / 4 packets.
+    // Reset sub-row event state for the new row so stale events from the
+    // previous row cannot fire into this one.
+    mSubRowSampleCounter = 0;
+    mPendingRetrigs.clear();
+    mPendingArp.clear();
+    mPendingDelays.clear();
+    mPendingKills.clear();
+    // Current canonical stride is 25:
+    // [note, vol, pan, wave, instrumentType, 20 params].
+    // Fall back to legacy stride 24 / 23 / 18 / 4 packets.
     int stride = 4;
-    if      (rowData.size() % 24 == 0) stride = 24;
+    if      (rowData.size() % 25 == 0) stride = 25;
+    else if (rowData.size() % 24 == 0) stride = 24;
     else if (rowData.size() % 23 == 0) stride = 23;
     else if (rowData.size() % 18 == 0) stride = 18;
     const int trackCount = static_cast<int>(std::min(rowData.size() / stride, mVoices.size()));
@@ -328,10 +336,11 @@ void AudioEngine::triggerRow(const std::vector<int>& rowData) {
         const int pan  = rowData[base + 2];
         const int wave = rowData[base + 3];
         // instrumentType: 0=synth, 1=sampler.
-        const int instrumentType = (stride == 24) ? rowData[base + 4] : 0;
+        // Present in 24- and 25-stride row packets.
+        const int instrumentType = (stride >= 24) ? rowData[base + 4] : 0;
         // Synth params (stride 24/23 full; stride 18 compat; stride 4 defaults)
-        const int pBase = (stride == 24) ? base + 5 : base + 4;
-        const bool full24 = (stride == 24);
+        const int pBase = (stride >= 24) ? base + 5 : base + 4;
+        const bool full24 = (stride >= 24); // includes stride 25
         const bool full23 = (stride == 23);
         const bool full   = (stride >= 18);
         const int detune    = full   ? rowData[pBase +  0] : kDefDetune;
@@ -354,7 +363,16 @@ void AudioEngine::triggerRow(const std::vector<int>& rowData) {
         const int lfoDepth= (full24 || full23) ? rowData[pBase + 16] : kDefLfoDep;
         const int lfoTgt  = (full24 || full23) ? rowData[pBase + 17] : kDefLfoTgt;
         const int drive   = (full24 || full23) ? rowData[pBase + 18] : kDefDrive;
+        const int reverse = (stride == 25)    ? rowData[pBase + 19] : 0;
         auto& v = mVoices[i];
+
+        // note encoding:
+        //  0..127   = note-on
+        //  -1       = hold
+        //  -2       = note-off
+        //  <= -1000 = pitch-only update, midi = -1000 - note
+        const bool pitchOnly = (n <= -1000);
+        const int pitchMidi = pitchOnly ? std::clamp(-1000 - n, 0, 127) : n;
 
         const bool isSampler = (instrumentType == 1);
 
@@ -395,14 +413,18 @@ void AudioEngine::triggerRow(const std::vector<int>& rowData) {
         if (isSampler) {
             v.sampleSlot = std::clamp(wave, 0, static_cast<int>(mSamplerSlots.size()) - 1);
             v.loopMode   = std::clamp(drive, 0, 2);
-            v.sampleStartNorm = std::clamp(v.lfoRateNorm, 0.0f, 1.0f);
-            v.sampleEndNorm = std::clamp(v.lfoDepth, 0.0f, 1.0f);
-            if (v.sampleEndNorm < v.sampleStartNorm) {
-                std::swap(v.sampleStartNorm, v.sampleEndNorm);
-            }
+            v.sampleReverse = (reverse != 0);
             v.sampleGain = 1.0f;
 
             if (n >= 0) {
+                // Only update the playback region on note-on.
+                // Hold rows must not overwrite the slice boundaries set by the
+                // triggering row's SL command.
+                v.sampleStartNorm = std::clamp(v.lfoRateNorm, 0.0f, 1.0f);
+                v.sampleEndNorm   = std::clamp(v.lfoDepth,    0.0f, 1.0f);
+                if (v.sampleEndNorm < v.sampleStartNorm) {
+                    std::swap(v.sampleStartNorm, v.sampleEndNorm);
+                }
                 const auto& s = mSamplerSlots[v.sampleSlot];
                 if (!s.mono.empty()) {
                     v.midiNote = n;
@@ -413,12 +435,24 @@ void AudioEngine::triggerRow(const std::vector<int>& rowData) {
                     const int startFrame = std::clamp(
                         static_cast<int>(v.sampleStartNorm * static_cast<float>(sampleFrames - 1)),
                         0, sampleFrames - 1);
-                    v.samplePos = static_cast<double>(startFrame);
+                    const int endFrame = std::clamp(
+                        static_cast<int>(v.sampleEndNorm * static_cast<float>(sampleFrames)),
+                        startFrame + 1, sampleFrames);
+                    v.samplePos = v.sampleReverse ? static_cast<double>(endFrame - 1)
+                                                  : static_cast<double>(startFrame);
                     v.sampleElapsedFrames = 0.0;
-                    v.samplePingDir = false;
+                    v.samplePingDir = v.sampleReverse;
                     v.sampleActive = true;
                 } else {
                     v.sampleActive = false;
+                }
+            } else if (pitchOnly) {
+                if (v.sampleActive && v.sampleSlot >= 0 &&
+                    v.sampleSlot < static_cast<int>(mSamplerSlots.size())) {
+                    v.midiNote = pitchMidi;
+                    const float detuneSemitones = (v.detuneNorm - 0.5f) * 24.0f;
+                    const float semis = static_cast<float>(pitchMidi - 60) + detuneSemitones;
+                    v.sampleStep = std::pow(2.0f, semis / 12.0f);
                 }
             } else if (n == -2) {
                 v.sampleActive = false;
@@ -448,11 +482,27 @@ void AudioEngine::triggerRow(const std::vector<int>& rowData) {
             // Reset filter integrator state on each note-on to avoid stale-energy bursts.
             v.filterLow = 0.0f;
             v.filterBand = 0.0f;
+            // Reset envelope levels so the attack ramp always starts from
+            // silence — this makes every retrigger (RET) clearly audible.
+            v.envLevel       = 0.0f;
+            v.filterEnvLevel = 0.0f;
             v.noteHeld   = true;
             v.envStage   = EnvelopeStage::Attack;
             v.filterEnvStage = EnvelopeStage::Attack;
             v.gainTarget = 1.0f;
             v.sampleActive = false;
+        } else if (pitchOnly) {
+            // Pitch-only update: retune the currently held voice without
+            // retriggering amp/filter envelopes.
+            if (v.midiNote >= 0) {
+                v.midiNote = pitchMidi;
+                const float detuneSemitones = (v.detuneNorm - 0.5f) * 24.0f;
+                v.targetFreq = static_cast<float>(midiToFreq(pitchMidi)) *
+                    std::pow(2.0f, detuneSemitones / 12.0f);
+                if (v.currentFreq <= 0.0f || v.glideSec <= 0.0f) {
+                    v.currentFreq = v.targetFreq;
+                }
+            }
         } else if (n == -2) {
             // Note off
             v.noteHeld = false;
@@ -497,6 +547,42 @@ void AudioEngine::killVoices(const std::vector<int>& killMask) {
     }
 }
 
+void AudioEngine::queueRetrigs(const std::vector<int>& data) {
+    // data format: groups of 4 ints — [sampleOffset, trackIdx, note, volume].
+    std::lock_guard<std::mutex> lock(mVoiceMutex);
+    for (size_t i = 0; i + 3 < data.size(); i += 4) {
+        const int32_t target = static_cast<int32_t>(data[i]) + mSubRowSampleCounter;
+        mPendingRetrigs.push_back({target, data[i + 1], data[i + 2], data[i + 3]});
+    }
+}
+
+void AudioEngine::queueArp(const std::vector<int>& data) {
+    // data format: groups of 3 ints — [sampleOffset, trackIdx, note].
+    std::lock_guard<std::mutex> lock(mVoiceMutex);
+    for (size_t i = 0; i + 2 < data.size(); i += 3) {
+        const int32_t target = static_cast<int32_t>(data[i]) + mSubRowSampleCounter;
+        mPendingArp.push_back({target, data[i + 1], data[i + 2]});
+    }
+}
+
+void AudioEngine::queueDelays(const std::vector<int>& data) {
+    // data format: groups of 4 ints — [sampleOffset, trackIdx, note, volume].
+    std::lock_guard<std::mutex> lock(mVoiceMutex);
+    for (size_t i = 0; i + 3 < data.size(); i += 4) {
+        const int32_t target = static_cast<int32_t>(data[i]) + mSubRowSampleCounter;
+        mPendingDelays.push_back({target, data[i + 1], data[i + 2], data[i + 3]});
+    }
+}
+
+void AudioEngine::queueKills(const std::vector<int>& data) {
+    // data format: groups of 2 ints — [sampleOffset, trackIdx].
+    std::lock_guard<std::mutex> lock(mVoiceMutex);
+    for (size_t i = 0; i + 1 < data.size(); i += 2) {
+        const int32_t target = static_cast<int32_t>(data[i]) + mSubRowSampleCounter;
+        mPendingKills.push_back({target, data[i + 1]});
+    }
+}
+
 oboe::DataCallbackResult AudioEngine::onAudioReady(
         oboe::AudioStream* stream,
         void*              audioData,
@@ -512,6 +598,189 @@ oboe::DataCallbackResult AudioEngine::onAudioReady(
     const float panSmoothK = 1.0f - std::exp(-1.0f / (static_cast<float>(sampleRate) * 0.003f));
 
     std::lock_guard<std::mutex> lock(mVoiceMutex);
+
+    // Advance the per-row sample counter and fire due sub-row events.
+    // Events queued via queueArp()/queueRetrigs() fire at buffer granularity,
+    // which is far more accurate than Dart Timer jitter.
+    mSubRowSampleCounter += numFrames;
+
+    if (!mPendingDelays.empty()) {
+        for (auto& ev : mPendingDelays) {
+            if (ev.sampleTarget < 0) continue; // already fired
+            if (mSubRowSampleCounter < ev.sampleTarget) continue;
+            ev.sampleTarget = -1; // mark fired
+            if (ev.trackIdx < 0 || ev.trackIdx >= static_cast<int>(mVoices.size())) continue;
+            Voice& v = mVoices[ev.trackIdx];
+            if (ev.volume >= 0) {
+                v.level = static_cast<float>(ev.volume) / 255.0f;
+            }
+            if (v.samplerMode) {
+                v.midiNote = ev.note;
+                if (v.sampleSlot >= 0 &&
+                    v.sampleSlot < static_cast<int>(mSamplerSlots.size())) {
+                    const auto& s = mSamplerSlots[v.sampleSlot];
+                    if (!s.mono.empty()) {
+                        const int sampleFrames = static_cast<int>(s.mono.size());
+                        const int startFrame = std::clamp(
+                            static_cast<int>(v.sampleStartNorm * static_cast<float>(sampleFrames - 1)),
+                            0, sampleFrames - 1);
+                        const int endFrame = std::clamp(
+                            static_cast<int>(v.sampleEndNorm * static_cast<float>(sampleFrames)),
+                            startFrame + 1, sampleFrames);
+                        v.samplePos = v.sampleReverse ? static_cast<double>(endFrame - 1)
+                                                      : static_cast<double>(startFrame);
+                        v.sampleElapsedFrames = 0.0;
+                        v.samplePingDir = v.sampleReverse;
+                        const float detuneSemitones = (v.detuneNorm - 0.5f) * 24.0f;
+                        const float semis = static_cast<float>(ev.note - 60) + detuneSemitones;
+                        v.sampleStep = std::pow(2.0f, semis / 12.0f);
+                        v.sampleActive = true;
+                    } else {
+                        v.sampleActive = false;
+                    }
+                } else {
+                    v.sampleActive = false;
+                }
+                // Keep synth envelopes disabled in sampler mode.
+                v.noteHeld = false;
+                v.envStage = EnvelopeStage::Idle;
+                v.filterEnvStage = EnvelopeStage::Idle;
+                v.gain = 0.0f;
+                v.gainTarget = 0.0f;
+                v.pendingWaveform = -1;
+            } else {
+                v.midiNote = ev.note;
+                const float detuneSemitones = (v.detuneNorm - 0.5f) * 24.0f;
+                v.targetFreq = static_cast<float>(midiToFreq(ev.note)) *
+                    std::pow(2.0f, detuneSemitones / 12.0f);
+                if (v.currentFreq <= 0.0f || v.glideSec <= 0.0f) {
+                    v.currentFreq = v.targetFreq;
+                }
+                v.filterLow      = 0.0f;
+                v.filterBand     = 0.0f;
+                v.envLevel       = 0.0f;
+                v.filterEnvLevel = 0.0f;
+                v.noteHeld       = true;
+                v.envStage       = EnvelopeStage::Attack;
+                v.filterEnvStage = EnvelopeStage::Attack;
+                v.gainTarget     = 1.0f;
+                v.sampleActive   = false;
+            }
+        }
+        mPendingDelays.erase(
+            std::remove_if(mPendingDelays.begin(), mPendingDelays.end(),
+                [](const DelayEvent& e) { return e.sampleTarget < 0; }),
+            mPendingDelays.end());
+    }
+
+    if (!mPendingArp.empty()) {
+        for (auto& ev : mPendingArp) {
+            if (ev.sampleTarget < 0) continue; // already fired
+            if (mSubRowSampleCounter < ev.sampleTarget) continue;
+            ev.sampleTarget = -1; // mark fired
+            if (ev.trackIdx < 0 || ev.trackIdx >= static_cast<int>(mVoices.size())) continue;
+            Voice& v = mVoices[ev.trackIdx];
+            if (v.midiNote < 0) continue; // no active voice for this track
+            v.midiNote = ev.note;
+            const float detuneSemitones = (v.detuneNorm - 0.5f) * 24.0f;
+            if (v.samplerMode) {
+                // Pitch-only ARP for sampler: retune sample speed only.
+                const float semis = static_cast<float>(ev.note - 60) + detuneSemitones;
+                v.sampleStep = std::pow(2.0f, semis / 12.0f);
+            } else {
+                // Pitch-only ARP for synth: retune oscillator without retrigger.
+                v.targetFreq = static_cast<float>(midiToFreq(ev.note)) *
+                    std::pow(2.0f, detuneSemitones / 12.0f);
+                if (v.currentFreq <= 0.0f || v.glideSec <= 0.0f) {
+                    v.currentFreq = v.targetFreq;
+                }
+            }
+        }
+        mPendingArp.erase(
+            std::remove_if(mPendingArp.begin(), mPendingArp.end(),
+                [](const ArpEvent& e) { return e.sampleTarget < 0; }),
+            mPendingArp.end());
+    }
+
+    if (!mPendingRetrigs.empty()) {
+        for (auto& ev : mPendingRetrigs) {
+            if (ev.sampleTarget < 0) continue; // already fired
+            if (mSubRowSampleCounter < ev.sampleTarget) continue;
+            ev.sampleTarget = -1; // mark fired
+            if (ev.trackIdx < 0 || ev.trackIdx >= static_cast<int>(mVoices.size())) continue;
+            Voice& v = mVoices[ev.trackIdx];
+            if (v.midiNote < 0) continue; // no active voice for this track
+            // Update volume if supplied.
+            if (ev.volume >= 0) {
+                v.level = static_cast<float>(ev.volume) / 255.0f;
+            }
+            if (v.samplerMode) {
+                // Sampler retrigger: restart sample playback from region start/end.
+                v.midiNote = ev.note;
+                if (v.sampleSlot >= 0 &&
+                    v.sampleSlot < static_cast<int>(mSamplerSlots.size())) {
+                    const auto& s = mSamplerSlots[v.sampleSlot];
+                    if (!s.mono.empty()) {
+                        const int sampleFrames = static_cast<int>(s.mono.size());
+                        const int startFrame = std::clamp(
+                            static_cast<int>(v.sampleStartNorm * static_cast<float>(sampleFrames - 1)),
+                            0, sampleFrames - 1);
+                        const int endFrame = std::clamp(
+                            static_cast<int>(v.sampleEndNorm * static_cast<float>(sampleFrames)),
+                            startFrame + 1, sampleFrames);
+                        v.samplePos = v.sampleReverse ? static_cast<double>(endFrame - 1)
+                                                      : static_cast<double>(startFrame);
+                        v.sampleElapsedFrames = 0.0;
+                        v.samplePingDir = v.sampleReverse;
+                        const float detuneSemitones = (v.detuneNorm - 0.5f) * 24.0f;
+                        const float semis = static_cast<float>(ev.note - 60) + detuneSemitones;
+                        v.sampleStep = std::pow(2.0f, semis / 12.0f);
+                        v.sampleActive = true;
+                    }
+                }
+            } else {
+                // Synth retrigger: restart amp/filter envelopes from zero.
+                v.midiNote = ev.note;
+                const float detuneSemitones = (v.detuneNorm - 0.5f) * 24.0f;
+                v.targetFreq = static_cast<float>(midiToFreq(ev.note)) *
+                    std::pow(2.0f, detuneSemitones / 12.0f);
+                if (v.currentFreq <= 0.0f || v.glideSec <= 0.0f) {
+                    v.currentFreq = v.targetFreq;
+                }
+                v.filterLow      = 0.0f;
+                v.filterBand     = 0.0f;
+                v.envLevel       = 0.0f;
+                v.filterEnvLevel = 0.0f;
+                v.noteHeld       = true;
+                v.envStage       = EnvelopeStage::Attack;
+                v.filterEnvStage = EnvelopeStage::Attack;
+                v.gainTarget     = 1.0f;
+                v.sampleActive   = false;
+            }
+        }
+        // Remove fired events.
+        mPendingRetrigs.erase(
+            std::remove_if(mPendingRetrigs.begin(), mPendingRetrigs.end(),
+                [](const RetrigEvent& e) { return e.sampleTarget < 0; }),
+            mPendingRetrigs.end());
+    }
+
+    if (!mPendingKills.empty()) {
+        for (auto& ev : mPendingKills) {
+            if (ev.sampleTarget < 0) continue; // already fired
+            if (mSubRowSampleCounter < ev.sampleTarget) continue;
+            ev.sampleTarget = -1; // mark fired
+            if (ev.trackIdx < 0 || ev.trackIdx >= static_cast<int>(mVoices.size())) continue;
+            Voice& v = mVoices[ev.trackIdx];
+            v.noteHeld = false;
+            v.envStage = EnvelopeStage::Release;
+            if (v.samplerMode) v.sampleActive = false;
+        }
+        mPendingKills.erase(
+            std::remove_if(mPendingKills.begin(), mPendingKills.end(),
+                [](const KillEvent& e) { return e.sampleTarget < 0; }),
+            mPendingKills.end());
+    }
 
     for (auto& v : mVoices) {
         if (v.samplerMode) {

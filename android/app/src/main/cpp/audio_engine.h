@@ -71,7 +71,8 @@ struct Voice {
     double samplePos         = 0.0;
     double sampleStep        = 1.0;
     int    loopMode          = 0;    // 0=off 1=forward 2=ping-pong
-    bool   samplePingDir     = false; // false=forward true=backward (ping-pong)
+    bool   samplePingDir     = false; // false=forward true=backward (ping-pong or reverse)
+    bool   sampleReverse     = false; // true = REV FX: play region backward from end
     double sampleElapsedFrames = 0.0; // frames played since note-on (for attack/release)
     float  sampleStartNorm   = 0.0f;
     float  sampleEndNorm     = 1.0f;
@@ -81,6 +82,36 @@ struct Voice {
 struct SampleData {
     std::vector<float> mono; // normalized [-1..1]
     int sampleRate = 44100;
+};
+
+/// A pending retrigger event scheduled at a specific sample offset from row start.
+/// Queued via queueRetrigs() and fired sample-accurately inside onAudioReady().
+struct RetrigEvent {
+    int32_t sampleTarget; ///< fire when mSubRowSampleCounter >= this value
+    int     trackIdx;     ///< voice index (0-based track)
+    int     note;         ///< MIDI note 0-127
+    int     volume;       ///< 0-255 voice level, -1 = no change
+};
+
+/// A pending pitch-only ARP event scheduled at a sample offset from row start.
+struct ArpEvent {
+    int32_t sampleTarget; ///< fire when mSubRowSampleCounter >= this value
+    int     trackIdx;     ///< voice index (0-based track)
+    int     note;         ///< MIDI note 0-127
+};
+
+/// A pending delayed note-on event (DEL) scheduled at a sample offset.
+struct DelayEvent {
+    int32_t sampleTarget; ///< fire when mSubRowSampleCounter >= this value
+    int     trackIdx;     ///< voice index (0-based track)
+    int     note;         ///< MIDI note 0-127
+    int     volume;       ///< 0-255 voice level, -1 = no change
+};
+
+/// A pending kill (KIL) event scheduled at a sample offset.
+struct KillEvent {
+    int32_t sampleTarget; ///< fire when mSubRowSampleCounter >= this value
+    int     trackIdx;     ///< voice index (0-based track)
 };
 
 /**
@@ -109,7 +140,8 @@ public:
     /// [note, volume, pan, wave, cutoff, resonance,
     ///  filterAttack, filterDecay, filterSustain, filterRelease, filterEnvAmt,
     ///  attack, decay, sustain, release, glide, instVol, ...]
-    /// note: 0-127 MIDI, -1 = hold/empty, -2 = note off.
+    /// note: 0-127 MIDI, -1 = hold/empty, -2 = note off,
+    ///       <= -1000 = pitch-only update, midi = -1000 - note.
     /// volume: 0-255 sets voice level, -1 = no change.
     /// pan: 0-255 sets stereo position, -1 = no change.
     /// wave: 0=sine,1=tri,2=saw,3=square,4=pulse,5=noise.
@@ -121,6 +153,28 @@ public:
 
     /// Kill voices on specific tracks. One entry per track: 1 = kill, 0 = leave.
     void killVoices(const std::vector<int>& killMask);
+
+    /// Queue sample-accurate retrigger events for the current row.
+    /// [data] is packed in groups of 4: [sampleOffset, trackIdx, note, volume].
+    /// Events fire when the internal sample counter reaches sampleOffset.
+    /// All pending events are cleared when triggerRow() is called.
+    void queueRetrigs(const std::vector<int>& data);
+
+    /// Queue sample-accurate pitch-only ARP events for the current row.
+    /// [data] is packed in groups of 3: [sampleOffset, trackIdx, note].
+    /// Events retune the active voice without restarting envelopes.
+    /// All pending events are cleared when triggerRow() is called.
+    void queueArp(const std::vector<int>& data);
+
+    /// Queue sample-accurate delayed note events for DEL.
+    /// [data] is packed in groups of 4: [sampleOffset, trackIdx, note, volume].
+    /// All pending events are cleared when triggerRow() is called.
+    void queueDelays(const std::vector<int>& data);
+
+    /// Queue sample-accurate kill events for KIL.
+    /// [data] is packed in groups of 2: [sampleOffset, trackIdx].
+    /// All pending events are cleared when triggerRow() is called.
+    void queueKills(const std::vector<int>& data);
 
     /// Assign a sample file to an instrument slot for sampler playback.
     /// Pass empty path to clear assignment.
@@ -169,6 +223,13 @@ private:
     std::mutex                       mVoiceMutex;
     std::array<Voice, kMaxVoices>    mVoices{};
     std::array<SampleData, 64>       mSamplerSlots{};
+
+    // Sample-accurate retrigger state (protected by mVoiceMutex).
+    std::vector<RetrigEvent> mPendingRetrigs;
+    std::vector<ArpEvent>    mPendingArp;
+    std::vector<DelayEvent>  mPendingDelays;
+    std::vector<KillEvent>   mPendingKills;
+    int32_t                  mSubRowSampleCounter = 0;
 
     // Recording state
     std::mutex                       mRecordingMutex;
