@@ -84,6 +84,8 @@ class AppState extends ChangeNotifier {
   List<int> _carryInstrumentByTrack = const [];
   List<int?> _carryNoteByTrack = const [];
   List<int?> _carryVolumeByTrack = const [];
+  List<double?> _carryVibSpeedByTrack = const [];
+  List<double?> _carryVibDepthByTrack = const [];
   List<({List<int> cycle, int notesPerLine, int phase})?> _carryArpByTrack =
       const [];
   int _carryPatternIndex = -1;
@@ -900,6 +902,8 @@ class AppState extends ChangeNotifier {
     _carryInstrumentByTrack = const [];
     _carryNoteByTrack = const [];
     _carryVolumeByTrack = const [];
+    _carryVibSpeedByTrack = const [];
+    _carryVibDepthByTrack = const [];
     _carryArpByTrack = const [];
     _carryPatternIndex = -1;
   }
@@ -1112,6 +1116,8 @@ class AppState extends ChangeNotifier {
       _carryInstrumentByTrack = List<int>.filled(pattern.tracks.length, 0);
       _carryNoteByTrack = List<int?>.filled(pattern.tracks.length, null);
       _carryVolumeByTrack = List<int?>.filled(pattern.tracks.length, null);
+      _carryVibSpeedByTrack = List<double?>.filled(pattern.tracks.length, null);
+      _carryVibDepthByTrack = List<double?>.filled(pattern.tracks.length, null);
       _carryArpByTrack =
           List<({List<int> cycle, int notesPerLine, int phase})?>.filled(
             pattern.tracks.length,
@@ -1158,8 +1164,8 @@ class AppState extends ChangeNotifier {
       bool samplerPlayThrough = false;
       int? ranChancePct;  // RAN: if set, % chance to override slice with random active slice
       bool samplerReverse = false; // REV: play sample/slice backward
-      double? vibSpeedNorm;  // VIB: lfo speed override
-      double? vibDepthNorm;  // VIB: lfo depth override
+      double? vibSpeedNorm = _carryVibSpeedByTrack.length > t ? _carryVibSpeedByTrack[t] : null;
+      double? vibDepthNorm = _carryVibDepthByTrack.length > t ? _carryVibDepthByTrack[t] : null;
       int retrigVolumeMode = 0;
       int retrigNotesPerLine = 0;
       int arpInterval1 = -1;
@@ -1186,6 +1192,12 @@ class AppState extends ChangeNotifier {
           noteCmd = -2;
         } else if (note.isNote && playable) {
           noteCmd = note.midiNote;
+        }
+
+        if (noteCmd == -2) {
+          // Note-off clears VIB carry for this track.
+          _carryVibSpeedByTrack[t] = null;
+          _carryVibDepthByTrack[t] = null;
         }
 
         if (cell.volume != null) {
@@ -1223,6 +1235,9 @@ class AppState extends ChangeNotifier {
             final y = xy % 10;  // depth digit
             vibSpeedNorm = x / 9.0;
             vibDepthNorm = y / 9.0;
+            // Carry VIB so it persists on subsequent hold rows.
+            _carryVibSpeedByTrack[t] = vibSpeedNorm;
+            _carryVibDepthByTrack[t] = vibDepthNorm;
           }
           if (fx.command == kFxRET) {
             final value = (fx.value ?? 0).clamp(0, 99);

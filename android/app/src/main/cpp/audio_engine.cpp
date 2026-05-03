@@ -394,9 +394,13 @@ void AudioEngine::triggerRow(const std::vector<int>& rowData) {
         v.releaseSec = normToReleaseSec(byteToNorm(rel));
         v.glideSec = normToGlideSec(byteToNorm(glide));
         v.instrumentVolume = byteToNorm(instVol);
-        v.lfoRateNorm = byteToNorm(lfoRate);
-        v.lfoDepth = byteToNorm(lfoDepth);
-        v.lfoTarget = std::clamp(lfoTgt, 0, 2);
+        // lfoRate/lfoDepth/lfoTarget are only updated on note-on so that
+        // FX like VIB persist across hold rows without being reset.
+        if (n >= 0) {
+            v.lfoRateNorm = byteToNorm(lfoRate);
+            v.lfoDepth    = byteToNorm(lfoDepth);
+            v.lfoTarget   = std::clamp(lfoTgt, 0, 2);
+        }
         v.drive = byteToNorm(drive);
 
         if (vol >= 0) {

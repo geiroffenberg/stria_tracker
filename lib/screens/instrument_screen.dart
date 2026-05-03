@@ -76,9 +76,28 @@ class _InstrumentHeader extends StatelessWidget {
             onTap: () => _pickInstrument(context, state),
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-              child: Text(
-                'INS ${(idx + 1).toString().padLeft(2, '0')}',
-                style: kStyleLabel.copyWith(fontSize: 22, color: kColAccent),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'INSTRUMENT',
+                    style: kStyleHeader.copyWith(
+                      fontSize: 9,
+                      color: kColHeader,
+                      letterSpacing: 1.2,
+                    ),
+                  ),
+                  Text(
+                    (idx + 1).toString().padLeft(2, '0'),
+                    style: kStyleBase.copyWith(
+                      fontSize: 20,
+                      color: kColAccent,
+                      fontWeight: FontWeight.w700,
+                      height: 1.1,
+                    ),
+                  ),
+                ],
               ),
             ),
           ),
@@ -2368,7 +2387,7 @@ class _Knob extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
       child: GestureDetector(
         onVerticalDragUpdate: (d) {
-          final n = (value - d.delta.dy * 0.005).clamp(0.0, 1.0);
+          final n = (value - d.delta.dy * 0.012).clamp(0.0, 1.0);
           onChanged(n);
         },
         onDoubleTap: () => onChanged(0.5),
