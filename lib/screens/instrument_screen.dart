@@ -5,6 +5,8 @@ import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:permission_handler/permission_handler.dart';
+import '../audio/audio_engine.dart';
+import '../audio/wav_encoder.dart';
 import '../models/instrument_model.dart';
 import '../models/synth_preset_bank.dart';
 import '../state/app_state.dart';
@@ -652,6 +654,11 @@ class _SamplerEditorState extends State<_SamplerEditor> {
   List<double>? _wavePeaks;
   bool _waveLoading = false;
   Timer? _playheadTicker;
+  
+  // Recording state
+  bool _isRecording = false;
+  Timer? _recordingTimer;
+  DateTime? _recordingStart;
 
   AppState get state => widget.state;
 
@@ -677,6 +684,8 @@ class _SamplerEditorState extends State<_SamplerEditor> {
   void dispose() {
     _playheadTicker?.cancel();
     _playheadTicker = null;
+    _recordingTimer?.cancel();
+    _recordingTimer = null;
     super.dispose();
   }
 
@@ -966,6 +975,318 @@ class _SamplerEditorState extends State<_SamplerEditor> {
     );
   }
 
+  Future<void> _showRecordingWindow(BuildContext context) async {
+    // Request storage permission at runtime
+    if (Platform.isAndroid) {
+      final status = await _requestStoragePermission();
+      if (!status) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Storage permission denied — cannot record files.'),
+          duration: Duration(seconds: 3),
+        ));
+        return;
+      }
+    }
+
+    await showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: kBgTrackHeader,
+      isScrollControlled: true,
+      isDismissible: false,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (context, setSheetState) {
+            return SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          'RECORD SAMPLE',
+                          style: kStyleHeader.copyWith(color: kColAccent),
+                        ),
+                        if (!_isRecording)
+                          IconButton(
+                            icon: const Icon(Icons.close),
+                            onPressed: () => Navigator.of(ctx).pop(),
+                          ),
+                      ],
+                    ),
+                    const SizedBox(height: 24),
+                    if (_isRecording) ...[
+                      // Recording in progress UI
+                      Container(
+                        padding: const EdgeInsets.all(20),
+                        decoration: BoxDecoration(
+                          color: Colors.red.withAlpha(30),
+                          border: Border.all(color: Colors.red.shade700, width: 2),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Column(
+                          children: [
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Container(
+                                  width: 12,
+                                  height: 12,
+                                  decoration: BoxDecoration(
+                                    color: Colors.red,
+                                    shape: BoxShape.circle,
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                Text(
+                                  'RECORDING...',
+                                  style: kStyleHeader.copyWith(
+                                    color: Colors.red.shade700,
+                                    fontSize: 14,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 12),
+                            Text(
+                              _recordingStart == null
+                                  ? '0:00'
+                                  : _formatDuration(
+                                      DateTime.now().difference(_recordingStart!)),
+                              style: kStyleBase.copyWith(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 24),
+                      ElevatedButton.icon(
+                        onPressed: () async {
+                          await _stopRecording(context, setSheetState);
+                          if (!ctx.mounted) return;
+                        },
+                        icon: const Icon(Icons.stop),
+                        label: const Text('STOP RECORDING'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.red.shade700,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                        ),
+                      ),
+                    ] else ...[
+                      // Pre-recording UI
+                      Text(
+                        'Recording will be saved to project samples folder',
+                        style: kStyleBase.copyWith(
+                          color: kColInactive,
+                          fontSize: 12,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                      const SizedBox(height: 24),
+                      ElevatedButton.icon(
+                        onPressed: () async {
+                          await _startRecording(setSheetState);
+                          if (!ctx.mounted) return;
+                        },
+                        icon: const Icon(Icons.fiber_manual_record),
+                        label: const Text('START RECORDING'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.red.shade700,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                        ),
+                      ),
+                    ],
+                    const SizedBox(height: 12),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+
+    // Clean up recording state when sheet is dismissed
+    if (mounted && _isRecording) {
+      await _stopRecording(context, (f) {});
+    }
+  }
+
+  Future<void> _startRecording(StateSetter setSheetState) async {
+    // Request microphone permission before opening the native stream
+    final status = await Permission.microphone.request();
+    if (!status.isGranted) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Microphone permission denied'),
+          duration: Duration(seconds: 2),
+        ));
+      }
+      return;
+    }
+
+    try {
+      await AudioEngine.instance.startRecording();
+      
+      setState(() {
+        _isRecording = true;
+        _recordingStart = DateTime.now();
+      });
+      
+      setSheetState(() {});
+
+      // Update timer for duration display
+      _recordingTimer = Timer.periodic(const Duration(milliseconds: 100), (_) {
+        if (mounted && _isRecording) {
+          setSheetState(() {});
+        }
+      });
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isRecording = false);
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('Recording failed: $e'),
+          duration: const Duration(seconds: 2),
+        ));
+      }
+    }
+  }
+
+  Future<void> _stopRecording(BuildContext context, StateSetter setSheetState) async {
+    _recordingTimer?.cancel();
+    _recordingTimer = null;
+
+    if (!mounted) return;
+
+    try {
+      final recordingResult = await AudioEngine.instance.stopRecording();
+      
+      setState(() => _isRecording = false);
+      setSheetState(() {});
+
+      if (recordingResult == null) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Recording failed: no audio data'),
+          duration: Duration(seconds: 2),
+        ));
+        return;
+      }
+
+      final samples = recordingResult['samples'] as List<dynamic>? ?? [];
+      final sampleRate = recordingResult['sampleRate'] as int? ?? 44100;
+
+      if (samples.isEmpty) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Recording is empty'),
+          duration: Duration(seconds: 2),
+        ));
+        return;
+      }
+
+      // Normalize to peak 0.9 so quiet mic input is brought up to a useful level
+      final rawSamples = samples.cast<double>();
+      final peak = rawSamples.fold<double>(0.0, (m, s) => s.abs() > m ? s.abs() : m);
+      final normalizedSamples = peak > 0.0
+          ? rawSamples.map((s) => (s / peak) * 0.9).toList()
+          : rawSamples;
+
+      // Encode as WAV and save
+      final wavPath = await _saveRecordedSample(
+        normalizedSamples,
+        sampleRate,
+      );
+
+      if (wavPath == null) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Failed to save recording'),
+          duration: Duration(seconds: 2),
+        ));
+        return;
+      }
+
+      // Load the recording into the sampler
+      final displayName = wavPath.split(Platform.pathSeparator).last;
+      final err = await state.loadSamplerSampleFromPath(
+        wavPath,
+        displayName: displayName,
+      );
+
+      if (!mounted) return;
+
+      if (err != null) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('Load failed: $err'),
+          duration: const Duration(seconds: 2),
+        ));
+        return;
+      }
+
+      // Close the recording window
+      Navigator.of(context).pop();
+
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Recording saved and loaded'),
+        duration: Duration(seconds: 2),
+      ));
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('Error: $e'),
+        duration: const Duration(seconds: 2),
+      ));
+      setState(() => _isRecording = false);
+      setSheetState(() {});
+    }
+  }
+
+  Future<String?> _saveRecordedSample(
+    List<double> samples,
+    int sampleRate,
+  ) async {
+    try {
+      final lib = await state.samplerLibraryDir();
+      
+      // Generate filename with timestamp
+      final now = DateTime.now();
+      final timestamp = '${now.year}${now.month.toString().padLeft(2, '0')}'
+          '${now.day.toString().padLeft(2, '0')}_'
+          '${now.hour.toString().padLeft(2, '0')}'
+          '${now.minute.toString().padLeft(2, '0')}'
+          '${now.second.toString().padLeft(2, '0')}';
+      final filename = 'rec_$timestamp.wav';
+      final filepath = '${lib.path}/$filename';
+
+      // Encode and save WAV
+      final wavData = WavEncoder.encodeWav(
+        samples: samples,
+        sampleRate: sampleRate,
+        numChannels: 1,
+      );
+
+      await File(filepath).writeAsBytes(wavData, flush: true);
+      return filepath;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  String _formatDuration(Duration duration) {
+    final minutes = duration.inMinutes;
+    final seconds = duration.inSeconds % 60;
+    return '$minutes:${seconds.toString().padLeft(2, '0')}';
+  }
+
   Future<void> _syncWaveformForCurrent() async {
     final path = state.currentInstrument.sampler.samplePath;
     _wavePath = path;
@@ -1165,10 +1486,24 @@ class _SamplerEditorState extends State<_SamplerEditor> {
         children: [
           _Section(
             title: 'SAMPLE',
-            child: ElevatedButton.icon(
-              onPressed: _busy ? null : () => _showSampleBrowser(context),
-              icon: const Icon(Icons.folder_open),
-              label: const Text('LOAD SAMPLE'),
+            child: Row(
+              children: [
+                Expanded(
+                  child: ElevatedButton.icon(
+                    onPressed: _busy ? null : () => _showSampleBrowser(context),
+                    icon: const Icon(Icons.folder_open),
+                    label: const Text('LOAD SAMPLE'),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: ElevatedButton.icon(
+                    onPressed: _busy ? null : () => _showRecordingWindow(context),
+                    icon: const Icon(Icons.mic),
+                    label: const Text('RECORD'),
+                  ),
+                ),
+              ],
             ),
           ),
           _Section(

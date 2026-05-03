@@ -76,6 +76,26 @@ class AudioEngine {
     return result ?? false;
   }
 
+  /// Start recording audio from the output mix to buffer.
+  Future<void> startRecording() async {
+    if (!_initialised) return;
+    await _channel.invokeMethod('startRecording');
+  }
+
+  /// Stop recording and return the recorded samples.
+  /// Returns a map with 'samples' (List<double>) and 'sampleRate' (int).
+  Future<Map<String, dynamic>?> stopRecording() async {
+    if (!_initialised) return null;
+    final result = await _channel.invokeMethod<Map<dynamic, dynamic>>('stopRecording');
+    if (result == null) return null;
+    
+    // Convert to proper types
+    return {
+      'samples': (result['samples'] as List?)?.cast<double>() ?? [],
+      'sampleRate': result['sampleRate'] as int? ?? 44100,
+    };
+  }
+
   Future<void> dispose() async {
     if (!_initialised) return;
     await _channel.invokeMethod('dispose');

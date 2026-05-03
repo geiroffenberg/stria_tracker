@@ -3,6 +3,9 @@
 #include <algorithm>
 #include <fstream>
 #include <cstring>
+#include <thread>
+#include <chrono>
+#include <cmath>
 
 namespace {
 float byteToNorm(int v) {
@@ -63,6 +66,7 @@ uint32_t readLe32(const uint8_t* p) {
 
 #define LOG_TAG "TrackerAudio"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO,  LOG_TAG, __VA_ARGS__)
+#define LOGW(...) __android_log_print(ANDROID_LOG_WARN,  LOG_TAG, __VA_ARGS__)
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, __VA_ARGS__)
 
 AudioEngine::AudioEngine() {
@@ -799,5 +803,103 @@ oboe::DataCallbackResult AudioEngine::onAudioReady(
         }
     }
 
+    // ── Record output if enabled ──────────────────────────────────────────────
+    // (Recording is now done on a separate input stream, not on playback output)
+
     return oboe::DataCallbackResult::Continue;
+}
+
+void AudioEngine::startRecording() {
+    // Clear previous recording
+    {
+        std::lock_guard<std::mutex> lock(mRecordingMutex);
+        mRecordingBuffer.clear();
+        mRecordingWarmupFrames = 0;
+    }
+    mIsRecording.store(true);
+
+    // Build a callback-driven input stream (no polling thread needed)
+    mRecordingCallback = std::make_unique<RecordingCallback>(*this);
+
+    oboe::AudioStreamBuilder builder;
+    builder.setDirection(oboe::Direction::Input);
+    builder.setPerformanceMode(oboe::PerformanceMode::LowLatency);
+    builder.setSharingMode(oboe::SharingMode::Shared);
+    builder.setFormat(oboe::AudioFormat::Float);
+    builder.setChannelCount(1);
+    builder.setDataCallback(mRecordingCallback.get());
+
+    oboe::Result result = builder.openManagedStream(mRecordingStream);
+    if (result != oboe::Result::OK) {
+        LOGE("Failed to open recording stream: %s", oboe::convertToText(result));
+        mIsRecording.store(false);
+        mRecordingCallback.reset();
+        return;
+    }
+
+    result = mRecordingStream->start();
+    if (result != oboe::Result::OK) {
+        LOGE("Failed to start recording stream: %s", oboe::convertToText(result));
+        mRecordingStream.reset();
+        mIsRecording.store(false);
+        mRecordingCallback.reset();
+        return;
+    }
+
+    LOGI("Recording started (callback mode): %d Hz, framesPerBurst=%d",
+         (int)mRecordingStream->getSampleRate(),
+         (int)mRecordingStream->getFramesPerBurst());
+}
+
+oboe::DataCallbackResult AudioEngine::onRecordingAudioReady(
+        oboe::AudioStream* /*stream*/,
+        void*              audioData,
+        int32_t            numFrames) {
+
+    if (!mIsRecording.load()) {
+        return oboe::DataCallbackResult::Stop;
+    }
+
+    const float* samples = static_cast<const float*>(audioData);
+
+    std::lock_guard<std::mutex> lock(mRecordingMutex);
+
+    // Skip the first kWarmupFrames to discard hardware start-up noise
+    if (mRecordingWarmupFrames < kWarmupFrames) {
+        const int32_t skip = std::min<int32_t>(numFrames, kWarmupFrames - mRecordingWarmupFrames);
+        mRecordingWarmupFrames += skip;
+        samples += skip;
+        numFrames -= skip;
+        if (numFrames <= 0) return oboe::DataCallbackResult::Continue;
+    }
+
+    for (int32_t i = 0; i < numFrames; ++i) {
+        if ((int)mRecordingBuffer.size() >= kMaxRecordingFrames) {
+            mIsRecording.store(false);
+            LOGI("Recording buffer full");
+            return oboe::DataCallbackResult::Stop;
+        }
+        mRecordingBuffer.push_back(samples[i]);
+    }
+    return oboe::DataCallbackResult::Continue;
+}
+
+std::vector<float> AudioEngine::stopRecording(int& outSampleRate) {
+    mIsRecording.store(false);
+
+    if (mRecordingStream) {
+        outSampleRate = (int)mRecordingStream->getSampleRate();
+        mRecordingStream->stop();
+        mRecordingStream.reset();
+    } else {
+        outSampleRate = 44100;
+    }
+    mRecordingCallback.reset();
+
+    std::lock_guard<std::mutex> lock(mRecordingMutex);
+    LOGI("Recording stopped: %zu frames at %d Hz",
+         mRecordingBuffer.size(), outSampleRate);
+
+    std::vector<float> result = std::move(mRecordingBuffer);
+    return result;
 }

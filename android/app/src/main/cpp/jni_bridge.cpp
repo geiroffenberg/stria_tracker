@@ -66,4 +66,29 @@ Java_com_example_tracker_AudioEnginePlugin_nativeDispose(JNIEnv*, jobject, jlong
     delete reinterpret_cast<AudioEngine*>(ptr);
 }
 
+JNIEXPORT void JNICALL
+Java_com_example_tracker_AudioEnginePlugin_nativeStartRecording(
+        JNIEnv*, jobject, jlong ptr) {
+    reinterpret_cast<AudioEngine*>(ptr)->startRecording();
+}
+
+JNIEXPORT jfloatArray JNICALL
+Java_com_example_tracker_AudioEnginePlugin_nativeStopRecording(
+        JNIEnv* env, jobject, jlong ptr, jintArray outSampleRate) {
+    int sampleRate = 44100;
+    std::vector<float> samples = reinterpret_cast<AudioEngine*>(ptr)->stopRecording(sampleRate);
+    
+    // Set the sample rate in the output parameter
+    jint* ratePtr = env->GetIntArrayElements(outSampleRate, nullptr);
+    ratePtr[0] = sampleRate;
+    env->ReleaseIntArrayElements(outSampleRate, ratePtr, 0);
+    
+    // Convert samples to jfloatArray
+    jfloatArray result = env->NewFloatArray(samples.size());
+    if (result != nullptr && !samples.empty()) {
+        env->SetFloatArrayRegion(result, 0, samples.size(), samples.data());
+    }
+    return result;
+}
+
 } // extern "C"

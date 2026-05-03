@@ -126,19 +126,57 @@ public:
     /// Pass empty path to clear assignment.
     bool setSamplerSample(int slot, const std::string& path);
 
-    // oboe::AudioStreamDataCallback
+    /// Start recording mic input to internal buffer
+    void startRecording();
+
+    /// Stop recording and return the recorded samples + sample rate
+    /// Returns a vector of floats normalized [-1..1]
+    std::vector<float> stopRecording(int& outSampleRate);
+
+    /// Called by Oboe's recording callback (input stream audio thread)
+    oboe::DataCallbackResult onRecordingAudioReady(
+        oboe::AudioStream* stream,
+        void*              audioData,
+        int32_t            numFrames);
+
+    // oboe::AudioStreamDataCallback (output stream)
     oboe::DataCallbackResult onAudioReady(
         oboe::AudioStream* stream,
         void*              audioData,
         int32_t            numFrames) override;
 
 private:
+    // Oboe callback shim for the recording (input) stream.
+    // Oboe requires a stable pointer so we heap-allocate it.
+    class RecordingCallback : public oboe::AudioStreamDataCallback {
+    public:
+        explicit RecordingCallback(AudioEngine& e) : mEngine(e) {}
+        oboe::DataCallbackResult onAudioReady(
+            oboe::AudioStream* stream,
+            void*              audioData,
+            int32_t            numFrames) override {
+            return mEngine.onRecordingAudioReady(stream, audioData, numFrames);
+        }
+    private:
+        AudioEngine& mEngine;
+    };
+
     oboe::ManagedStream              mStream;
+    oboe::ManagedStream              mRecordingStream;
+    std::unique_ptr<RecordingCallback> mRecordingCallback;
     bool                             mStarted = false;
     std::atomic<double>              mBpm{120.0};
     std::mutex                       mVoiceMutex;
     std::array<Voice, kMaxVoices>    mVoices{};
     std::array<SampleData, 64>       mSamplerSlots{};
+
+    // Recording state
+    std::mutex                       mRecordingMutex;
+    std::atomic<bool>                mIsRecording{false};
+    std::vector<float>               mRecordingBuffer;
+    int                              mRecordingWarmupFrames{0}; // frames to skip at stream open
+    static constexpr int             kMaxRecordingFrames  = 44100 * 60; // 60 seconds at 44.1kHz
+    static constexpr int             kWarmupFrames        = 4096;       // ~85ms at 48kHz
 
     bool loadWavMono16OrFloat(const std::string& path, SampleData& outSample);
 

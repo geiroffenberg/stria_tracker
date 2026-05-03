@@ -75,6 +75,23 @@ class AudioEnginePlugin : FlutterPlugin, MethodCallHandler {
                 } else false
                 result.success(ok)
             }
+            "startRecording" -> {
+                if (enginePtr != 0L) nativeStartRecording(enginePtr)
+                result.success(null)
+            }
+            "stopRecording" -> {
+                if (enginePtr != 0L) {
+                    val sampleRateArray = IntArray(1)
+                    val samples = nativeStopRecording(enginePtr, sampleRateArray)
+                    val sampleRate = sampleRateArray[0]
+                    result.success(mapOf(
+                        "samples" to samples,
+                        "sampleRate" to sampleRate
+                    ))
+                } else {
+                    result.success(null)
+                }
+            }
             "dispose" -> {
                 if (enginePtr != 0L) {
                     nativeDispose(enginePtr)
@@ -96,6 +113,8 @@ class AudioEnginePlugin : FlutterPlugin, MethodCallHandler {
     private external fun nativeSetRowData(ptr: Long, data: IntArray)
     private external fun nativeKillVoices(ptr: Long, mask: IntArray)
     private external fun nativeSetSamplerSample(ptr: Long, slot: Int, path: String): Boolean
+    private external fun nativeStartRecording(ptr: Long)
+    private external fun nativeStopRecording(ptr: Long, outSampleRate: IntArray): FloatArray?
     private external fun nativeDispose(ptr: Long)
 
     companion object {
