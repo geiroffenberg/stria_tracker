@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../models/cell.dart';
+import '../models/instrument_model.dart';
 import '../models/note_value.dart';
 import '../state/app_state.dart';
 import '../theme/app_theme.dart';
@@ -500,10 +501,13 @@ class _NumericActions extends StatelessWidget {
 
 class _FxCmdActions extends StatelessWidget {
   static const int _classicCount = 10;
-  static const int _instrumentStart = 10;
-  static const int _instrumentEnd = 31;
+  static const int _classicCommands = 11; // 0-9 + ARC
+  // SLC is at index 46
+  static const int _slcCommand = 46;
+  // Mixer FX: Master (M01-M02) + 15 channels (M11-M19, M21-M29, ..., MF1-MF9)
+  // Command indices: 32-33 (master), 34-43 (ch1), 44-53 (ch2), ..., 174-183 (ch15)
   static const int _masterStart = 32;
-  static const int _masterEnd = 44;
+  static const int _masterEnd = 183;
 
   final AppState state;
   final int row;
@@ -530,6 +534,45 @@ class _FxCmdActions extends StatelessWidget {
 
   List<int> _indexRange(int start, int endInclusive) {
     return List<int>.generate(endInclusive - start + 1, (i) => start + i);
+  }
+
+  /// Get assignable commands for instruments/effects that are actually configured.
+  /// Returns command indices for configured instruments.
+  /// Format: 01-50 for instruments 1-50, 51-99 for effects 51-99.
+  List<int> _getAssignableCommands() {
+    final assigned = <int>[];
+    // Check instruments 01-50
+    for (int i = 1; i <= 50; i++) {
+      final instr = state.instruments[i - 1];
+      if (instr.type != InstrumentType.empty) {
+        // Instrument exists: add command index i (01-50 range)
+        assigned.add(i);
+      }
+    }
+    // TODO: Check effects 51-99 when available
+    return assigned;
+  }
+
+  bool _hasAssignedCommands() {
+    return _getAssignableCommands().isNotEmpty;
+  }
+
+  /// Get valid mixer FX commands: Master (M01-M02), Channels 1-15 (M11-M14, M21-M24, etc.)
+  /// Reserves M15-M19, M25-M29, etc. for future expansion
+  List<int> _getMixerFxCommands() {
+    final cmds = <int>[];
+    // Master: commands 32-33 (M01, M02)
+    cmds.addAll([32, 33]);
+    // Channels 1-15: each channel has 10 slots (0-9), currently implementing 1-4
+    // Channel 1: 34-43, implementing 34-37 (M11-M14)
+    // Channel 2: 44-53, implementing 44-47 (M21-M24)
+    // etc.
+    for (int ch = 1; ch <= 15; ch++) {
+      final base = 34 + (ch - 1) * 10;
+      // Add only implemented controllers 1-4 (indices 0-3 in the channel block)
+      cmds.addAll([base, base + 1, base + 2, base + 3]);
+    }
+    return cmds;
   }
 
   Widget _sectionLabel(String text) {
@@ -570,7 +613,100 @@ class _FxCmdActions extends StatelessWidget {
                 borderRadius: BorderRadius.circular(4),
               ),
               child: Text(
-                kFxCommandNames[cmd],
+                kFxCommandNames.length > cmd
+                    ? kFxCommandNames[cmd]
+                    : '${cmd.toRadixString(16).toUpperCase().padLeft(2, '0')}',
+                style: kStyleBase.copyWith(
+                  color: selected ? kColFxCmd : kColHeader,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 0.5,
+                ),
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  /// Display mixer FX commands using names from kFxCommandNames
+  Widget _commandStripMixer(List<int> indices, int? current) {
+    return SizedBox(
+      height: 28,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        itemCount: indices.length,
+        separatorBuilder: (_, _) => const SizedBox(width: 4),
+        itemBuilder: (_, i) {
+          final cmd = indices[i];
+          final selected = current == cmd;
+          return GestureDetector(
+            onTap: () {
+              state.currentTrack.writeColumnValue(row, column, cmd);
+              state.instrumentParamsChanged();
+            },
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10),
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: selected ? kColFxCmd.withAlpha(60) : Colors.transparent,
+                border: Border.all(
+                  color: selected ? kColFxCmd : kColInactive,
+                  width: 1,
+                ),
+                borderRadius: BorderRadius.circular(4),
+              ),
+              child: Text(
+                kFxCommandNames.length > cmd
+                    ? kFxCommandNames[cmd]
+                    : '${cmd.toRadixString(16).toUpperCase().padLeft(2, '0')}',
+                style: kStyleBase.copyWith(
+                  color: selected ? kColFxCmd : kColHeader,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 0.5,
+                ),
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  /// Display assigned instrument controls as "0XY" format (instrument + controller)
+  Widget _commandStripAssigned(List<int> instrumentIndices, int? current) {
+    return SizedBox(
+      height: 28,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        itemCount: instrumentIndices.length,
+        separatorBuilder: (_, _) => const SizedBox(width: 4),
+        itemBuilder: (_, i) {
+          final instrNum = instrumentIndices[i];
+          // Format: 0XY where X=instrument (1-5), Y=controller (1 = placeholder)
+          final displayNum = (instrNum * 10) + 1;
+          final displayText = '0${displayNum.toString().padLeft(2, '0')}';
+          final selected = current == displayNum;
+          return GestureDetector(
+            onTap: () {
+              state.currentTrack.writeColumnValue(row, column, displayNum);
+              state.instrumentParamsChanged();
+            },
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10),
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: selected ? kColFxCmd.withAlpha(60) : Colors.transparent,
+                border: Border.all(
+                  color: selected ? kColFxCmd : kColInactive,
+                  width: 1,
+                ),
+                borderRadius: BorderRadius.circular(4),
+              ),
+              child: Text(
+                displayText,
                 style: kStyleBase.copyWith(
                   color: selected ? kColFxCmd : kColHeader,
                   fontSize: 12,
@@ -591,6 +727,8 @@ class _FxCmdActions extends StatelessWidget {
     final fx = cell.fxSlots[_fxIndex()];
     final current = fx.command;
     final desc = fxCommandDescription(current);
+    final assignedCmds = _getAssignableCommands();
+    final hasAssigned = assignedCmds.isNotEmpty;
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
@@ -633,18 +771,18 @@ class _FxCmdActions extends StatelessWidget {
           _commandStrip([
             ...List<int>.generate(_classicCount, (i) => i),
             kFxARC,
+            _slcCommand, // SLC - unified slice command
           ], current),
           const SizedBox(height: 5),
-          _sectionLabel('Instrument FX (Axx synth, SLx slices)'),
+          _sectionLabel('Mixer FX'),
           const SizedBox(height: 3),
-          _commandStrip([
-            ..._indexRange(_instrumentStart, 15),
-            ..._indexRange(22, _instrumentEnd),
-          ], current),
-          const SizedBox(height: 5),
-          _sectionLabel('Mixer FX (Mxx bus, 1xx-9xx inserts)'),
-          const SizedBox(height: 3),
-          _commandStrip(_indexRange(_masterStart, _masterEnd), current),
+          _commandStripMixer(_getMixerFxCommands(), current),
+          if (hasAssigned) ...[
+            const SizedBox(height: 5),
+            _sectionLabel('Assigned'),
+            const SizedBox(height: 3),
+            _commandStripAssigned(assignedCmds, current),
+          ],
         ],
       ),
     );

@@ -38,6 +38,13 @@ class AudioEngine {
     await _channel.invokeMethod('setTempo', {'bpm': bpm});
   }
 
+  /// Set the current line duration in samples (must be called before queueDelays/queueKills).
+  /// This allows the C++ engine to convert delay/kill percentages to sample-accurate offsets.
+  Future<void> setLineSamplesPerRow(int samples) async {
+    if (!_initialised) return;
+    await _channel.invokeMethod('setLineSamplesPerRow', {'samples': samples});
+  }
+
   /// Feed the current pattern row data to the engine so it knows what to play.
   /// [rowData] is packed per track as
   /// [note, volume, pan, wave, instrumentType, detune, cutoff, resonance, filterMode,
@@ -83,17 +90,37 @@ class AudioEngine {
   }
 
   /// Queue sample-accurate delayed note events (DEL).
-  /// [data] is packed in groups of 4: [sampleOffset, trackIdx, note, volume].
+  /// [data] is packed in groups of 4: [delayPct, trackIdx, note, volume].
+  /// The C++ engine converts the delay percentage to a sample-accurate offset.
   Future<void> queueDelays(List<int> data) async {
     if (!_initialised) return;
     await _channel.invokeMethod('queueDelays', {'data': data});
   }
 
   /// Queue sample-accurate kill events (KIL).
-  /// [data] is packed in groups of 2: [sampleOffset, trackIdx].
+  /// [data] is packed in groups of 2: [killPct, trackIdx].
+  /// The C++ engine converts the kill percentage to a sample-accurate offset.
   Future<void> queueKills(List<int> data) async {
     if (!_initialised) return;
     await _channel.invokeMethod('queueKills', {'data': data});
+  }
+
+  /// Queue sample-accurate slice commands (SLC).
+  /// [data] is packed in groups of 4: [playMode, trackIdx, startNormScaled, endNormScaled].
+  /// startNormScaled and endNormScaled are normalized positions scaled by 10000.
+  Future<void> queueSliceCommands(List<int> data) async {
+    if (!_initialised) return;
+    await _channel.invokeMethod('queueSliceCommands', {'data': data});
+  }
+
+  /// Queue mixer control commands (M01-M99).
+  /// [data] is packed in groups of 4: [channel, controller, value, unused].
+  /// channel: 0=master, 1-15=mixer channels
+  /// controller: 1-4 for pan/mute/solo/volume (or reserved 5-9 for future)
+  /// value: 0-99 (normalized parameter value)
+  Future<void> queueMixerCommands(List<int> data) async {
+    if (!_initialised) return;
+    await _channel.invokeMethod('queueMixerCommands', {'data': data});
   }
 
   /// Assigns a sample file to a sampler instrument slot.

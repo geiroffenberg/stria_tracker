@@ -65,11 +65,39 @@ const List<String> kFxCommandNames = [
   'SL7',
   'SL8',
   'SL9',
-  // Mixer channel-strip FX (Mxx)
-  'M01',
-  'M02',
-  'M03',
-  'M04',
+  // Mixer channel-strip FX (32-183): Master (32-33) + 15 channels * 10 slots (34-183)
+  'M01', // 32 – master mute
+  'M02', // 33 – master volume
+  // Channel 1 (34-43): M11-M19 (1-4 implemented, 5-9 reserved)
+  'M11', 'M12', 'M13', 'M14', 'M15', 'M16', 'M17', 'M18', 'M19',
+  // Channel 2 (44-53)
+  'M21', 'M22', 'M23', 'M24', 'M25', 'M26', 'M27', 'M28', 'M29',
+  // Channel 3 (54-63)
+  'M31', 'M32', 'M33', 'M34', 'M35', 'M36', 'M37', 'M38', 'M39',
+  // Channel 4 (64-73)
+  'M41', 'M42', 'M43', 'M44', 'M45', 'M46', 'M47', 'M48', 'M49',
+  // Channel 5 (74-83)
+  'M51', 'M52', 'M53', 'M54', 'M55', 'M56', 'M57', 'M58', 'M59',
+  // Channel 6 (84-93)
+  'M61', 'M62', 'M63', 'M64', 'M65', 'M66', 'M67', 'M68', 'M69',
+  // Channel 7 (94-103)
+  'M71', 'M72', 'M73', 'M74', 'M75', 'M76', 'M77', 'M78', 'M79',
+  // Channel 8 (104-113)
+  'M81', 'M82', 'M83', 'M84', 'M85', 'M86', 'M87', 'M88', 'M89',
+  // Channel 9 (114-123)
+  'M91', 'M92', 'M93', 'M94', 'M95', 'M96', 'M97', 'M98', 'M99',
+  // Channel 10 (124-133)
+  'MA1', 'MA2', 'MA3', 'MA4', 'MA5', 'MA6', 'MA7', 'MA8', 'MA9',
+  // Channel 11 (134-143)
+  'MB1', 'MB2', 'MB3', 'MB4', 'MB5', 'MB6', 'MB7', 'MB8', 'MB9',
+  // Channel 12 (144-153)
+  'MC1', 'MC2', 'MC3', 'MC4', 'MC5', 'MC6', 'MC7', 'MC8', 'MC9',
+  // Channel 13 (154-163)
+  'MD1', 'MD2', 'MD3', 'MD4', 'MD5', 'MD6', 'MD7', 'MD8', 'MD9',
+  // Channel 14 (164-173)
+  'ME1', 'ME2', 'ME3', 'ME4', 'ME5', 'ME6', 'ME7', 'ME8', 'ME9',
+  // Channel 15 (174-183)
+  'MF1', 'MF2', 'MF3', 'MF4', 'MF5', 'MF6', 'MF7', 'MF8', 'MF9',
   // Master insert routing (numeric)
   '101',
   '201',
@@ -81,6 +109,7 @@ const List<String> kFxCommandNames = [
   '801',
   '901',
   'ARC', // octave span + arp speed config
+  'SLC', // sample slice command (unified slice player)
 ];
 
 const List<String> kFxCommandDescriptions = [
@@ -116,10 +145,160 @@ const List<String> kFxCommandDescriptions = [
   'Select Slice 7',
   'Select Slice 8',
   'Select Slice 9',
-  'Mixer volume (00-99)',
-  'Mixer pan (00-99)',
-  'Mixer mute (00=off, >00=on)',
-  'Mixer solo (00=off, >00=on)',
+  // Mixer channel-strip FX (32-183): Master + 15 channels * 10 slots
+  'Master mute (00=off, >00=on)',
+  'Master volume (00-99)',
+  // Channel 1 (34-43): M11-M19
+  'Channel 1 pan (00=left, 50=centre, 99=right)',
+  'Channel 1 mute (00=off, >00=on)',
+  'Channel 1 solo (00=off, >00=on)',
+  'Channel 1 volume (00-99)',
+  'Channel 1 reserved M15',
+  'Channel 1 reserved M16',
+  'Channel 1 reserved M17',
+  'Channel 1 reserved M18',
+  'Channel 1 reserved M19',
+  // Channel 2 (44-53): M21-M29
+  'Channel 2 pan (00=left, 50=centre, 99=right)',
+  'Channel 2 mute (00=off, >00=on)',
+  'Channel 2 solo (00=off, >00=on)',
+  'Channel 2 volume (00-99)',
+  'Channel 2 reserved M25',
+  'Channel 2 reserved M26',
+  'Channel 2 reserved M27',
+  'Channel 2 reserved M28',
+  'Channel 2 reserved M29',
+  // Channel 3 (54-63): M31-M39
+  'Channel 3 pan (00=left, 50=centre, 99=right)',
+  'Channel 3 mute (00=off, >00=on)',
+  'Channel 3 solo (00=off, >00=on)',
+  'Channel 3 volume (00-99)',
+  'Channel 3 reserved M35',
+  'Channel 3 reserved M36',
+  'Channel 3 reserved M37',
+  'Channel 3 reserved M38',
+  'Channel 3 reserved M39',
+  // Channel 4 (64-73): M41-M49
+  'Channel 4 pan (00=left, 50=centre, 99=right)',
+  'Channel 4 mute (00=off, >00=on)',
+  'Channel 4 solo (00=off, >00=on)',
+  'Channel 4 volume (00-99)',
+  'Channel 4 reserved M45',
+  'Channel 4 reserved M46',
+  'Channel 4 reserved M47',
+  'Channel 4 reserved M48',
+  'Channel 4 reserved M49',
+  // Channel 5 (74-83): M51-M59
+  'Channel 5 pan (00=left, 50=centre, 99=right)',
+  'Channel 5 mute (00=off, >00=on)',
+  'Channel 5 solo (00=off, >00=on)',
+  'Channel 5 volume (00-99)',
+  'Channel 5 reserved M55',
+  'Channel 5 reserved M56',
+  'Channel 5 reserved M57',
+  'Channel 5 reserved M58',
+  'Channel 5 reserved M59',
+  // Channel 6 (84-93): M61-M69
+  'Channel 6 pan (00=left, 50=centre, 99=right)',
+  'Channel 6 mute (00=off, >00=on)',
+  'Channel 6 solo (00=off, >00=on)',
+  'Channel 6 volume (00-99)',
+  'Channel 6 reserved M65',
+  'Channel 6 reserved M66',
+  'Channel 6 reserved M67',
+  'Channel 6 reserved M68',
+  'Channel 6 reserved M69',
+  // Channel 7 (94-103): M71-M79
+  'Channel 7 pan (00=left, 50=centre, 99=right)',
+  'Channel 7 mute (00=off, >00=on)',
+  'Channel 7 solo (00=off, >00=on)',
+  'Channel 7 volume (00-99)',
+  'Channel 7 reserved M75',
+  'Channel 7 reserved M76',
+  'Channel 7 reserved M77',
+  'Channel 7 reserved M78',
+  'Channel 7 reserved M79',
+  // Channel 8 (104-113): M81-M89
+  'Channel 8 pan (00=left, 50=centre, 99=right)',
+  'Channel 8 mute (00=off, >00=on)',
+  'Channel 8 solo (00=off, >00=on)',
+  'Channel 8 volume (00-99)',
+  'Channel 8 reserved M85',
+  'Channel 8 reserved M86',
+  'Channel 8 reserved M87',
+  'Channel 8 reserved M88',
+  'Channel 8 reserved M89',
+  // Channel 9 (114-123): M91-M99
+  'Channel 9 pan (00=left, 50=centre, 99=right)',
+  'Channel 9 mute (00=off, >00=on)',
+  'Channel 9 solo (00=off, >00=on)',
+  'Channel 9 volume (00-99)',
+  'Channel 9 reserved M95',
+  'Channel 9 reserved M96',
+  'Channel 9 reserved M97',
+  'Channel 9 reserved M98',
+  'Channel 9 reserved M99',
+  // Channel 10 (124-133): MA1-MA9
+  'Channel 10 pan (00=left, 50=centre, 99=right)',
+  'Channel 10 mute (00=off, >00=on)',
+  'Channel 10 solo (00=off, >00=on)',
+  'Channel 10 volume (00-99)',
+  'Channel 10 reserved MA5',
+  'Channel 10 reserved MA6',
+  'Channel 10 reserved MA7',
+  'Channel 10 reserved MA8',
+  'Channel 10 reserved MA9',
+  // Channel 11 (134-143): MB1-MB9
+  'Channel 11 pan (00=left, 50=centre, 99=right)',
+  'Channel 11 mute (00=off, >00=on)',
+  'Channel 11 solo (00=off, >00=on)',
+  'Channel 11 volume (00-99)',
+  'Channel 11 reserved MB5',
+  'Channel 11 reserved MB6',
+  'Channel 11 reserved MB7',
+  'Channel 11 reserved MB8',
+  'Channel 11 reserved MB9',
+  // Channel 12 (144-153): MC1-MC9
+  'Channel 12 pan (00=left, 50=centre, 99=right)',
+  'Channel 12 mute (00=off, >00=on)',
+  'Channel 12 solo (00=off, >00=on)',
+  'Channel 12 volume (00-99)',
+  'Channel 12 reserved MC5',
+  'Channel 12 reserved MC6',
+  'Channel 12 reserved MC7',
+  'Channel 12 reserved MC8',
+  'Channel 12 reserved MC9',
+  // Channel 13 (154-163): MD1-MD9
+  'Channel 13 pan (00=left, 50=centre, 99=right)',
+  'Channel 13 mute (00=off, >00=on)',
+  'Channel 13 solo (00=off, >00=on)',
+  'Channel 13 volume (00-99)',
+  'Channel 13 reserved MD5',
+  'Channel 13 reserved MD6',
+  'Channel 13 reserved MD7',
+  'Channel 13 reserved MD8',
+  'Channel 13 reserved MD9',
+  // Channel 14 (164-173): ME1-ME9
+  'Channel 14 pan (00=left, 50=centre, 99=right)',
+  'Channel 14 mute (00=off, >00=on)',
+  'Channel 14 solo (00=off, >00=on)',
+  'Channel 14 volume (00-99)',
+  'Channel 14 reserved ME5',
+  'Channel 14 reserved ME6',
+  'Channel 14 reserved ME7',
+  'Channel 14 reserved ME8',
+  'Channel 14 reserved ME9',
+  // Channel 15 (174-183): MF1-MF9
+  'Channel 15 pan (00=left, 50=centre, 99=right)',
+  'Channel 15 mute (00=off, >00=on)',
+  'Channel 15 solo (00=off, >00=on)',
+  'Channel 15 volume (00-99)',
+  'Channel 15 reserved MF5',
+  'Channel 15 reserved MF6',
+  'Channel 15 reserved MF7',
+  'Channel 15 reserved MF8',
+  'Channel 15 reserved MF9',
+  // Master insert routing (184+)
   'Insert 1 param 01 (reserved)',
   'Insert 2 param 01 (reserved)',
   'Insert 3 param 01 (reserved)',
@@ -130,6 +309,7 @@ const List<String> kFxCommandDescriptions = [
   'Insert 8 param 01 (reserved)',
   'Insert 9 param 01 (reserved)',
   'Arp config XY (X=octave layers, Y=notes/line, Y0=full cycle)',
+  'Slice command — XY: X=mode (0=slice, 1=thru), Y=slice (1-9)',
 ];
 
 /// FX command byte constants (indices into kFxCommandNames).
@@ -146,6 +326,7 @@ const int kFxVOL = 9;
 const int kFxSL0 = 22;
 const int kFxSL9 = 31;
 const int kFxARC = 45;
+const int kFxSLC = 46;
 
 /// Returns the 3-letter FX command name, or '---' if null/unknown.
 String fxCommandName(int? cmd) {

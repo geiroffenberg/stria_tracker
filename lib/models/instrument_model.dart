@@ -198,6 +198,30 @@ class SimpleSynthParams {
         lfoTarget: SynthLfoTarget.values[(j['lfoTarget'] as int?) ?? 0],
         drive: (j['drive'] as num?)?.toDouble() ?? 0.0,
       );
+
+  /// Create a deep copy of this synth configuration.
+  SimpleSynthParams copy() => SimpleSynthParams(
+    wave: wave,
+    detune: detune,
+    cutoff: cutoff,
+    resonance: resonance,
+    filterMode: filterMode,
+    filterAttack: filterAttack,
+    filterDecay: filterDecay,
+    filterSustain: filterSustain,
+    filterRelease: filterRelease,
+    filterEnvAmt: filterEnvAmt,
+    attack: attack,
+    decay: decay,
+    sustain: sustain,
+    release: release,
+    glide: glide,
+    volume: volume,
+    lfoRate: lfoRate,
+    lfoDepth: lfoDepth,
+    lfoTarget: lfoTarget,
+    drive: drive,
+  );
 }
 
 enum SamplerLoopMode { off, forward, pingPong }
@@ -342,6 +366,20 @@ class SamplerParams {
       return (e as num?)?.toInt() ?? 0;
     }).toList(),
   );
+
+  /// Create a deep copy of this sampler configuration.
+  SamplerParams copy() => SamplerParams(
+    sampleName: sampleName,
+    samplePath: samplePath,
+    pitch: pitch,
+    volume: volume,
+    loopMode: loopMode,
+    start: start,
+    end: end,
+    attack: attack,
+    release: release,
+    sliceStarts: List<int>.from(sliceStarts),
+  );
 }
 
 class InstrumentModel {
@@ -349,14 +387,23 @@ class InstrumentModel {
   InstrumentType type;
   SimpleSynthParams synth;
   SamplerParams sampler;
+  late SimpleSynthParams synthStartState;
+  late SamplerParams samplerStartState;
 
   InstrumentModel({
     required this.name,
     this.type = InstrumentType.empty,
     SimpleSynthParams? synth,
     SamplerParams? sampler,
+    SimpleSynthParams? synthStartState,
+    SamplerParams? samplerStartState,
   }) : synth = synth ?? SimpleSynthParams(),
-       sampler = sampler ?? SamplerParams();
+       sampler = sampler ?? SamplerParams() {
+    // Initialize start states as copies of the working parameters.
+    // When play() is called, these get updated as snapshots.
+    this.synthStartState = synthStartState ?? this.synth.copy();
+    this.samplerStartState = samplerStartState ?? this.sampler.copy();
+  }
 
   factory InstrumentModel.empty(int index) =>
       InstrumentModel(name: 'INS ${index.toString().padLeft(2, '0')}');
@@ -366,6 +413,8 @@ class InstrumentModel {
     'type': type.index,
     'synth': synth.toJson(),
     'sampler': sampler.toJson(),
+    'synthStartState': synthStartState.toJson(),
+    'samplerStartState': samplerStartState.toJson(),
   };
 
   factory InstrumentModel.fromJson(Map<String, dynamic> j) => InstrumentModel(
@@ -379,6 +428,12 @@ class InstrumentModel {
     ),
     sampler: SamplerParams.fromJson(
       (j['sampler'] as Map<String, dynamic>?) ?? {},
+    ),
+    synthStartState: SimpleSynthParams.fromJson(
+      (j['synthStartState'] as Map<String, dynamic>?) ?? {},
+    ),
+    samplerStartState: SamplerParams.fromJson(
+      (j['samplerStartState'] as Map<String, dynamic>?) ?? {},
     ),
   );
 }

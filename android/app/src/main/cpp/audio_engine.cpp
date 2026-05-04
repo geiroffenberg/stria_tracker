@@ -570,20 +570,57 @@ void AudioEngine::queueArp(const std::vector<int>& data) {
 }
 
 void AudioEngine::queueDelays(const std::vector<int>& data) {
-    // data format: groups of 4 ints — [sampleOffset, trackIdx, note, volume].
+    // data format: groups of 4 ints — [delayPct, trackIdx, note, volume].
+    // Convert delay percentage to sample offset using mLineSamplesPerRow.
     std::lock_guard<std::mutex> lock(mVoiceMutex);
     for (size_t i = 0; i + 3 < data.size(); i += 4) {
-        const int32_t target = static_cast<int32_t>(data[i]) + mSubRowSampleCounter;
+        const int delayPct = std::clamp(data[i], 0, 99);
+        const double norm = (delayPct >= 99) ? 1.0 : (delayPct / 100.0);
+        const int32_t sampleOffset = std::max(0, static_cast<int32_t>(mLineSamplesPerRow * norm));
+        const int32_t target = sampleOffset + mSubRowSampleCounter;
         mPendingDelays.push_back({target, data[i + 1], data[i + 2], data[i + 3]});
     }
 }
 
 void AudioEngine::queueKills(const std::vector<int>& data) {
-    // data format: groups of 2 ints — [sampleOffset, trackIdx].
+    // data format: groups of 2 ints — [killPct, trackIdx].
+    // Convert kill percentage to sample offset using mLineSamplesPerRow.
     std::lock_guard<std::mutex> lock(mVoiceMutex);
     for (size_t i = 0; i + 1 < data.size(); i += 2) {
-        const int32_t target = static_cast<int32_t>(data[i]) + mSubRowSampleCounter;
+        const int killPct = std::clamp(data[i], 0, 99);
+        const double norm = (killPct >= 99) ? 1.0 : (killPct / 100.0);
+        const int32_t sampleOffset = std::max(0, static_cast<int32_t>(mLineSamplesPerRow * norm));
+        const int32_t target = sampleOffset + mSubRowSampleCounter;
         mPendingKills.push_back({target, data[i + 1]});
+    }
+}
+
+void AudioEngine::queueSliceCommands(const std::vector<int>& data) {
+    // data format: groups of 4 ints — [playMode, trackIdx, startNormScaled, endNormScaled].
+    // startNormScaled and endNormScaled are normalized positions (0-10000 = 0.0-1.0).
+    // Slice commands fire immediately at row start (sampleTarget = 0).
+    std::lock_guard<std::mutex> lock(mVoiceMutex);
+    for (size_t i = 0; i + 3 < data.size(); i += 4) {
+        const int playMode = std::clamp(data[i], 0, 1);
+        const int trackIdx = data[i + 1];
+        const int startNormScaled = std::clamp(data[i + 2], 0, 10000);
+        const int endNormScaled = std::clamp(data[i + 3], 0, 10000);
+        mPendingSliceCommands.push_back({0, trackIdx, startNormScaled, endNormScaled});
+    }
+}
+
+void AudioEngine::queueMixerCommands(const std::vector<int>& data) {
+    // data format: groups of 4 ints — [channel, controller, value, unused].
+    // channel: 0=master, 1-15=mixer channels
+    // controller: 1-4 (pan, mute, solo, volume), 5-9 reserved
+    // value: 0-99
+    // Mixer commands fire immediately at row start (sampleTarget = 0).
+    std::lock_guard<std::mutex> lock(mVoiceMutex);
+    for (size_t i = 0; i + 3 < data.size(); i += 4) {
+        const int channel = std::clamp(data[i], 0, 15);
+        const int controller = std::clamp(data[i + 1], 1, 9);
+        const int value = std::clamp(data[i + 2], 0, 99);
+        mPendingMixerCommands.push_back({0, channel, controller, value});
     }
 }
 
@@ -776,14 +813,59 @@ oboe::DataCallbackResult AudioEngine::onAudioReady(
             ev.sampleTarget = -1; // mark fired
             if (ev.trackIdx < 0 || ev.trackIdx >= static_cast<int>(mVoices.size())) continue;
             Voice& v = mVoices[ev.trackIdx];
+            // KIL: hard stop (immediate silence, no envelope)
+            v.gainTarget = 0.0f;
+            v.gain = 0.0f;
+            v.envStage = EnvelopeStage::Idle;
+            v.envLevel = 0.0f;
+            v.filterEnvStage = EnvelopeStage::Idle;
+            v.filterEnvLevel = 0.0f;
             v.noteHeld = false;
-            v.envStage = EnvelopeStage::Release;
-            if (v.samplerMode) v.sampleActive = false;
+            v.midiNote = -1;
+            v.sampleActive = false;
         }
         mPendingKills.erase(
             std::remove_if(mPendingKills.begin(), mPendingKills.end(),
                 [](const KillEvent& e) { return e.sampleTarget < 0; }),
             mPendingKills.end());
+    }
+
+    // Process slice commands (SLC) — set sampler boundaries at row start.
+    // Slice commands fire immediately (sampleTarget = 0).
+    if (!mPendingSliceCommands.empty()) {
+        for (auto& ev : mPendingSliceCommands) {
+            if (ev.trackIdx < 0 || ev.trackIdx >= static_cast<int>(mVoices.size())) continue;
+            Voice& v = mVoices[ev.trackIdx];
+            // Convert scaled normalized positions back to 0.0-1.0 range.
+            v.sampleStartNorm = std::clamp(static_cast<float>(ev.startNormScaled) / 10000.0f, 0.0f, 1.0f);
+            v.sampleEndNorm   = std::clamp(static_cast<float>(ev.endNormScaled) / 10000.0f, 0.0f, 1.0f);
+        }
+        // Clear slice commands after processing (they've served their purpose for this row).
+        mPendingSliceCommands.clear();
+    }
+
+    // Process mixer commands (M01-M99) — control mixer state at row start.
+    // Mixer commands fire immediately (sampleTarget = 0).
+    if (!mPendingMixerCommands.empty()) {
+        for (auto& ev : mPendingMixerCommands) {
+            // ev.channel: 0=master, 1-15=channels
+            // ev.controller: 1-4 (pan, mute, solo, volume), 5-9 reserved
+            // ev.value: 0-99
+            
+            if (ev.channel == 0) {
+                // Master channel
+                if (ev.controller == 1) {
+                    // M01: master mute (value > 0 = muted, 0 = unmuted)
+                    mMasterMute.store(ev.value > 0);
+                } else if (ev.controller == 2) {
+                    // M02: master volume (0-99 → 0.0-1.0)
+                    mMasterVolume.store(ev.value / 99.0f);
+                }
+            }
+            // TODO: Channel 1-15 mute/volume/pan/solo states
+        }
+        // Clear mixer commands after processing.
+        mPendingMixerCommands.clear();
     }
 
     for (auto& v : mVoices) {
@@ -1073,6 +1155,20 @@ oboe::DataCallbackResult AudioEngine::onAudioReady(
             out[i * 2 + 1] += sample * rightGain;
             v.phase += phaseInc;
             if (v.phase >= twoPi) v.phase -= twoPi;
+        }
+    }
+
+    // Apply master mute and volume ───────────────────────────────────────────────
+    const bool masterMute = mMasterMute.load();
+    const float masterVolume = mMasterVolume.load();
+    
+    if (masterMute) {
+        // Master is muted: silence entire output
+        std::fill(out, out + numFrames * 2, 0.0f);
+    } else if (masterVolume < 1.0f) {
+        // Apply master volume gain to all samples
+        for (int i = 0; i < numFrames * 2; ++i) {
+            out[i] *= masterVolume;
         }
     }
 

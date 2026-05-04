@@ -114,6 +114,24 @@ struct KillEvent {
     int     trackIdx;     ///< voice index (0-based track)
 };
 
+/// A pending slice command (SLC) event scheduled at a sample offset.
+/// Sets the sampler playback region boundaries.
+struct SliceCommandEvent {
+    int32_t sampleTarget;   ///< fire when mSubRowSampleCounter >= this value
+    int     trackIdx;       ///< voice index (0-based track)
+    int     startNormScaled; ///< normalized start position (0-10000 = 0.0-1.0)
+    int     endNormScaled;   ///< normalized end position (0-10000 = 0.0-1.0)
+};
+
+/// A pending mixer control command.
+/// Controls master/channel parameters like pan, mute, solo, volume.
+struct MixerCommandEvent {
+    int32_t sampleTarget; ///< fire when mSubRowSampleCounter >= this value (currently 0 = immediate)
+    int     channel;      ///< 0=master, 1-15=mixer channels
+    int     controller;   ///< 1-4 for pan/mute/solo/volume, 5-9 reserved
+    int     value;        ///< 0-99 parameter value
+};
+
 /**
  * AudioEngine — polyphonic sine synthesiser via Oboe.
  *
@@ -154,6 +172,12 @@ public:
     /// Kill voices on specific tracks. One entry per track: 1 = kill, 0 = leave.
     void killVoices(const std::vector<int>& killMask);
 
+    /// Set the current line duration in samples (called before queueDelays/queueKills).
+    /// Needed to convert delay/kill percentages to sample-accurate offsets.
+    void setLineSamplesPerRow(int32_t samples) {
+        mLineSamplesPerRow = samples;
+    }
+
     /// Queue sample-accurate retrigger events for the current row.
     /// [data] is packed in groups of 4: [sampleOffset, trackIdx, note, volume].
     /// Events fire when the internal sample counter reaches sampleOffset.
@@ -167,14 +191,27 @@ public:
     void queueArp(const std::vector<int>& data);
 
     /// Queue sample-accurate delayed note events for DEL.
-    /// [data] is packed in groups of 4: [sampleOffset, trackIdx, note, volume].
+    /// [data] is packed in groups of 4: [delayPct, trackIdx, note, volume].
     /// All pending events are cleared when triggerRow() is called.
     void queueDelays(const std::vector<int>& data);
 
     /// Queue sample-accurate kill events for KIL.
-    /// [data] is packed in groups of 2: [sampleOffset, trackIdx].
+    /// [data] is packed in groups of 2: [killPct, trackIdx].
     /// All pending events are cleared when triggerRow() is called.
     void queueKills(const std::vector<int>& data);
+
+    /// Queue sample-accurate slice commands for SLC.
+    /// [data] is packed in groups of 3: [slicePct, sliceNum, trackIdx].
+    /// sliceNum = 1-9 (which slice), slicePct = 0 or 1 (play mode).
+    /// All pending events are cleared when triggerRow() is called.
+    void queueSliceCommands(const std::vector<int>& data);
+
+    /// Queue mixer control commands (M01-M99).
+    /// [data] is packed in groups of 4: [channel, controller, value, unused].
+    /// channel: 0=master, 1-15=mixer channels
+    /// controller: 1-4 (pan, mute, solo, volume), 5-9 reserved
+    /// value: 0-99 parameter value
+    void queueMixerCommands(const std::vector<int>& data);
 
     /// Assign a sample file to an instrument slot for sampler playback.
     /// Pass empty path to clear assignment.
@@ -229,7 +266,15 @@ private:
     std::vector<ArpEvent>    mPendingArp;
     std::vector<DelayEvent>  mPendingDelays;
     std::vector<KillEvent>   mPendingKills;
+    std::vector<SliceCommandEvent> mPendingSliceCommands;
+    std::vector<MixerCommandEvent>  mPendingMixerCommands;
+    
+    // Mixer state (master channel: mute, volume)
+    std::atomic<bool>   mMasterMute{false};  // true = muted, false = unmuted
+    std::atomic<float>  mMasterVolume{1.0f};   // 0.0-1.0, 1.0 = full volume
+    
     int32_t                  mSubRowSampleCounter = 0;
+    int32_t                  mLineSamplesPerRow = 0; // Set via setLineSamplesPerRow()
 
     // Recording state
     std::mutex                       mRecordingMutex;

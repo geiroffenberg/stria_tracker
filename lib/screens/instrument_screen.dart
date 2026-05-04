@@ -4,6 +4,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:permission_handler/permission_handler.dart';
 import '../audio/audio_engine.dart';
 import '../audio/wav_encoder.dart';
@@ -690,7 +691,8 @@ class _SamplerEditor extends StatefulWidget {
   State<_SamplerEditor> createState() => _SamplerEditorState();
 }
 
-class _SamplerEditorState extends State<_SamplerEditor> {
+class _SamplerEditorState extends State<_SamplerEditor>
+    with TickerProviderStateMixin {
   static const _kSampleExts = <String>{
     '.wav',
     '.aif',
@@ -709,11 +711,11 @@ class _SamplerEditorState extends State<_SamplerEditor> {
   String? _lastBrowserFolder;
   List<double>? _wavePeaks;
   bool _waveLoading = false;
-  Timer? _playheadTicker;
+  Ticker? _playheadTicker;
 
   // Recording state
   bool _isRecording = false;
-  Timer? _recordingTimer;
+  Ticker? _recordingTimer;
   DateTime? _recordingStart;
 
   AppState get state => widget.state;
@@ -726,21 +728,27 @@ class _SamplerEditorState extends State<_SamplerEditor> {
 
   void _syncPlayheadTicker(bool shouldRun) {
     if (shouldRun) {
-      _playheadTicker ??= Timer.periodic(const Duration(milliseconds: 33), (_) {
+      _playheadTicker ??= createTicker((_) {
         if (!mounted) return;
         setState(() {});
       });
+      if (!_playheadTicker!.isActive) {
+        _playheadTicker!.start();
+      }
       return;
     }
-    _playheadTicker?.cancel();
+    _playheadTicker?.stop();
+    _playheadTicker?.dispose();
     _playheadTicker = null;
   }
 
   @override
   void dispose() {
-    _playheadTicker?.cancel();
+    _playheadTicker?.stop();
+    _playheadTicker?.dispose();
     _playheadTicker = null;
-    _recordingTimer?.cancel();
+    _recordingTimer?.stop();
+    _recordingTimer?.dispose();
     _recordingTimer = null;
     super.dispose();
   }
@@ -1243,12 +1251,16 @@ class _SamplerEditorState extends State<_SamplerEditor> {
 
       setSheetState(() {});
 
-      // Update timer for duration display
-      _recordingTimer = Timer.periodic(const Duration(milliseconds: 100), (_) {
+      // Update ticker for duration display
+      // Stop any existing ticker before creating a new one
+      _recordingTimer?.stop();
+      _recordingTimer?.dispose();
+      _recordingTimer = createTicker((_) {
         if (mounted && _isRecording) {
           setSheetState(() {});
         }
       });
+      _recordingTimer!.start();
     } catch (e) {
       if (mounted) {
         setState(() => _isRecording = false);
@@ -1266,7 +1278,8 @@ class _SamplerEditorState extends State<_SamplerEditor> {
     BuildContext context,
     StateSetter setSheetState,
   ) async {
-    _recordingTimer?.cancel();
+    _recordingTimer?.stop();
+    _recordingTimer?.dispose();
     _recordingTimer = null;
 
     if (!mounted) return;

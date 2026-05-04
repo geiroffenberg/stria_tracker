@@ -32,6 +32,12 @@ Java_com_example_tracker_AudioEnginePlugin_nativeSetTempo(
 }
 
 JNIEXPORT void JNICALL
+Java_com_example_tracker_AudioEnginePlugin_nativeSetLineSamplesPerRow(
+        JNIEnv*, jobject, jlong ptr, jint samples) {
+    reinterpret_cast<AudioEngine*>(ptr)->setLineSamplesPerRow(static_cast<int32_t>(samples));
+}
+
+JNIEXPORT void JNICALL
 Java_com_example_tracker_AudioEnginePlugin_nativeSetRowData(
         JNIEnv* env, jobject, jlong ptr, jintArray data) {
     jsize        len  = env->GetArrayLength(data);
@@ -89,6 +95,26 @@ Java_com_example_tracker_AudioEnginePlugin_nativeQueueKills(
     std::vector<int> vec(elms, elms + len);
     env->ReleaseIntArrayElements(data, elms, JNI_ABORT);
     reinterpret_cast<AudioEngine*>(ptr)->queueKills(vec);
+}
+
+JNIEXPORT void JNICALL
+Java_com_example_tracker_AudioEnginePlugin_nativeQueueSliceCommands(
+        JNIEnv* env, jobject, jlong ptr, jintArray data) {
+    jsize len  = env->GetArrayLength(data);
+    jint* elms = env->GetIntArrayElements(data, nullptr);
+    std::vector<int> vec(elms, elms + len);
+    env->ReleaseIntArrayElements(data, elms, JNI_ABORT);
+    reinterpret_cast<AudioEngine*>(ptr)->queueSliceCommands(vec);
+}
+
+JNIEXPORT void JNICALL
+Java_com_example_tracker_AudioEnginePlugin_nativeQueueMixerCommands(
+        JNIEnv* env, jobject, jlong ptr, jintArray data) {
+    jsize len  = env->GetArrayLength(data);
+    jint* elms = env->GetIntArrayElements(data, nullptr);
+    std::vector<int> vec(elms, elms + len);
+    env->ReleaseIntArrayElements(data, elms, JNI_ABORT);
+    reinterpret_cast<AudioEngine*>(ptr)->queueMixerCommands(vec);
 }
 
 JNIEXPORT jboolean JNICALL
