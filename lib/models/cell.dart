@@ -328,24 +328,26 @@ const int kFxSL9 = 31;
 const int kFxARC = 178;
 const int kFxSLC = 179;
 const int kFxInsertStart = 180;
-const int kFxInsertEnd = 233;
+const int kFxInsertEnd = 239; // 6 slots × 10 functions (0–9) = 60 commands
 
 String fxInsertFunctionName(int function) {
   switch (function) {
+    case 0:
+      return 'reset — re-applies current slider values to effect';
     case 1:
-      return 'bypass';
+      return 'bypass (00=active, >00=bypassed)';
     case 2:
-      return 'mode/toggle';
+      return 'mode / toggle (LP·HP·BP · clip·fold · freeze·free)';
     case 3:
-      return 'main param A';
+      return 'main param — room size · cutoff · drive · bit depth · push gain (limiter) · rate (chorus) · low gain (EQ) · threshold (cmp)';
     case 4:
-      return 'main param B';
+      return 'secondary param — damp · resonance · feedback · tone · rate · depth (chorus) · mid gain (EQ) · ratio (cmp)';
     case 5:
-      return 'main param C';
+      return 'third param — width · hi-pass cutoff · delay (chorus) · high gain (EQ) · makeup (cmp)';
     case 6:
-      return 'dry';
+      return 'dry mix (00=no dry, 99=full dry)';
     case 7:
-      return 'wet';
+      return 'wet mix (00=no wet, 99=full wet)';
     case 8:
       return 'extra param D';
     case 9:
@@ -360,13 +362,13 @@ bool isInsertFxCommand(int? cmd) =>
 
 int fxInsertCommand(int slotNumber, int function) {
   final safeSlot = slotNumber.clamp(1, 6);
-  final safeFunction = function.clamp(1, 9);
-  return kFxInsertStart + ((safeSlot - 1) * 9) + (safeFunction - 1);
+  final safeFunction = function.clamp(0, 9);
+  return kFxInsertStart + ((safeSlot - 1) * 10) + safeFunction;
 }
 
-int fxInsertSlotFromCommand(int cmd) => ((cmd - kFxInsertStart) ~/ 9) + 1;
+int fxInsertSlotFromCommand(int cmd) => ((cmd - kFxInsertStart) ~/ 10) + 1;
 
-int fxInsertFunctionFromCommand(int cmd) => ((cmd - kFxInsertStart) % 9) + 1;
+int fxInsertFunctionFromCommand(int cmd) => (cmd - kFxInsertStart) % 10;
 
 /// Returns the 3-letter FX command name, or '---' if null/unknown.
 String fxCommandName(int? cmd) {

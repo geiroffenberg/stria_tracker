@@ -218,7 +218,201 @@ class AudioEngine {
     });
   }
 
-  /// Assigns a sample file to a sampler instrument slot.
+  /// Configure delay parameters on a master insert effect slot (type 1).
+  Future<void> setMasterDelayParams(int slotIdx, double timeMs, double feedback, double hpCutoff, bool sync) async {
+    if (!_initialised) return;
+    await _channel.invokeMethod('setMasterDelayParams', {
+      'slotIdx': slotIdx,
+      'timeMs': timeMs,
+      'feedback': feedback,
+      'hpCutoff': hpCutoff,
+      'sync': sync,
+    });
+  }
+
+  /// Configure delay parameters on a track insert effect slot (type 1).
+  Future<void> setTrackDelayParams(int trackIdx, int slotIdx, double timeMs, double feedback, double hpCutoff, bool sync) async {
+    if (!_initialised) return;
+    await _channel.invokeMethod('setTrackDelayParams', {
+      'trackIdx': trackIdx,
+      'slotIdx': slotIdx,
+      'timeMs': timeMs,
+      'feedback': feedback,
+      'hpCutoff': hpCutoff,
+      'sync': sync,
+    });
+  }
+
+  /// Configure filter parameters on a track insert effect slot (type 2).
+  Future<void> setTrackFilterParams(int trackIdx, int slotIdx, double cutoff, double resonance, int mode) async {
+    if (!_initialised) return;
+    await _channel.invokeMethod('setTrackFilterParams', {
+      'trackIdx': trackIdx,
+      'slotIdx': slotIdx,
+      'cutoff': cutoff,
+      'resonance': resonance,
+      'mode': mode,
+    });
+  }
+
+  Future<void> setMasterFilterParams(int slotIdx, double cutoff, double resonance, int mode) async {
+    if (!_initialised) return;
+    await _channel.invokeMethod('setMasterFilterParams', {
+      'slotIdx': slotIdx,
+      'cutoff': cutoff,
+      'resonance': resonance,
+      'mode': mode,
+    });
+  }
+
+  /// Configure distortion parameters on a track insert effect slot (type 3).
+  Future<void> setTrackDistortionParams(int trackIdx, int slotIdx, double drive, double tone, int distType) async {
+    if (!_initialised) return;
+    await _channel.invokeMethod('setTrackDistortionParams', {
+      'trackIdx': trackIdx,
+      'slotIdx': slotIdx,
+      'drive': drive,
+      'tone': tone,
+      'distType': distType,
+    });
+  }
+
+  Future<void> setMasterDistortionParams(int slotIdx, double drive, double tone, int distType) async {
+    if (!_initialised) return;
+    await _channel.invokeMethod('setMasterDistortionParams', {
+      'slotIdx': slotIdx,
+      'drive': drive,
+      'tone': tone,
+      'distType': distType,
+    });
+  }
+
+  /// Configure bitcrusher parameters on a track insert effect slot (type 4).
+  Future<void> setTrackBitcrusherParams(int trackIdx, int slotIdx, double bits, double rate) async {
+    if (!_initialised) return;
+    await _channel.invokeMethod('setTrackBitcrusherParams', {
+      'trackIdx': trackIdx,
+      'slotIdx': slotIdx,
+      'bits': bits,
+      'rate': rate,
+    });
+  }
+
+  Future<void> setMasterBitcrusherParams(int slotIdx, double bits, double rate) async {
+    if (!_initialised) return;
+    await _channel.invokeMethod('setMasterBitcrusherParams', {
+      'slotIdx': slotIdx,
+      'bits': bits,
+      'rate': rate,
+    });
+  }
+
+  Future<void> setTrackLimiterParams(int trackIdx, int slotIdx, double gain) async {
+    if (!_initialised) return;
+    await _channel.invokeMethod('setTrackLimiterParams', {
+      'trackIdx': trackIdx,
+      'slotIdx': slotIdx,
+      'gain': gain,
+    });
+  }
+
+  Future<void> setMasterLimiterParams(int slotIdx, double gain) async {
+    if (!_initialised) return;
+    await _channel.invokeMethod('setMasterLimiterParams', {
+      'slotIdx': slotIdx,
+      'gain': gain,
+    });
+  }
+
+  Future<void> setTrackChorusParams(int trackIdx, int slotIdx, double rate, double depth, double delay, int stereo) async {
+    if (!_initialised) return;
+    await _channel.invokeMethod('setTrackChorusParams', {
+      'trackIdx': trackIdx,
+      'slotIdx': slotIdx,
+      'rate': rate,
+      'depth': depth,
+      'delay': delay,
+      'stereo': stereo,
+    });
+  }
+
+  Future<void> setMasterChorusParams(int slotIdx, double rate, double depth, double delay, int stereo) async {
+    if (!_initialised) return;
+    await _channel.invokeMethod('setMasterChorusParams', {
+      'slotIdx': slotIdx,
+      'rate': rate,
+      'depth': depth,
+      'delay': delay,
+      'stereo': stereo,
+    });
+  }
+
+  Future<void> setTrackEqParams(int trackIdx, int slotIdx,
+      double lowGain, double lowFreq,
+      double midGain, double midFreq, double midQ,
+      double highGain, double highFreq) async {
+    if (!_initialised) return;
+    await _channel.invokeMethod('setTrackEqParams', {
+      'trackIdx': trackIdx,
+      'slotIdx': slotIdx,
+      'lowGain': lowGain,
+      'lowFreq': lowFreq,
+      'midGain': midGain,
+      'midFreq': midFreq,
+      'midQ': midQ,
+      'highGain': highGain,
+      'highFreq': highFreq,
+    });
+  }
+
+  Future<void> setMasterEqParams(int slotIdx,
+      double lowGain, double lowFreq,
+      double midGain, double midFreq, double midQ,
+      double highGain, double highFreq) async {
+    if (!_initialised) return;
+    await _channel.invokeMethod('setMasterEqParams', {
+      'slotIdx': slotIdx,
+      'lowGain': lowGain,
+      'lowFreq': lowFreq,
+      'midGain': midGain,
+      'midFreq': midFreq,
+      'midQ': midQ,
+      'highGain': highGain,
+      'highFreq': highFreq,
+    });
+  }
+
+  Future<void> setTrackCompressorParams(int trackIdx, int slotIdx,
+      double threshold, double ratio, double attack, double release,
+      double makeup, int knee) async {
+    if (!_initialised) return;
+    await _channel.invokeMethod('setTrackCompressorParams', {
+      'trackIdx': trackIdx,
+      'slotIdx': slotIdx,
+      'threshold': threshold,
+      'ratio': ratio,
+      'attack': attack,
+      'release': release,
+      'makeup': makeup,
+      'knee': knee,
+    });
+  }
+
+  Future<void> setMasterCompressorParams(int slotIdx,
+      double threshold, double ratio, double attack, double release,
+      double makeup, int knee) async {
+    if (!_initialised) return;
+    await _channel.invokeMethod('setMasterCompressorParams', {
+      'slotIdx': slotIdx,
+      'threshold': threshold,
+      'ratio': ratio,
+      'attack': attack,
+      'release': release,
+      'makeup': makeup,
+      'knee': knee,
+    });
+  }
+
   /// [slot] is 0-based instrument index.
   /// Pass null or empty [path] to clear sample assignment.
   /// Returns true on success, false if the file could not be loaded.

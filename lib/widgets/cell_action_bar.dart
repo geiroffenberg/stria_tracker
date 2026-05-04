@@ -389,20 +389,27 @@ class _NumericActions extends StatelessWidget {
     final maxV = track.maxValue(column);
     final minV = track.minValue(column);
     final fxCmd = _fxCommandForCell(cell);
-    final fxHint = switch (fxCmd) {
-      kFxARP => 'XY: X=1st interval, Y=2nd interval (1-9=diatonic degrees)',
-      kFxCHA => '00=never, 99=always, 50=50% chance to play',
-      kFxDEL => '00=line start, 99=line end (delayed note-on)',
-      kFxKIL => '00=immediate kill, 99=end of row',
-      kFxPAN => '00=left, 50=centre, 99=right',
-      kFxRAN => '00=off, 01-99=chance % to pick a random active slice',
-      kFxRET => 'XY: X=vol curve (0-9), Y=retrigs per line (1-9)',
-      kFxREV => 'No value needed — plays sample/slice backwards',
-      kFxVIB => 'XY: X=speed (0-9), Y=depth (0-9)',
-      kFxVOL => '00=silent, 99=full — sets level for this row only',
-      kFxARC => 'XY: X=octave layers, Y=notes/line (Y0=full cycle)',
-      _ => null,
-    };
+    final String? fxHint;
+    if (isInsertFxCommand(fxCmd)) {
+      final fn = fxInsertFunctionFromCommand(fxCmd!);
+      final slot = fxInsertSlotFromCommand(fxCmd);
+      fxHint = 'Slot $slot — ${fxInsertFunctionName(fn)}';
+    } else {
+      fxHint = switch (fxCmd) {
+        kFxARP => 'XY: X=1st interval, Y=2nd interval (1-9=diatonic degrees)',
+        kFxCHA => '00=never, 99=always, 50=50% chance to play',
+        kFxDEL => '00=line start, 99=line end (delayed note-on)',
+        kFxKIL => '00=immediate kill, 99=end of row',
+        kFxPAN => '00=left, 50=centre, 99=right',
+        kFxRAN => '00=off, 01-99=chance % to pick a random active slice',
+        kFxRET => 'XY: X=vol curve (0-9), Y=retrigs per line (1-9)',
+        kFxREV => 'No value needed — plays sample/slice backwards',
+        kFxVIB => 'XY: X=speed (0-9), Y=depth (0-9)',
+        kFxVOL => '00=silent, 99=full — sets level for this row only',
+        kFxARC => 'XY: X=octave layers, Y=notes/line (Y0=full cycle)',
+        _ => null,
+      };
+    }
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
@@ -533,8 +540,8 @@ class _FxCmdActions extends StatelessWidget {
     final commands = <int>[];
     for (int slot = 0; slot < slots.length; slot++) {
       if (slots[slot]) {
-        final base = kFxInsertStart + slot * 9;
-        for (int fn = 0; fn < 9; fn++) {
+        final base = kFxInsertStart + slot * 10;
+        for (int fn = 0; fn < 10; fn++) {
           commands.add(base + fn);
         }
       }

@@ -176,6 +176,154 @@ class AudioEnginePlugin : FlutterPlugin, MethodCallHandler {
                 if (enginePtr != 0L) nativeSetTrackReverbParams(enginePtr, trackIdx, slotIdx, roomSize.toFloat(), damp.toFloat(), width.toFloat(), freeze)
                 result.success(null)
             }
+            "setMasterDelayParams" -> {
+                val slotIdx   = call.argument<Int>("slotIdx") ?: 0
+                val timeMs    = call.argument<Double>("timeMs") ?: 375.0
+                val feedback  = call.argument<Double>("feedback") ?: 0.4
+                val hpCutoff  = call.argument<Double>("hpCutoff") ?: 0.0
+                val sync      = call.argument<Boolean>("sync") ?: false
+                if (enginePtr != 0L) nativeSetMasterDelayParams(enginePtr, slotIdx, timeMs.toFloat(), feedback.toFloat(), hpCutoff.toFloat(), sync)
+                result.success(null)
+            }
+            "setTrackDelayParams" -> {
+                val trackIdx  = call.argument<Int>("trackIdx") ?: 0
+                val slotIdx   = call.argument<Int>("slotIdx") ?: 0
+                val timeMs    = call.argument<Double>("timeMs") ?: 375.0
+                val feedback  = call.argument<Double>("feedback") ?: 0.4
+                val hpCutoff  = call.argument<Double>("hpCutoff") ?: 0.0
+                val sync      = call.argument<Boolean>("sync") ?: false
+                if (enginePtr != 0L) nativeSetTrackDelayParams(enginePtr, trackIdx, slotIdx, timeMs.toFloat(), feedback.toFloat(), hpCutoff.toFloat(), sync)
+                result.success(null)
+            }
+            "setTrackFilterParams" -> {
+                val trackIdx  = call.argument<Int>("trackIdx") ?: 0
+                val slotIdx   = call.argument<Int>("slotIdx") ?: 0
+                val cutoff    = call.argument<Double>("cutoff") ?: 0.5
+                val resonance = call.argument<Double>("resonance") ?: 0.2
+                val mode      = call.argument<Int>("mode") ?: 0
+                if (enginePtr != 0L) nativeSetTrackFilterParams(enginePtr, trackIdx, slotIdx, cutoff.toFloat(), resonance.toFloat(), mode)
+                result.success(null)
+            }
+            "setMasterFilterParams" -> {
+                val slotIdx   = call.argument<Int>("slotIdx") ?: 0
+                val cutoff    = call.argument<Double>("cutoff") ?: 0.5
+                val resonance = call.argument<Double>("resonance") ?: 0.2
+                val mode      = call.argument<Int>("mode") ?: 0
+                if (enginePtr != 0L) nativeSetMasterFilterParams(enginePtr, slotIdx, cutoff.toFloat(), resonance.toFloat(), mode)
+                result.success(null)
+            }
+            "setTrackDistortionParams" -> {
+                val trackIdx = call.argument<Int>("trackIdx") ?: 0
+                val slotIdx  = call.argument<Int>("slotIdx") ?: 0
+                val drive    = call.argument<Double>("drive") ?: 0.5
+                val tone     = call.argument<Double>("tone") ?: 0.5
+                val distType = call.argument<Int>("distType") ?: 0
+                if (enginePtr != 0L) nativeSetTrackDistortionParams(enginePtr, trackIdx, slotIdx, drive.toFloat(), tone.toFloat(), distType)
+                result.success(null)
+            }
+            "setMasterDistortionParams" -> {
+                val slotIdx  = call.argument<Int>("slotIdx") ?: 0
+                val drive    = call.argument<Double>("drive") ?: 0.5
+                val tone     = call.argument<Double>("tone") ?: 0.5
+                val distType = call.argument<Int>("distType") ?: 0
+                if (enginePtr != 0L) nativeSetMasterDistortionParams(enginePtr, slotIdx, drive.toFloat(), tone.toFloat(), distType)
+                result.success(null)
+            }
+            "setTrackBitcrusherParams" -> {
+                val trackIdx = call.argument<Int>("trackIdx") ?: 0
+                val slotIdx  = call.argument<Int>("slotIdx") ?: 0
+                val bits     = call.argument<Double>("bits") ?: 1.0
+                val rate     = call.argument<Double>("rate") ?: 1.0
+                if (enginePtr != 0L) nativeSetTrackBitcrusherParams(enginePtr, trackIdx, slotIdx, bits.toFloat(), rate.toFloat())
+                result.success(null)
+            }
+            "setMasterBitcrusherParams" -> {
+                val slotIdx = call.argument<Int>("slotIdx") ?: 0
+                val bits    = call.argument<Double>("bits") ?: 1.0
+                val rate    = call.argument<Double>("rate") ?: 1.0
+                if (enginePtr != 0L) nativeSetMasterBitcrusherParams(enginePtr, slotIdx, bits.toFloat(), rate.toFloat())
+                result.success(null)
+            }
+            "setTrackLimiterParams" -> {
+                val trackIdx = call.argument<Int>("trackIdx") ?: 0
+                val slotIdx  = call.argument<Int>("slotIdx") ?: 0
+                val gain     = call.argument<Double>("gain") ?: 0.0
+                if (enginePtr != 0L) nativeSetTrackLimiterParams(enginePtr, trackIdx, slotIdx, gain.toFloat())
+                result.success(null)
+            }
+            "setMasterLimiterParams" -> {
+                val slotIdx = call.argument<Int>("slotIdx") ?: 0
+                val gain    = call.argument<Double>("gain") ?: 0.0
+                if (enginePtr != 0L) nativeSetMasterLimiterParams(enginePtr, slotIdx, gain.toFloat())
+                result.success(null)
+            }
+            "setTrackChorusParams" -> {
+                val trackIdx = call.argument<Int>("trackIdx") ?: 0
+                val slotIdx  = call.argument<Int>("slotIdx") ?: 0
+                val rate     = call.argument<Double>("rate") ?: 0.3
+                val depth    = call.argument<Double>("depth") ?: 0.5
+                val delay    = call.argument<Double>("delay") ?: 0.3
+                val stereo   = call.argument<Int>("stereo") ?: 0
+                if (enginePtr != 0L) nativeSetTrackChorusParams(enginePtr, trackIdx, slotIdx, rate.toFloat(), depth.toFloat(), delay.toFloat(), stereo)
+                result.success(null)
+            }
+            "setMasterChorusParams" -> {
+                val slotIdx = call.argument<Int>("slotIdx") ?: 0
+                val rate    = call.argument<Double>("rate") ?: 0.3
+                val depth   = call.argument<Double>("depth") ?: 0.5
+                val delay   = call.argument<Double>("delay") ?: 0.3
+                val stereo  = call.argument<Int>("stereo") ?: 0
+                if (enginePtr != 0L) nativeSetMasterChorusParams(enginePtr, slotIdx, rate.toFloat(), depth.toFloat(), delay.toFloat(), stereo)
+                result.success(null)
+            }
+            "setTrackEqParams" -> {
+                val trackIdx  = call.argument<Int>("trackIdx") ?: 0
+                val slotIdx   = call.argument<Int>("slotIdx") ?: 0
+                val lowGain   = call.argument<Double>("lowGain") ?: 0.0
+                val lowFreq   = call.argument<Double>("lowFreq") ?: 0.2
+                val midGain   = call.argument<Double>("midGain") ?: 0.0
+                val midFreq   = call.argument<Double>("midFreq") ?: 0.3
+                val midQ      = call.argument<Double>("midQ") ?: 0.3
+                val highGain  = call.argument<Double>("highGain") ?: 0.0
+                val highFreq  = call.argument<Double>("highFreq") ?: 0.5
+                if (enginePtr != 0L) nativeSetTrackEqParams(enginePtr, trackIdx, slotIdx, lowGain.toFloat(), lowFreq.toFloat(), midGain.toFloat(), midFreq.toFloat(), midQ.toFloat(), highGain.toFloat(), highFreq.toFloat())
+                result.success(null)
+            }
+            "setMasterEqParams" -> {
+                val slotIdx   = call.argument<Int>("slotIdx") ?: 0
+                val lowGain   = call.argument<Double>("lowGain") ?: 0.0
+                val lowFreq   = call.argument<Double>("lowFreq") ?: 0.2
+                val midGain   = call.argument<Double>("midGain") ?: 0.0
+                val midFreq   = call.argument<Double>("midFreq") ?: 0.3
+                val midQ      = call.argument<Double>("midQ") ?: 0.3
+                val highGain  = call.argument<Double>("highGain") ?: 0.0
+                val highFreq  = call.argument<Double>("highFreq") ?: 0.5
+                if (enginePtr != 0L) nativeSetMasterEqParams(enginePtr, slotIdx, lowGain.toFloat(), lowFreq.toFloat(), midGain.toFloat(), midFreq.toFloat(), midQ.toFloat(), highGain.toFloat(), highFreq.toFloat())
+                result.success(null)
+            }
+            "setTrackCompressorParams" -> {
+                val trackIdx  = call.argument<Int>("trackIdx") ?: 0
+                val slotIdx   = call.argument<Int>("slotIdx") ?: 0
+                val threshold = call.argument<Double>("threshold") ?: 0.7
+                val ratio     = call.argument<Double>("ratio") ?: 0.2
+                val attack    = call.argument<Double>("attack") ?: 0.1
+                val release   = call.argument<Double>("release") ?: 0.2
+                val makeup    = call.argument<Double>("makeup") ?: 0.0
+                val knee      = call.argument<Int>("knee") ?: 0
+                if (enginePtr != 0L) nativeSetTrackCompressorParams(enginePtr, trackIdx, slotIdx, threshold.toFloat(), ratio.toFloat(), attack.toFloat(), release.toFloat(), makeup.toFloat(), knee)
+                result.success(null)
+            }
+            "setMasterCompressorParams" -> {
+                val slotIdx   = call.argument<Int>("slotIdx") ?: 0
+                val threshold = call.argument<Double>("threshold") ?: 0.7
+                val ratio     = call.argument<Double>("ratio") ?: 0.2
+                val attack    = call.argument<Double>("attack") ?: 0.1
+                val release   = call.argument<Double>("release") ?: 0.2
+                val makeup    = call.argument<Double>("makeup") ?: 0.0
+                val knee      = call.argument<Int>("knee") ?: 0
+                if (enginePtr != 0L) nativeSetMasterCompressorParams(enginePtr, slotIdx, threshold.toFloat(), ratio.toFloat(), attack.toFloat(), release.toFloat(), makeup.toFloat(), knee)
+                result.success(null)
+            }
             "setSamplerSample" -> {
                 val slot = call.argument<Int>("slot") ?: -1
                 val path = call.argument<String>("path")
@@ -237,6 +385,22 @@ class AudioEnginePlugin : FlutterPlugin, MethodCallHandler {
     private external fun nativeSetTrackInsertMix(ptr: Long, trackIdx: Int, slotIdx: Int, dryLevel: Float, wetLevel: Float)
     private external fun nativeSetTrackInsertBypass(ptr: Long, trackIdx: Int, slotIdx: Int, bypass: Boolean)
     private external fun nativeSetTrackReverbParams(ptr: Long, trackIdx: Int, slotIdx: Int, roomSize: Float, damp: Float, width: Float, freeze: Boolean)
+    private external fun nativeSetMasterDelayParams(ptr: Long, slotIdx: Int, timeMs: Float, feedback: Float, hpCutoff: Float, sync: Boolean)
+    private external fun nativeSetTrackDelayParams(ptr: Long, trackIdx: Int, slotIdx: Int, timeMs: Float, feedback: Float, hpCutoff: Float, sync: Boolean)
+    private external fun nativeSetTrackFilterParams(ptr: Long, trackIdx: Int, slotIdx: Int, cutoff: Float, resonance: Float, mode: Int)
+    private external fun nativeSetMasterFilterParams(ptr: Long, slotIdx: Int, cutoff: Float, resonance: Float, mode: Int)
+    private external fun nativeSetTrackDistortionParams(ptr: Long, trackIdx: Int, slotIdx: Int, drive: Float, tone: Float, distType: Int)
+    private external fun nativeSetMasterDistortionParams(ptr: Long, slotIdx: Int, drive: Float, tone: Float, distType: Int)
+    private external fun nativeSetTrackBitcrusherParams(ptr: Long, trackIdx: Int, slotIdx: Int, bits: Float, rate: Float)
+    private external fun nativeSetMasterBitcrusherParams(ptr: Long, slotIdx: Int, bits: Float, rate: Float)
+    private external fun nativeSetTrackLimiterParams(ptr: Long, trackIdx: Int, slotIdx: Int, gain: Float)
+    private external fun nativeSetMasterLimiterParams(ptr: Long, slotIdx: Int, gain: Float)
+    private external fun nativeSetTrackChorusParams(ptr: Long, trackIdx: Int, slotIdx: Int, rate: Float, depth: Float, delay: Float, stereo: Int)
+    private external fun nativeSetMasterChorusParams(ptr: Long, slotIdx: Int, rate: Float, depth: Float, delay: Float, stereo: Int)
+    private external fun nativeSetTrackEqParams(ptr: Long, trackIdx: Int, slotIdx: Int, lowGain: Float, lowFreq: Float, midGain: Float, midFreq: Float, midQ: Float, highGain: Float, highFreq: Float)
+    private external fun nativeSetMasterEqParams(ptr: Long, slotIdx: Int, lowGain: Float, lowFreq: Float, midGain: Float, midFreq: Float, midQ: Float, highGain: Float, highFreq: Float)
+    private external fun nativeSetTrackCompressorParams(ptr: Long, trackIdx: Int, slotIdx: Int, threshold: Float, ratio: Float, attack: Float, release: Float, makeup: Float, knee: Int)
+    private external fun nativeSetMasterCompressorParams(ptr: Long, slotIdx: Int, threshold: Float, ratio: Float, attack: Float, release: Float, makeup: Float, knee: Int)
     private external fun nativeSetSamplerSample(ptr: Long, slot: Int, path: String): Boolean
     private external fun nativeStartRecording(ptr: Long)
     private external fun nativeStopRecording(ptr: Long, outSampleRate: IntArray): FloatArray?

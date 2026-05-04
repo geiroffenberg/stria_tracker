@@ -157,8 +157,87 @@ struct InsertEffect {
     float reverbDamp = 0.5f;      // 0.0-1.0
     float reverbWidth = 1.0f;     // 0.0-1.0
     bool reverbFreeze = false;
-    
+
     freeverb::revmodel reverb;
+
+    // Delay-specific parameters
+    float delayTimeMs = 375.0f;   // 1–2000 ms (free mode)
+    float delayFeedback = 0.4f;   // 0.0–0.95
+    float delayHpCutoff = 0.0f;   // 0.0–1.0 (hi-pass; 0 = off)
+    bool  delaySync = false;      // true = tempo-sync (not yet used)
+
+    // Delay ring buffer (allocated on first use)
+    static constexpr int kDelayMaxSamples = 96001; // ~2 s at 48 kHz
+    std::vector<float> delayBufL;
+    std::vector<float> delayBufR;
+    int   delayWritePos = 0;
+    float delayHpPrevL  = 0.0f;   // hi-pass filter state
+    float delayHpPrevR  = 0.0f;
+
+    // Filter-specific parameters (type == 2)
+    // State-variable filter (SVF)
+    float filterCutoff    = 0.5f;  // 0..1 → ~20 Hz .. 20 kHz
+    float filterResonance = 0.2f;  // 0..1
+    int   filterMode      = 0;     // 0=LP, 1=HP, 2=BP
+    float svfLowL  = 0.0f, svfBandL = 0.0f;
+    float svfLowR  = 0.0f, svfBandR = 0.0f;
+
+    // Distortion-specific parameters (type == 3)
+    float distDrive   = 0.5f;  // 0..1 → gain 1..20
+    float distTone    = 0.5f;  // 0..1, one-pole LP on output
+    int   distType    = 0;     // 0=soft-clip, 1=fold
+    float distToneStateL = 0.0f;
+    float distToneStateR = 0.0f;
+
+    // Bitcrusher-specific parameters (type == 4)
+    float crushBits   = 1.0f;  // 0..1 → 16..1 bits (1.0 = 16 bits = no crush)
+    float crushRate   = 1.0f;  // 0..1 → downsample factor 1..32 (1.0 = no change)
+    float crushHoldL  = 0.0f;  // sample-and-hold state
+    float crushHoldR  = 0.0f;
+    float crushAccum  = 0.0f;  // accumulator for rate reduction
+
+    // Limiter-specific parameters (type == 5)
+    float limGain     = 0.0f;  // 0..1 → 0 dB..+24 dB input gain pushed into ceiling
+    // ceiling is fixed at -0.1 dBFS ≈ 0.9886 (no per-instance field needed)
+
+    // Chorus-specific parameters (type == 6)
+    float chorusRate    = 0.3f;  // 0..1 → 0.1..8 Hz LFO speed
+    float chorusDepth   = 0.5f;  // 0..1 → 0..15 ms modulation depth
+    float chorusDelay   = 0.3f;  // 0..1 → 1..30 ms base delay
+    int   chorusStereo  = 0;     // 0=mono LFO, 1=stereo (R lfo 90° offset)
+    float chorusLfoPhL  = 0.0f;  // LFO phase accumulator left (radians)
+    float chorusLfoPhR  = 0.0f;  // LFO phase accumulator right
+    // Ring buffer: max 60 ms @ 48 kHz = 2880 samples per channel
+    std::vector<float> chorusBufL;
+    std::vector<float> chorusBufR;
+    int   chorusBufPos  = 0;     // write head
+
+    // EQ (type == 7) — 3-band semi-parametric
+    // All gains stored as linear multipliers; frequencies/Q as 0..1 normalised.
+    float eqLowGain   = 0.0f;  // −1..+1 → −12..+12 dB
+    float eqLowFreq   = 0.2f;  // 0..1 → 40..500 Hz (log)
+    float eqMidGain   = 0.0f;  // −1..+1 → −12..+12 dB
+    float eqMidFreq   = 0.3f;  // 0..1 → 200..8000 Hz (log)
+    float eqMidQ      = 0.3f;  // 0..1 → 0.3..8.0
+    float eqHighGain  = 0.0f;  // −1..+1 → −12..+12 dB
+    float eqHighFreq  = 0.5f;  // 0..1 → 2000..16000 Hz (log)
+    // Biquad state: [band][b0,b1,b2,a1,a2]
+    float eqCoeffs[3][5] = {};
+    // Per-channel biquad delay lines: [band][channel: 0=L,1=R][x1,x2]
+    float eqZx[3][2][2] = {};
+    float eqZy[3][2][2] = {};
+    bool  eqDirty = true;  // recompute coefficients on next block
+
+    // Compressor (type == 8)
+    // All params stored as 0..1 normalised unless noted.
+    float cmpThreshold = 0.7f;   // 0..1 → −60..0 dBFS  (0.7 ≈ −18 dBFS)
+    float cmpRatio     = 0.2f;   // 0..1 → 1:1..20:1 (log)
+    float cmpAttack    = 0.1f;   // 0..1 → 0.1..200 ms (log)
+    float cmpRelease   = 0.2f;   // 0..1 → 10..2000 ms (log)
+    float cmpMakeup    = 0.0f;   // 0..1 → 0..+24 dB
+    int   cmpKnee      = 0;      // 0=hard, 1=soft (±6 dB)
+    float cmpEnvL      = 0.0f;   // envelope follower state left
+    float cmpEnvR      = 0.0f;   // envelope follower state right
 };
 
 /**
@@ -268,6 +347,40 @@ public:
     /// Configure reverb parameters on a track insert effect
     void setTrackReverbParams(int trackIdx, int slotIdx, float roomSize, float damp, float width, bool freeze);
 
+    /// Configure delay parameters on a master insert effect slot (type 1).
+    void setMasterDelayParams(int slotIdx, float timeMs, float feedback, float hpCutoff, bool sync);
+
+    /// Configure delay parameters on a track insert effect slot (type 1).
+    void setTrackDelayParams(int trackIdx, int slotIdx, float timeMs, float feedback, float hpCutoff, bool sync);
+
+    /// Configure filter parameters on a track insert effect slot (type 2).
+    void setTrackFilterParams(int trackIdx, int slotIdx, float cutoff, float resonance, int mode);
+    void setMasterFilterParams(int slotIdx, float cutoff, float resonance, int mode);
+
+    /// Configure distortion parameters on a track insert effect slot (type 3).
+    void setTrackDistortionParams(int trackIdx, int slotIdx, float drive, float tone, int distType);
+    void setMasterDistortionParams(int slotIdx, float drive, float tone, int distType);
+
+    /// Configure bitcrusher parameters on a track insert effect slot (type 4).
+    void setTrackBitcrusherParams(int trackIdx, int slotIdx, float bits, float rate);
+    void setMasterBitcrusherParams(int slotIdx, float bits, float rate);
+
+    /// Configure limiter gain on a track/master insert effect slot (type 5).
+    void setTrackLimiterParams(int trackIdx, int slotIdx, float gain);
+    void setMasterLimiterParams(int slotIdx, float gain);
+
+    /// Configure chorus parameters on a track/master insert effect slot (type 6).
+    void setTrackChorusParams(int trackIdx, int slotIdx, float rate, float depth, float delay, int stereo);
+    void setMasterChorusParams(int slotIdx, float rate, float depth, float delay, int stereo);
+
+    /// Configure EQ parameters on a track/master insert effect slot (type 7).
+    void setTrackEqParams(int trackIdx, int slotIdx, float lowGain, float lowFreq, float midGain, float midFreq, float midQ, float highGain, float highFreq);
+    void setMasterEqParams(int slotIdx, float lowGain, float lowFreq, float midGain, float midFreq, float midQ, float highGain, float highFreq);
+
+    /// Configure compressor parameters on a track/master insert effect slot (type 8).
+    void setTrackCompressorParams(int trackIdx, int slotIdx, float threshold, float ratio, float attack, float release, float makeup, int knee);
+    void setMasterCompressorParams(int slotIdx, float threshold, float ratio, float attack, float release, float makeup, int knee);
+
     /// Assign a sample file to an instrument slot for sampler playback.
     /// Pass empty path to clear assignment.
     bool setSamplerSample(int slot, const std::string& path);
@@ -328,6 +441,7 @@ private:
     // Mixer state (master channel: mute, volume)
     std::atomic<bool>   mMasterMute{false};  // true = muted, false = unmuted
     std::atomic<float>  mMasterVolume{1.0f};   // 0.0-1.0, 1.0 = full volume
+    float               mCachedSampleRate{48000.0f}; // updated on stream open
     
     int32_t                  mSubRowSampleCounter = 0;
     int32_t                  mLineSamplesPerRow = 0; // Set via setLineSamplesPerRow()

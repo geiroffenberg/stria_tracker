@@ -113,6 +113,10 @@ class AppState extends ChangeNotifier {
   // Indexed as [trackIdx][slotIdx]. Grows on demand.
   final List<List<bool>> _trackInsertOccupied = [];
 
+  // Pending insert reset requests from pattern F[S]0 commands.
+  // Drained by mixer_screen listener to re-send current slider values to native.
+  final List<(int, int)> _pendingInsertResets = [];
+
   int _currentPatternIndex = 0;
   int _currentTrackIndex = 0;
   int _currentInstrumentIndex = 0;
@@ -170,6 +174,15 @@ class AppState extends ChangeNotifier {
       _previewSamplerSlot == _currentInstrumentIndex;
   String? get defaultSampleFolder => _defaultSampleFolder;
   List<List<bool>> get trackInsertOccupied => _trackInsertOccupied;
+
+  /// Resets queued by F[S]0 pattern commands. Mixer screen drains this list
+  /// by re-sending its current slider values to native, then calls [clearInsertResets].
+  List<(int, int)> get pendingInsertResets => List.unmodifiable(_pendingInsertResets);
+
+  void clearInsertResets() {
+    _pendingInsertResets.clear();
+    // No notifyListeners — clearing is a silent acknowledgement.
+  }
   double get currentSamplerPreviewStartNorm {
     final slot = _previewSamplerSlot;
     if (slot < 0 || slot >= instruments.length) {
@@ -1668,12 +1681,14 @@ class AppState extends ChangeNotifier {
           if (isInsertFxCommand(fx.command)) {
             final cmd = fx.command!;
             final value = (fx.value ?? 0).clamp(0, 99);
-            insertFxCommandQueue.addAll([
-              t,
-              fxInsertSlotFromCommand(cmd) - 1,
-              fxInsertFunctionFromCommand(cmd),
-              value,
-            ]);
+            final fn = fxInsertFunctionFromCommand(cmd);
+            final slotIdx = fxInsertSlotFromCommand(cmd) - 1;
+            if (fn == 0) {
+              // Reset: C++ is handled via the queue; also signal Dart mixer
+              // to re-apply its current slider values.
+              _pendingInsertResets.add((t, slotIdx));
+            }
+            insertFxCommandQueue.addAll([t, slotIdx, fn, value]);
           }
         }
 

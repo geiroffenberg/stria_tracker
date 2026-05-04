@@ -26,6 +26,69 @@ void syncReverbState(InsertEffect& fx) {
 }
 
 void applyInsertFxCommand(InsertEffect& fx, int function, int value) {
+    // function 0 = reset to defaults (value ignored)
+    if (function == 0) {
+        fx.bypass      = false;
+        fx.dryLevel    = 1.0f;
+        fx.wetLevel    = 0.3f;
+        fx.dryWet      = 0.3f;
+        // Reverb defaults
+        fx.reverbRoomSize = 0.5f;
+        fx.reverbDamp     = 0.5f;
+        fx.reverbWidth    = 1.0f;
+        fx.reverbFreeze   = false;
+        syncReverbState(fx);
+        // Delay defaults
+        fx.delayTimeMs   = 375.0f;
+        fx.delayFeedback = 0.4f;
+        fx.delayHpCutoff = 0.0f;
+        fx.delaySync     = false;
+        // Clear delay buffer
+        std::fill(fx.delayBufL.begin(), fx.delayBufL.end(), 0.0f);
+        std::fill(fx.delayBufR.begin(), fx.delayBufR.end(), 0.0f);
+        fx.delayWritePos = 0;
+        fx.delayHpPrevL  = 0.0f;
+        fx.delayHpPrevR  = 0.0f;
+        // Filter defaults
+        fx.filterCutoff    = 0.5f;
+        fx.filterResonance = 0.2f;
+        fx.filterMode      = 0;
+        fx.svfLowL = fx.svfBandL = fx.svfLowR = fx.svfBandR = 0.0f;
+        // Distortion defaults
+        fx.distDrive = 0.5f;
+        fx.distTone  = 0.5f;
+        fx.distType  = 0;
+        fx.distToneStateL = fx.distToneStateR = 0.0f;
+        // Bitcrusher defaults
+        fx.crushBits  = 1.0f;
+        fx.crushRate  = 1.0f;
+        fx.crushHoldL = fx.crushHoldR = fx.crushAccum = 0.0f;
+        // Limiter defaults
+        fx.limGain = 0.0f;
+        // Chorus defaults
+        fx.chorusRate   = 0.3f;
+        fx.chorusDepth  = 0.5f;
+        fx.chorusDelay  = 0.3f;
+        fx.chorusStereo = 0;
+        fx.chorusLfoPhL = fx.chorusLfoPhR = 0.0f;
+        fx.chorusBufL.assign(2880, 0.0f);
+        fx.chorusBufR.assign(2880, 0.0f);
+        fx.chorusBufPos = 0;
+        // EQ defaults
+        fx.eqLowGain  = 0.0f; fx.eqLowFreq  = 0.2f;
+        fx.eqMidGain  = 0.0f; fx.eqMidFreq  = 0.3f; fx.eqMidQ = 0.3f;
+        fx.eqHighGain = 0.0f; fx.eqHighFreq = 0.5f;
+        std::memset(fx.eqCoeffs, 0, sizeof(fx.eqCoeffs));
+        std::memset(fx.eqZx,     0, sizeof(fx.eqZx));
+        std::memset(fx.eqZy,     0, sizeof(fx.eqZy));
+        fx.eqDirty = true;
+        // Compressor defaults
+        fx.cmpThreshold = 0.7f; fx.cmpRatio   = 0.2f;
+        fx.cmpAttack    = 0.1f; fx.cmpRelease = 0.2f;
+        fx.cmpMakeup    = 0.0f; fx.cmpKnee    = 0;
+        fx.cmpEnvL      = 0.0f; fx.cmpEnvR    = 0.0f;
+        return;
+    }
     switch (function) {
         case 1:
             fx.bypass = (value > 0);
@@ -42,27 +105,105 @@ void applyInsertFxCommand(InsertEffect& fx, int function, int value) {
             break;
     }
 
-    if (fx.type != 0) return;
-
-    switch (function) {
-        case 2:
-            fx.reverbFreeze = (value > 0);
-            syncReverbState(fx);
-            break;
-        case 3:
-            fx.reverbRoomSize = fxValueToUnit(value);
-            syncReverbState(fx);
-            break;
-        case 4:
-            fx.reverbDamp = fxValueToUnit(value);
-            syncReverbState(fx);
-            break;
-        case 5:
-            fx.reverbWidth = fxValueToUnit(value);
-            syncReverbState(fx);
-            break;
-        default:
-            break;
+    if (fx.type == 0) {
+        switch (function) {
+            case 2:
+                fx.reverbFreeze = (value > 0);
+                syncReverbState(fx);
+                break;
+            case 3:
+                fx.reverbRoomSize = fxValueToUnit(value);
+                syncReverbState(fx);
+                break;
+            case 4:
+                fx.reverbDamp = fxValueToUnit(value);
+                syncReverbState(fx);
+                break;
+            case 5:
+                fx.reverbWidth = fxValueToUnit(value);
+                syncReverbState(fx);
+                break;
+            default:
+                break;
+        }
+    } else if (fx.type == 1) {
+        // Delay
+        switch (function) {
+            case 2:
+                fx.delaySync = (value > 0);
+                break;
+            case 3: {
+                // 0-99 → 1 ms – 2000 ms (exponential feel via quadratic)
+                float t = fxValueToUnit(value);
+                fx.delayTimeMs = 1.0f + t * t * 1999.0f;
+                break;
+            }
+            case 4:
+                fx.delayFeedback = fxValueToUnit(value) * 0.95f;
+                break;
+            case 5:
+                fx.delayHpCutoff = fxValueToUnit(value);
+                break;
+            default:
+                break;
+        }
+    } else if (fx.type == 2) {
+        // Filter
+        switch (function) {
+            case 2: fx.filterMode = std::clamp(value % 3, 0, 2); break;
+            case 3: fx.filterCutoff = fxValueToUnit(value); break;
+            case 4: fx.filterResonance = fxValueToUnit(value); break;
+            default: break;
+        }
+    } else if (fx.type == 3) {
+        // Distortion
+        switch (function) {
+            case 2: fx.distType = (value > 0) ? 1 : 0; break;
+            case 3: fx.distDrive = fxValueToUnit(value); break;
+            case 4: fx.distTone = fxValueToUnit(value); break;
+            default: break;
+        }
+    } else if (fx.type == 4) {
+        // Bitcrusher
+        switch (function) {
+            case 3: fx.crushBits = fxValueToUnit(value); break;
+            case 4: fx.crushRate = fxValueToUnit(value); break;
+            default: break;
+        }
+    } else if (fx.type == 5) {
+        // Limiter
+        switch (function) {
+            case 3: fx.limGain = fxValueToUnit(value); break;
+            default: break;
+        }
+    } else if (fx.type == 6) {
+        // Chorus
+        switch (function) {
+            case 2: fx.chorusStereo = (value > 0) ? 1 : 0; break;
+            case 3: fx.chorusRate  = fxValueToUnit(value); break;
+            case 4: fx.chorusDepth = fxValueToUnit(value); break;
+            case 5: fx.chorusDelay = fxValueToUnit(value); break;
+            default: break;
+        }
+    } else if (fx.type == 7) {
+        // EQ — gains stored as −1..+1, freqs/Q stored as 0..1
+        switch (function) {
+            case 3: fx.eqLowGain  = fxValueToUnit(value) * 2.0f - 1.0f; fx.eqDirty = true; break;
+            case 4: fx.eqMidGain  = fxValueToUnit(value) * 2.0f - 1.0f; fx.eqDirty = true; break;
+            case 5: fx.eqHighGain = fxValueToUnit(value) * 2.0f - 1.0f; fx.eqDirty = true; break;
+            default: break;
+        }
+    } else if (fx.type == 8) {
+        // Compressor
+        switch (function) {
+            case 2: fx.cmpKnee      = (value > 0) ? 1 : 0; break;
+            case 3: fx.cmpThreshold = fxValueToUnit(value); break;
+            case 4: fx.cmpRatio     = fxValueToUnit(value); break;
+            case 5: fx.cmpMakeup    = fxValueToUnit(value); break;
+            case 8: fx.cmpAttack    = fxValueToUnit(value); break;
+            case 9: fx.cmpRelease   = fxValueToUnit(value); break;
+            default: break;
+        }
     }
 }
 
@@ -146,6 +287,7 @@ bool AudioEngine::open() {
         return false;
     }
     LOGI("Oboe stream opened: sampleRate=%d", mStream->getSampleRate());
+    mCachedSampleRate = static_cast<float>(mStream->getSampleRate());
     return true;
 }
 
@@ -684,7 +826,7 @@ void AudioEngine::queueInsertFxCommands(const std::vector<int>& data) {
     for (size_t i = 0; i + 3 < data.size(); i += 4) {
         const int trackIdx = std::clamp(data[i], 0, kMaxVoices - 1);
         const int slotIdx = std::clamp(data[i + 1], 0, kMaxInsertSlots - 1);
-        const int function = std::clamp(data[i + 2], 1, 9);
+        const int function = std::clamp(data[i + 2], 0, 9);
         const int value = std::clamp(data[i + 3], 0, 99);
         mPendingInsertFxCommands.push_back({0, trackIdx, slotIdx, function, value});
     }
@@ -693,13 +835,57 @@ void AudioEngine::queueInsertFxCommands(const std::vector<int>& data) {
 void AudioEngine::setMasterInsertEffect(int slotIdx, int effectType, float initialWetLevel) {
     if (slotIdx < 0 || slotIdx >= kMaxInsertSlots) return;
     std::lock_guard<std::mutex> lock(mVoiceMutex);
-    mMasterInserts[slotIdx].type = effectType;
-    mMasterInserts[slotIdx].dryWet = std::clamp(initialWetLevel, 0.0f, 1.0f);
-    mMasterInserts[slotIdx].dryLevel = 1.0f;
-    mMasterInserts[slotIdx].wetLevel = std::clamp(initialWetLevel, 0.0f, 1.0f);
-    mMasterInserts[slotIdx].reverb.setdry(0.0f);
-    mMasterInserts[slotIdx].reverb.setwet(1.0f);
-    mMasterInserts[slotIdx].reverb.setmode(mMasterInserts[slotIdx].reverbFreeze ? 1.0f : 0.0f);
+    InsertEffect& fx = mMasterInserts[slotIdx];
+    fx.type = effectType;
+    fx.dryWet = std::clamp(initialWetLevel, 0.0f, 1.0f);
+    fx.dryLevel = 1.0f;
+    fx.wetLevel = std::clamp(initialWetLevel, 0.0f, 1.0f);
+    fx.reverb.setdry(0.0f);
+    fx.reverb.setwet(1.0f);
+    fx.reverb.setmode(fx.reverbFreeze ? 1.0f : 0.0f);
+    
+    // Reset all effect state variables
+    fx.filterCutoff = 0.5f;
+    fx.filterResonance = 0.2f;
+    fx.filterMode = 0;
+    fx.svfLowL = 0.0f;
+    fx.svfBandL = 0.0f;
+    fx.svfLowR = 0.0f;
+    fx.svfBandR = 0.0f;
+    fx.delayBufL.clear();
+    fx.delayBufR.clear();
+    fx.delayWritePos = 0;
+    fx.delayHpPrevL = 0.0f;
+    fx.delayHpPrevR = 0.0f;
+    fx.distDrive = 0.5f;
+    fx.distTone = 0.5f;
+    fx.distType = 0;
+    fx.distToneStateL = 0.0f;
+    fx.distToneStateR = 0.0f;
+    fx.crushBits = 1.0f;
+    fx.crushRate = 1.0f;
+    fx.crushHoldL = 0.0f;
+    fx.crushHoldR = 0.0f;
+    fx.crushAccum = 0.0f;
+    fx.chorusBufL.clear();
+    fx.chorusBufR.clear();
+    fx.chorusBufPos = 0;
+    fx.chorusLfoPhL = 0.0f;
+    fx.chorusLfoPhR = 0.0f;
+    fx.eqDirty = true;
+    for (int i = 0; i < 3; ++i) {
+        for (int j = 0; j < 5; ++j) {
+            fx.eqCoeffs[i][j] = 0.0f;
+        }
+        for (int ch = 0; ch < 2; ++ch) {
+            for (int j = 0; j < 2; ++j) {
+                fx.eqZx[i][ch][j] = 0.0f;
+                fx.eqZy[i][ch][j] = 0.0f;
+            }
+        }
+    }
+    fx.cmpEnvL = 0.0f;
+    fx.cmpEnvR = 0.0f;
 }
 
 void AudioEngine::setMasterInsertMix(int slotIdx, float dryLevel, float wetLevel) {
@@ -737,13 +923,57 @@ void AudioEngine::setTrackInsertEffect(int trackIdx, int slotIdx, int effectType
     if (trackIdx < 0 || trackIdx >= kMaxVoices) return;
     if (slotIdx < 0 || slotIdx >= kMaxInsertSlots) return;
     std::lock_guard<std::mutex> lock(mVoiceMutex);
-    mTrackInserts[trackIdx][slotIdx].type = effectType;
-    mTrackInserts[trackIdx][slotIdx].dryWet = std::clamp(initialWetLevel, 0.0f, 1.0f);
-    mTrackInserts[trackIdx][slotIdx].dryLevel = 1.0f;
-    mTrackInserts[trackIdx][slotIdx].wetLevel = std::clamp(initialWetLevel, 0.0f, 1.0f);
-    mTrackInserts[trackIdx][slotIdx].reverb.setdry(0.0f);
-    mTrackInserts[trackIdx][slotIdx].reverb.setwet(1.0f);
-    mTrackInserts[trackIdx][slotIdx].reverb.setmode(mTrackInserts[trackIdx][slotIdx].reverbFreeze ? 1.0f : 0.0f);
+    InsertEffect& fx = mTrackInserts[trackIdx][slotIdx];
+    fx.type = effectType;
+    fx.dryWet = std::clamp(initialWetLevel, 0.0f, 1.0f);
+    fx.dryLevel = 1.0f;
+    fx.wetLevel = std::clamp(initialWetLevel, 0.0f, 1.0f);
+    fx.reverb.setdry(0.0f);
+    fx.reverb.setwet(1.0f);
+    fx.reverb.setmode(fx.reverbFreeze ? 1.0f : 0.0f);
+    
+    // Reset all effect state variables
+    fx.filterCutoff = 0.5f;
+    fx.filterResonance = 0.2f;
+    fx.filterMode = 0;
+    fx.svfLowL = 0.0f;
+    fx.svfBandL = 0.0f;
+    fx.svfLowR = 0.0f;
+    fx.svfBandR = 0.0f;
+    fx.delayBufL.clear();
+    fx.delayBufR.clear();
+    fx.delayWritePos = 0;
+    fx.delayHpPrevL = 0.0f;
+    fx.delayHpPrevR = 0.0f;
+    fx.distDrive = 0.5f;
+    fx.distTone = 0.5f;
+    fx.distType = 0;
+    fx.distToneStateL = 0.0f;
+    fx.distToneStateR = 0.0f;
+    fx.crushBits = 1.0f;
+    fx.crushRate = 1.0f;
+    fx.crushHoldL = 0.0f;
+    fx.crushHoldR = 0.0f;
+    fx.crushAccum = 0.0f;
+    fx.chorusBufL.clear();
+    fx.chorusBufR.clear();
+    fx.chorusBufPos = 0;
+    fx.chorusLfoPhL = 0.0f;
+    fx.chorusLfoPhR = 0.0f;
+    fx.eqDirty = true;
+    for (int i = 0; i < 3; ++i) {
+        for (int j = 0; j < 5; ++j) {
+            fx.eqCoeffs[i][j] = 0.0f;
+        }
+        for (int ch = 0; ch < 2; ++ch) {
+            for (int j = 0; j < 2; ++j) {
+                fx.eqZx[i][ch][j] = 0.0f;
+                fx.eqZy[i][ch][j] = 0.0f;
+            }
+        }
+    }
+    fx.cmpEnvL = 0.0f;
+    fx.cmpEnvR = 0.0f;
 }
 
 void AudioEngine::setTrackInsertMix(int trackIdx, int slotIdx, float dryLevel, float wetLevel) {
@@ -780,6 +1010,171 @@ void AudioEngine::setTrackReverbParams(int trackIdx, int slotIdx, float roomSize
     mTrackInserts[trackIdx][slotIdx].reverb.setmode(freeze ? 1.0f : 0.0f);
 }
 
+void AudioEngine::setMasterDelayParams(int slotIdx, float timeMs, float feedback, float hpCutoff, bool sync) {
+    if (slotIdx < 0 || slotIdx >= kMaxInsertSlots) return;
+    std::lock_guard<std::mutex> lock(mVoiceMutex);
+    mMasterInserts[slotIdx].delayTimeMs  = std::clamp(timeMs,    1.0f, 2000.0f);
+    mMasterInserts[slotIdx].delayFeedback = std::clamp(feedback, 0.0f, 0.95f);
+    mMasterInserts[slotIdx].delayHpCutoff = std::clamp(hpCutoff, 0.0f, 1.0f);
+    mMasterInserts[slotIdx].delaySync    = sync;
+}
+
+void AudioEngine::setTrackDelayParams(int trackIdx, int slotIdx, float timeMs, float feedback, float hpCutoff, bool sync) {
+    if (trackIdx < 0 || trackIdx >= kMaxVoices) return;
+    if (slotIdx < 0 || slotIdx >= kMaxInsertSlots) return;
+    std::lock_guard<std::mutex> lock(mVoiceMutex);
+    mTrackInserts[trackIdx][slotIdx].delayTimeMs   = std::clamp(timeMs,    1.0f, 2000.0f);
+    mTrackInserts[trackIdx][slotIdx].delayFeedback = std::clamp(feedback,  0.0f, 0.95f);
+    mTrackInserts[trackIdx][slotIdx].delayHpCutoff = std::clamp(hpCutoff,  0.0f, 1.0f);
+    mTrackInserts[trackIdx][slotIdx].delaySync     = sync;
+}
+
+void AudioEngine::setTrackFilterParams(int trackIdx, int slotIdx, float cutoff, float resonance, int mode) {
+    if (trackIdx < 0 || trackIdx >= kMaxVoices) return;
+    if (slotIdx < 0 || slotIdx >= kMaxInsertSlots) return;
+    std::lock_guard<std::mutex> lock(mVoiceMutex);
+    mTrackInserts[trackIdx][slotIdx].filterCutoff    = std::clamp(cutoff,    0.0f, 1.0f);
+    mTrackInserts[trackIdx][slotIdx].filterResonance = std::clamp(resonance, 0.0f, 1.0f);
+    mTrackInserts[trackIdx][slotIdx].filterMode      = std::clamp(mode, 0, 2);
+}
+
+void AudioEngine::setMasterFilterParams(int slotIdx, float cutoff, float resonance, int mode) {
+    if (slotIdx < 0 || slotIdx >= kMaxInsertSlots) return;
+    std::lock_guard<std::mutex> lock(mVoiceMutex);
+    mMasterInserts[slotIdx].filterCutoff    = std::clamp(cutoff,    0.0f, 1.0f);
+    mMasterInserts[slotIdx].filterResonance = std::clamp(resonance, 0.0f, 1.0f);
+    mMasterInserts[slotIdx].filterMode      = std::clamp(mode, 0, 2);
+}
+
+void AudioEngine::setTrackDistortionParams(int trackIdx, int slotIdx, float drive, float tone, int distType) {
+    if (trackIdx < 0 || trackIdx >= kMaxVoices) return;
+    if (slotIdx < 0 || slotIdx >= kMaxInsertSlots) return;
+    std::lock_guard<std::mutex> lock(mVoiceMutex);
+    mTrackInserts[trackIdx][slotIdx].distDrive = std::clamp(drive, 0.0f, 1.0f);
+    mTrackInserts[trackIdx][slotIdx].distTone  = std::clamp(tone,  0.0f, 1.0f);
+    mTrackInserts[trackIdx][slotIdx].distType  = std::clamp(distType, 0, 1);
+}
+
+void AudioEngine::setMasterDistortionParams(int slotIdx, float drive, float tone, int distType) {
+    if (slotIdx < 0 || slotIdx >= kMaxInsertSlots) return;
+    std::lock_guard<std::mutex> lock(mVoiceMutex);
+    mMasterInserts[slotIdx].distDrive = std::clamp(drive, 0.0f, 1.0f);
+    mMasterInserts[slotIdx].distTone  = std::clamp(tone,  0.0f, 1.0f);
+    mMasterInserts[slotIdx].distType  = std::clamp(distType, 0, 1);
+}
+
+void AudioEngine::setTrackBitcrusherParams(int trackIdx, int slotIdx, float bits, float rate) {
+    if (trackIdx < 0 || trackIdx >= kMaxVoices) return;
+    if (slotIdx < 0 || slotIdx >= kMaxInsertSlots) return;
+    std::lock_guard<std::mutex> lock(mVoiceMutex);
+    mTrackInserts[trackIdx][slotIdx].crushBits = std::clamp(bits, 0.0f, 1.0f);
+    mTrackInserts[trackIdx][slotIdx].crushRate = std::clamp(rate, 0.0f, 1.0f);
+}
+
+void AudioEngine::setMasterBitcrusherParams(int slotIdx, float bits, float rate) {
+    if (slotIdx < 0 || slotIdx >= kMaxInsertSlots) return;
+    std::lock_guard<std::mutex> lock(mVoiceMutex);
+    mMasterInserts[slotIdx].crushBits = std::clamp(bits, 0.0f, 1.0f);
+    mMasterInserts[slotIdx].crushRate = std::clamp(rate, 0.0f, 1.0f);
+}
+
+void AudioEngine::setTrackLimiterParams(int trackIdx, int slotIdx, float gain) {
+    if (trackIdx < 0 || trackIdx >= kMaxVoices) return;
+    if (slotIdx < 0 || slotIdx >= kMaxInsertSlots) return;
+    std::lock_guard<std::mutex> lock(mVoiceMutex);
+    mTrackInserts[trackIdx][slotIdx].limGain = std::clamp(gain, 0.0f, 1.0f);
+}
+
+void AudioEngine::setMasterLimiterParams(int slotIdx, float gain) {
+    if (slotIdx < 0 || slotIdx >= kMaxInsertSlots) return;
+    std::lock_guard<std::mutex> lock(mVoiceMutex);
+    mMasterInserts[slotIdx].limGain = std::clamp(gain, 0.0f, 1.0f);
+}
+
+static void applyChorusParams(InsertEffect& fx, float rate, float depth, float delay, int stereo) {
+    fx.chorusRate   = std::clamp(rate,  0.0f, 1.0f);
+    fx.chorusDepth  = std::clamp(depth, 0.0f, 1.0f);
+    fx.chorusDelay  = std::clamp(delay, 0.0f, 1.0f);
+    fx.chorusStereo = std::clamp(stereo, 0, 1);
+    // Ensure buffer is allocated (may have been cleared on reset)
+    if (fx.chorusBufL.size() < 2880) { fx.chorusBufL.assign(2880, 0.0f); }
+    if (fx.chorusBufR.size() < 2880) { fx.chorusBufR.assign(2880, 0.0f); }
+}
+
+void AudioEngine::setTrackChorusParams(int trackIdx, int slotIdx, float rate, float depth, float delay, int stereo) {
+    if (trackIdx < 0 || trackIdx >= kMaxVoices) return;
+    if (slotIdx < 0 || slotIdx >= kMaxInsertSlots) return;
+    std::lock_guard<std::mutex> lock(mVoiceMutex);
+    applyChorusParams(mTrackInserts[trackIdx][slotIdx], rate, depth, delay, stereo);
+}
+
+void AudioEngine::setMasterChorusParams(int slotIdx, float rate, float depth, float delay, int stereo) {
+    if (slotIdx < 0 || slotIdx >= kMaxInsertSlots) return;
+    std::lock_guard<std::mutex> lock(mVoiceMutex);
+    applyChorusParams(mMasterInserts[slotIdx], rate, depth, delay, stereo);
+}
+
+static void applyEqParams(InsertEffect& fx, float lowGain, float lowFreq,
+                           float midGain, float midFreq, float midQ,
+                           float highGain, float highFreq) {
+    fx.eqLowGain  = std::clamp(lowGain,  -1.0f, 1.0f);
+    fx.eqLowFreq  = std::clamp(lowFreq,   0.0f, 1.0f);
+    fx.eqMidGain  = std::clamp(midGain,  -1.0f, 1.0f);
+    fx.eqMidFreq  = std::clamp(midFreq,   0.0f, 1.0f);
+    fx.eqMidQ     = std::clamp(midQ,      0.0f, 1.0f);
+    fx.eqHighGain = std::clamp(highGain, -1.0f, 1.0f);
+    fx.eqHighFreq = std::clamp(highFreq,  0.0f, 1.0f);
+    fx.eqDirty    = true;
+}
+
+void AudioEngine::setTrackEqParams(int trackIdx, int slotIdx,
+                                   float lowGain, float lowFreq,
+                                   float midGain, float midFreq, float midQ,
+                                   float highGain, float highFreq) {
+    if (trackIdx < 0 || trackIdx >= kMaxVoices) return;
+    if (slotIdx < 0 || slotIdx >= kMaxInsertSlots) return;
+    std::lock_guard<std::mutex> lock(mVoiceMutex);
+    applyEqParams(mTrackInserts[trackIdx][slotIdx], lowGain, lowFreq, midGain, midFreq, midQ, highGain, highFreq);
+}
+
+void AudioEngine::setMasterEqParams(int slotIdx,
+                                    float lowGain, float lowFreq,
+                                    float midGain, float midFreq, float midQ,
+                                    float highGain, float highFreq) {
+    if (slotIdx < 0 || slotIdx >= kMaxInsertSlots) return;
+    std::lock_guard<std::mutex> lock(mVoiceMutex);
+    applyEqParams(mMasterInserts[slotIdx], lowGain, lowFreq, midGain, midFreq, midQ, highGain, highFreq);
+}
+
+static void applyCompressorParams(InsertEffect& fx, float threshold, float ratio,
+                                   float attack, float release, float makeup, int knee) {
+    fx.cmpThreshold = std::clamp(threshold, 0.0f, 1.0f);
+    fx.cmpRatio     = std::clamp(ratio,     0.0f, 1.0f);
+    fx.cmpAttack    = std::clamp(attack,    0.0f, 1.0f);
+    fx.cmpRelease   = std::clamp(release,   0.0f, 1.0f);
+    fx.cmpMakeup    = std::clamp(makeup,    0.0f, 1.0f);
+    fx.cmpKnee      = std::clamp(knee,      0,    1);
+}
+
+void AudioEngine::setTrackCompressorParams(int trackIdx, int slotIdx,
+                                           float threshold, float ratio,
+                                           float attack, float release,
+                                           float makeup, int knee) {
+    if (trackIdx < 0 || trackIdx >= kMaxVoices) return;
+    if (slotIdx < 0 || slotIdx >= kMaxInsertSlots) return;
+    std::lock_guard<std::mutex> lock(mVoiceMutex);
+    applyCompressorParams(mTrackInserts[trackIdx][slotIdx], threshold, ratio, attack, release, makeup, knee);
+}
+
+void AudioEngine::setMasterCompressorParams(int slotIdx,
+                                            float threshold, float ratio,
+                                            float attack, float release,
+                                            float makeup, int knee) {
+    if (slotIdx < 0 || slotIdx >= kMaxInsertSlots) return;
+    std::lock_guard<std::mutex> lock(mVoiceMutex);
+    applyCompressorParams(mMasterInserts[slotIdx], threshold, ratio, attack, release, makeup, knee);
+}
+
 void AudioEngine::processEffects(float* outL, float* outR, int numFrames, InsertEffect* effects) {
     if (!effects) return;
 
@@ -796,11 +1191,340 @@ void AudioEngine::processEffects(float* outL, float* outR, int numFrames, Insert
         if (fx.type == 0) {
             // Reverb effect
             fx.reverb.process(outL, outR, mFxWetL.data(), mFxWetR.data(), numFrames);
-            
-            // Mix host dry/wet levels so every insert can share the same template.
             for (int i = 0; i < numFrames; ++i) {
                 outL[i] = (outL[i] * fx.dryLevel) + (mFxWetL[i] * fx.wetLevel);
                 outR[i] = (outR[i] * fx.dryLevel) + (mFxWetR[i] * fx.wetLevel);
+            }
+        } else if (fx.type == 1) {
+            // Stereo delay with feedback and optional hi-pass
+            if (fx.delayBufL.empty()) {
+                fx.delayBufL.assign(InsertEffect::kDelayMaxSamples, 0.0f);
+                fx.delayBufR.assign(InsertEffect::kDelayMaxSamples, 0.0f);
+                fx.delayWritePos = 0;
+                fx.delayHpPrevL = 0.0f;
+                fx.delayHpPrevR = 0.0f;
+            }
+            const int bufLen = InsertEffect::kDelayMaxSamples;
+            const float sr = mCachedSampleRate > 0.0f ? mCachedSampleRate : 48000.0f;
+            const int delaySamples = std::clamp(
+                static_cast<int>(fx.delayTimeMs * sr / 1000.0f),
+                1, bufLen - 1);
+            // Hi-pass coefficient (one-pole, 0 = no filter)
+            const float hpK = fx.delayHpCutoff > 0.001f
+                ? std::exp(-2.0f * static_cast<float>(M_PI) * fx.delayHpCutoff * 4000.0f / sr)
+                : 1.0f; // k=1 means no hi-pass (dc-bypass disabled)
+            for (int i = 0; i < numFrames; ++i) {
+                const int readPos = (fx.delayWritePos - delaySamples + bufLen) % bufLen;
+                float delL = fx.delayBufL[readPos];
+                float delR = fx.delayBufR[readPos];
+                // Hi-pass filter on the delay return
+                if (fx.delayHpCutoff > 0.001f) {
+                    float newL = delL - hpK * fx.delayHpPrevL;
+                    fx.delayHpPrevL = delL - newL + hpK * fx.delayHpPrevL;
+                    delL = newL;
+                    float newR = delR - hpK * fx.delayHpPrevR;
+                    fx.delayHpPrevR = delR - newR + hpK * fx.delayHpPrevR;
+                    delR = newR;
+                }
+                fx.delayBufL[fx.delayWritePos] = outL[i] + delL * fx.delayFeedback;
+                fx.delayBufR[fx.delayWritePos] = outR[i] + delR * fx.delayFeedback;
+                fx.delayWritePos = (fx.delayWritePos + 1) % bufLen;
+                outL[i] = outL[i] * fx.dryLevel + delL * fx.wetLevel;
+                outR[i] = outR[i] * fx.dryLevel + delR * fx.wetLevel;
+            }
+        } else if (fx.type == 2) {
+            // State-variable filter (LP / HP / BP)
+            const float sr = mCachedSampleRate > 0.0f ? mCachedSampleRate : 48000.0f;
+            // cutoff 0..1 → ~20 Hz .. 20 kHz (exponential), clamped to stable range
+            const float freq = std::clamp(20.0f * std::pow(1000.0f, fx.filterCutoff), 20.0f, sr * 0.20f);
+            const float f = std::clamp(2.0f * std::sin(static_cast<float>(M_PI) * freq / sr), 0.001f, 0.99f);
+            const float q = std::max(0.01f, 1.0f - fx.filterResonance * 0.95f);
+            for (int i = 0; i < numFrames; ++i) {
+                // Left
+                fx.svfLowL  += f * fx.svfBandL;
+                float highL  = outL[i] - fx.svfLowL - q * fx.svfBandL;
+                fx.svfBandL += f * highL;
+                // Right
+                fx.svfLowR  += f * fx.svfBandR;
+                float highR  = outR[i] - fx.svfLowR - q * fx.svfBandR;
+                fx.svfBandR += f * highR;
+
+                float wetL, wetR;
+                switch (fx.filterMode) {
+                    case 1:  wetL = highL; wetR = highR; break; // HP
+                    case 2:  wetL = fx.svfBandL; wetR = fx.svfBandR; break; // BP
+                    default: wetL = fx.svfLowL;  wetR = fx.svfLowR;  break; // LP
+                }
+                outL[i] = outL[i] * fx.dryLevel + wetL * fx.wetLevel;
+                outR[i] = outR[i] * fx.dryLevel + wetR * fx.wetLevel;
+            }
+        } else if (fx.type == 3) {
+            // Distortion: soft-clip or fold, with one-pole tone LP on output
+            const float gain = 1.0f + fx.distDrive * 19.0f; // 1..20×
+            // tone 0..1 → LP cutoff 200 Hz..20 kHz
+            const float sr = mCachedSampleRate > 0.0f ? mCachedSampleRate : 48000.0f;
+            const float toneFreq = 200.0f * std::pow(100.0f, fx.distTone);
+            const float toneK = std::exp(-2.0f * static_cast<float>(M_PI) * toneFreq / sr);
+            for (int i = 0; i < numFrames; ++i) {
+                float inL = outL[i] * gain;
+                float inR = outR[i] * gain;
+                float clL, clR;
+                if (fx.distType == 1) {
+                    // Fold: reflect at ±1
+                    auto fold = [](float x) -> float {
+                        x = std::fmod(x + 1.0f, 4.0f);
+                        if (x < 0.0f) x += 4.0f;
+                        if (x > 2.0f) x = 4.0f - x;
+                        return x - 1.0f;
+                    };
+                    clL = fold(inL);
+                    clR = fold(inR);
+                } else {
+                    // Soft-clip via tanh
+                    clL = std::tanh(inL);
+                    clR = std::tanh(inR);
+                }
+                // One-pole tone LP
+                fx.distToneStateL = toneK * fx.distToneStateL + (1.0f - toneK) * clL;
+                fx.distToneStateR = toneK * fx.distToneStateR + (1.0f - toneK) * clR;
+                outL[i] = outL[i] * fx.dryLevel + fx.distToneStateL * fx.wetLevel;
+                outR[i] = outR[i] * fx.dryLevel + fx.distToneStateR * fx.wetLevel;
+            }
+        } else if (fx.type == 4) {
+            // Bitcrusher: bit-depth reduction + sample-rate reduction
+            const float levels = std::pow(2.0f, 1.0f + fx.crushBits * 15.0f); // 2..65536 levels
+            const float step = 1.0f / levels;
+            // rate: 0..1 → hold 1..32 samples
+            const float rateHold = 1.0f + (1.0f - fx.crushRate) * 31.0f;
+            for (int i = 0; i < numFrames; ++i) {
+                fx.crushAccum += 1.0f;
+                if (fx.crushAccum >= rateHold) {
+                    fx.crushAccum -= rateHold;
+                    fx.crushHoldL = std::floor(outL[i] / step + 0.5f) * step;
+                    fx.crushHoldR = std::floor(outR[i] / step + 0.5f) * step;
+                }
+                outL[i] = outL[i] * fx.dryLevel + fx.crushHoldL * fx.wetLevel;
+                outR[i] = outR[i] * fx.dryLevel + fx.crushHoldR * fx.wetLevel;
+            }
+        } else if (fx.type == 5) {
+            // Brick-wall limiter: input gain pushed into fixed -0.1 dBFS ceiling
+            constexpr float kCeiling = 0.9886f; // 10^(-0.1/20)
+            // gain: 0..1 → 0 dB..+24 dB (1×..15.8×), logarithmic feel via power
+            const float gainLin = std::pow(10.0f, fx.limGain * 24.0f / 20.0f);
+            for (int i = 0; i < numFrames; ++i) {
+                float gL = outL[i] * gainLin;
+                float gR = outR[i] * gainLin;
+                float peakL = std::abs(gL);
+                float peakR = std::abs(gR);
+                if (peakL > kCeiling) gL = (gL / peakL) * kCeiling;
+                if (peakR > kCeiling) gR = (gR / peakR) * kCeiling;
+                outL[i] = outL[i] * fx.dryLevel + gL * fx.wetLevel;
+                outR[i] = outR[i] * fx.dryLevel + gR * fx.wetLevel;
+            }
+        } else if (fx.type == 6) {
+            // Chorus: modulated delay line with sinusoidal LFO
+            // rate: 0..1 → 0.1..8 Hz
+            const float lfoHz    = 0.1f + fx.chorusRate * 7.9f;
+            // depth: 0..1 → 0..15 ms  (in samples)
+            const float depthSmp = fx.chorusDepth * 15.0f * 0.001f * mCachedSampleRate;
+            // base delay: 0..1 → 1..30 ms  (in samples)
+            const float baseSmp  = (1.0f + fx.chorusDelay * 29.0f) * 0.001f * mCachedSampleRate;
+            const int   bufSize  = static_cast<int>(fx.chorusBufL.size());
+            if (bufSize == 0) goto chorus_skip;
+            {
+                const float twoPi    = 6.28318530718f;
+                const float phaseInc = twoPi * lfoHz / mCachedSampleRate;
+                for (int i = 0; i < numFrames; ++i) {
+                    // Write current sample into ring buffer
+                    fx.chorusBufL[fx.chorusBufPos] = outL[i];
+                    fx.chorusBufR[fx.chorusBufPos] = outR[i];
+
+                    // LFO mod
+                    float modL = std::sin(fx.chorusLfoPhL);
+                    float phR  = fx.chorusStereo ? (fx.chorusLfoPhL + twoPi * 0.25f) : fx.chorusLfoPhL;
+                    float modR = std::sin(phR);
+
+                    // Read position (fractional)
+                    float readOffL = baseSmp + depthSmp * modL;
+                    float readOffR = baseSmp + depthSmp * modR;
+
+                    auto linearRead = [&](std::vector<float>& buf, float offset) -> float {
+                        float rPos = static_cast<float>(fx.chorusBufPos) - offset;
+                        int   r0   = static_cast<int>(std::floor(rPos));
+                        float frac = rPos - static_cast<float>(r0);
+                        int   i0   = ((r0 % bufSize) + bufSize) % bufSize;
+                        int   i1   = ((r0 + 1) % bufSize + bufSize) % bufSize;
+                        return buf[i0] + frac * (buf[i1] - buf[i0]);
+                    };
+
+                    float wetL = linearRead(fx.chorusBufL, readOffL);
+                    float wetR = linearRead(fx.chorusBufR, readOffR);
+
+                    outL[i] = outL[i] * fx.dryLevel + wetL * fx.wetLevel;
+                    outR[i] = outR[i] * fx.dryLevel + wetR * fx.wetLevel;
+
+                    fx.chorusLfoPhL += phaseInc;
+                    if (fx.chorusLfoPhL >= twoPi) fx.chorusLfoPhL -= twoPi;
+                    fx.chorusLfoPhR = fx.chorusLfoPhL; // kept in sync; stereo uses phR inline
+
+                    fx.chorusBufPos = (fx.chorusBufPos + 1) % bufSize;
+                }
+            }
+            chorus_skip:;
+        } else if (fx.type == 7) {
+            // ── EQ: 3-band semi-parametric biquad ──────────────────────────
+            // Recompute coefficients when dirty (param changed).
+            if (fx.eqDirty) {
+                const float sr = mCachedSampleRate > 0.0f ? mCachedSampleRate : 48000.0f;
+                const float pi = 3.14159265358979f;
+
+                // Low shelf  (40..500 Hz, log)
+                {
+                    float freq  = 40.0f * std::pow(500.0f / 40.0f, fx.eqLowFreq);
+                    float dBgain = fx.eqLowGain * 12.0f;
+                    float A     = std::pow(10.0f, dBgain / 40.0f);
+                    float w0    = 2.0f * pi * freq / sr;
+                    float cosw  = std::cos(w0);
+                    float sinw  = std::sin(w0);
+                    float S     = 1.0f; // slope
+                    float alpha = sinw / 2.0f * std::sqrt((A + 1.0f/A) * (1.0f/S - 1.0f) + 2.0f);
+                    float b0 =  A * ((A+1) - (A-1)*cosw + 2*std::sqrt(A)*alpha);
+                    float b1 =  2*A * ((A-1) - (A+1)*cosw);
+                    float b2 =  A * ((A+1) - (A-1)*cosw - 2*std::sqrt(A)*alpha);
+                    float a0 =       (A+1) + (A-1)*cosw + 2*std::sqrt(A)*alpha;
+                    float a1 = -2 * ((A-1) + (A+1)*cosw);
+                    float a2 =       (A+1) + (A-1)*cosw - 2*std::sqrt(A)*alpha;
+                    float inv = 1.0f / a0;
+                    fx.eqCoeffs[0][0] = b0*inv; fx.eqCoeffs[0][1] = b1*inv; fx.eqCoeffs[0][2] = b2*inv;
+                    fx.eqCoeffs[0][3] = a1*inv; fx.eqCoeffs[0][4] = a2*inv;
+                }
+                // Mid peaking EQ  (200..8000 Hz, log; Q 0.3..8.0)
+                {
+                    float freq  = 200.0f * std::pow(8000.0f / 200.0f, fx.eqMidFreq);
+                    float dBgain = fx.eqMidGain * 12.0f;
+                    float A     = std::pow(10.0f, dBgain / 40.0f);
+                    float Q     = 0.3f + fx.eqMidQ * 7.7f;
+                    float w0    = 2.0f * pi * freq / sr;
+                    float alpha = std::sin(w0) / (2.0f * Q);
+                    float b0 =  1.0f + alpha * A;
+                    float b1 = -2.0f * std::cos(w0);
+                    float b2 =  1.0f - alpha * A;
+                    float a0 =  1.0f + alpha / A;
+                    float a1 = -2.0f * std::cos(w0);
+                    float a2 =  1.0f - alpha / A;
+                    float inv = 1.0f / a0;
+                    fx.eqCoeffs[1][0] = b0*inv; fx.eqCoeffs[1][1] = b1*inv; fx.eqCoeffs[1][2] = b2*inv;
+                    fx.eqCoeffs[1][3] = a1*inv; fx.eqCoeffs[1][4] = a2*inv;
+                }
+                // High shelf  (2000..16000 Hz, log)
+                {
+                    float freq  = 2000.0f * std::pow(16000.0f / 2000.0f, fx.eqHighFreq);
+                    float dBgain = fx.eqHighGain * 12.0f;
+                    float A     = std::pow(10.0f, dBgain / 40.0f);
+                    float w0    = 2.0f * pi * freq / sr;
+                    float cosw  = std::cos(w0);
+                    float sinw  = std::sin(w0);
+                    float S     = 1.0f;
+                    float alpha = sinw / 2.0f * std::sqrt((A + 1.0f/A) * (1.0f/S - 1.0f) + 2.0f);
+                    float b0 =  A * ((A+1) + (A-1)*cosw + 2*std::sqrt(A)*alpha);
+                    float b1 = -2*A * ((A-1) + (A+1)*cosw);
+                    float b2 =  A * ((A+1) + (A-1)*cosw - 2*std::sqrt(A)*alpha);
+                    float a0 =       (A+1) - (A-1)*cosw + 2*std::sqrt(A)*alpha;
+                    float a1 =  2 * ((A-1) - (A+1)*cosw);
+                    float a2 =       (A+1) - (A-1)*cosw - 2*std::sqrt(A)*alpha;
+                    float inv = 1.0f / a0;
+                    fx.eqCoeffs[2][0] = b0*inv; fx.eqCoeffs[2][1] = b1*inv; fx.eqCoeffs[2][2] = b2*inv;
+                    fx.eqCoeffs[2][3] = a1*inv; fx.eqCoeffs[2][4] = a2*inv;
+                }
+                fx.eqDirty = false;
+            }
+            // Process each band in series (Direct Form I)
+            // Capture dry signal first for dry/wet mix
+            constexpr int kMaxFrames = 512;
+            float dryBufL[kMaxFrames], dryBufR[kMaxFrames];
+            int safeFr = (numFrames <= kMaxFrames) ? numFrames : kMaxFrames;
+            std::memcpy(dryBufL, outL, safeFr * sizeof(float));
+            std::memcpy(dryBufR, outR, safeFr * sizeof(float));
+
+            for (int band = 0; band < 3; ++band) {
+                const float b0 = fx.eqCoeffs[band][0];
+                const float b1 = fx.eqCoeffs[band][1];
+                const float b2 = fx.eqCoeffs[band][2];
+                const float a1 = fx.eqCoeffs[band][3];
+                const float a2 = fx.eqCoeffs[band][4];
+                for (int i = 0; i < safeFr; ++i) {
+                    // Left
+                    float xL = outL[i];
+                    float yL = b0*xL + b1*fx.eqZx[band][0][0] + b2*fx.eqZx[band][0][1]
+                                     - a1*fx.eqZy[band][0][0] - a2*fx.eqZy[band][0][1];
+                    fx.eqZx[band][0][1] = fx.eqZx[band][0][0]; fx.eqZx[band][0][0] = xL;
+                    fx.eqZy[band][0][1] = fx.eqZy[band][0][0]; fx.eqZy[band][0][0] = yL;
+                    outL[i] = yL;
+                    // Right
+                    float xR = outR[i];
+                    float yR = b0*xR + b1*fx.eqZx[band][1][0] + b2*fx.eqZx[band][1][1]
+                                     - a1*fx.eqZy[band][1][0] - a2*fx.eqZy[band][1][1];
+                    fx.eqZx[band][1][1] = fx.eqZx[band][1][0]; fx.eqZx[band][1][0] = xR;
+                    fx.eqZy[band][1][1] = fx.eqZy[band][1][0]; fx.eqZy[band][1][0] = yR;
+                    outR[i] = yR;
+                }
+            }
+            // Apply dry/wet mix
+            for (int i = 0; i < safeFr; ++i) {
+                outL[i] = dryBufL[i] * fx.dryLevel + outL[i] * fx.wetLevel;
+                outR[i] = dryBufR[i] * fx.dryLevel + outR[i] * fx.wetLevel;
+            }
+        } else if (fx.type == 8) {
+            // ── Compressor: peak envelope follower + gain computer ─────────
+            const float sr = mCachedSampleRate > 0.0f ? mCachedSampleRate : 48000.0f;
+
+            // Decode params
+            // threshold: 0..1 → −60..0 dBFS
+            const float thrDB  = -60.0f + fx.cmpThreshold * 60.0f;
+            // ratio: 0..1 → 1..20 (log)
+            const float ratio  = 1.0f + std::exp(fx.cmpRatio * std::log(19.0f));
+            // attack: 0..1 → 0.1..200 ms (log)
+            const float attMs  = 0.1f * std::pow(2000.0f, fx.cmpAttack);
+            // release: 0..1 → 10..2000 ms (log)
+            const float relMs  = 10.0f * std::pow(200.0f, fx.cmpRelease);
+            // makeup: 0..1 → 0..+24 dB
+            const float makeupDB = fx.cmpMakeup * 24.0f;
+            const float makeupLin = std::pow(10.0f, makeupDB / 20.0f);
+
+            // Time constants → per-sample coefficients
+            const float attCoef = std::exp(-1.0f / (sr * attMs * 0.001f));
+            const float relCoef = std::exp(-1.0f / (sr * relMs * 0.001f));
+
+            // Soft knee half-width in dB
+            const float kneeW = fx.cmpKnee ? 6.0f : 0.0f;
+
+            for (int i = 0; i < numFrames; ++i) {
+                // Peak detection (linked stereo)
+                const float peak = std::max(std::abs(outL[i]), std::abs(outR[i]));
+                // Envelope follower
+                const float env = peak > fx.cmpEnvL
+                    ? attCoef * fx.cmpEnvL + (1.0f - attCoef) * peak
+                    : relCoef * fx.cmpEnvL + (1.0f - relCoef) * peak;
+                fx.cmpEnvL = env;
+                fx.cmpEnvR = env; // linked
+
+                // Gain computer (log domain)
+                float gainDB = 0.0f;
+                if (env > 1e-10f) {
+                    const float inputDB = 20.0f * std::log10(env);
+                    const float overDB  = inputDB - thrDB;
+                    if (fx.cmpKnee && overDB > -kneeW && overDB < kneeW) {
+                        // Soft knee region
+                        const float t = (overDB + kneeW) / (2.0f * kneeW);
+                        gainDB = -(1.0f - 1.0f / ratio) * t * t * kneeW;
+                    } else if (overDB > 0.0f) {
+                        gainDB = -(overDB) * (1.0f - 1.0f / ratio);
+                    }
+                }
+                const float gainLin = std::pow(10.0f, gainDB / 20.0f) * makeupLin;
+
+                outL[i] = outL[i] * fx.dryLevel + outL[i] * gainLin * fx.wetLevel;
+                outR[i] = outR[i] * fx.dryLevel + outR[i] * gainLin * fx.wetLevel;
             }
         }
     }

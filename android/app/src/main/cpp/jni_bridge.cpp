@@ -175,6 +175,106 @@ Java_com_example_tracker_AudioEnginePlugin_nativeSetTrackReverbParams(
     reinterpret_cast<AudioEngine*>(ptr)->setTrackReverbParams(trackIdx, slotIdx, roomSize, damp, width, freeze);
 }
 
+JNIEXPORT void JNICALL
+Java_com_example_tracker_AudioEnginePlugin_nativeSetMasterDelayParams(
+        JNIEnv*, jobject, jlong ptr, jint slotIdx, jfloat timeMs, jfloat feedback, jfloat hpCutoff, jboolean sync) {
+    reinterpret_cast<AudioEngine*>(ptr)->setMasterDelayParams(slotIdx, timeMs, feedback, hpCutoff, sync);
+}
+
+JNIEXPORT void JNICALL
+Java_com_example_tracker_AudioEnginePlugin_nativeSetTrackDelayParams(
+        JNIEnv*, jobject, jlong ptr, jint trackIdx, jint slotIdx, jfloat timeMs, jfloat feedback, jfloat hpCutoff, jboolean sync) {
+    reinterpret_cast<AudioEngine*>(ptr)->setTrackDelayParams(trackIdx, slotIdx, timeMs, feedback, hpCutoff, sync);
+}
+
+JNIEXPORT void JNICALL
+Java_com_example_tracker_AudioEnginePlugin_nativeSetTrackFilterParams(
+        JNIEnv*, jobject, jlong ptr, jint trackIdx, jint slotIdx, jfloat cutoff, jfloat resonance, jint mode) {
+    reinterpret_cast<AudioEngine*>(ptr)->setTrackFilterParams(trackIdx, slotIdx, cutoff, resonance, mode);
+}
+
+JNIEXPORT void JNICALL
+Java_com_example_tracker_AudioEnginePlugin_nativeSetMasterFilterParams(
+        JNIEnv*, jobject, jlong ptr, jint slotIdx, jfloat cutoff, jfloat resonance, jint mode) {
+    reinterpret_cast<AudioEngine*>(ptr)->setMasterFilterParams(slotIdx, cutoff, resonance, mode);
+}
+
+JNIEXPORT void JNICALL
+Java_com_example_tracker_AudioEnginePlugin_nativeSetTrackDistortionParams(
+        JNIEnv*, jobject, jlong ptr, jint trackIdx, jint slotIdx, jfloat drive, jfloat tone, jint distType) {
+    reinterpret_cast<AudioEngine*>(ptr)->setTrackDistortionParams(trackIdx, slotIdx, drive, tone, distType);
+}
+
+JNIEXPORT void JNICALL
+Java_com_example_tracker_AudioEnginePlugin_nativeSetMasterDistortionParams(
+        JNIEnv*, jobject, jlong ptr, jint slotIdx, jfloat drive, jfloat tone, jint distType) {
+    reinterpret_cast<AudioEngine*>(ptr)->setMasterDistortionParams(slotIdx, drive, tone, distType);
+}
+
+JNIEXPORT void JNICALL
+Java_com_example_tracker_AudioEnginePlugin_nativeSetTrackBitcrusherParams(
+        JNIEnv*, jobject, jlong ptr, jint trackIdx, jint slotIdx, jfloat bits, jfloat rate) {
+    reinterpret_cast<AudioEngine*>(ptr)->setTrackBitcrusherParams(trackIdx, slotIdx, bits, rate);
+}
+
+JNIEXPORT void JNICALL
+Java_com_example_tracker_AudioEnginePlugin_nativeSetMasterBitcrusherParams(
+        JNIEnv*, jobject, jlong ptr, jint slotIdx, jfloat bits, jfloat rate) {
+    reinterpret_cast<AudioEngine*>(ptr)->setMasterBitcrusherParams(slotIdx, bits, rate);
+}
+
+JNIEXPORT void JNICALL
+Java_com_example_tracker_AudioEnginePlugin_nativeSetTrackLimiterParams(
+        JNIEnv*, jobject, jlong ptr, jint trackIdx, jint slotIdx, jfloat gain) {
+    reinterpret_cast<AudioEngine*>(ptr)->setTrackLimiterParams(trackIdx, slotIdx, gain);
+}
+
+JNIEXPORT void JNICALL
+Java_com_example_tracker_AudioEnginePlugin_nativeSetMasterLimiterParams(
+        JNIEnv*, jobject, jlong ptr, jint slotIdx, jfloat gain) {
+    reinterpret_cast<AudioEngine*>(ptr)->setMasterLimiterParams(slotIdx, gain);
+}
+
+JNIEXPORT void JNICALL
+Java_com_example_tracker_AudioEnginePlugin_nativeSetTrackChorusParams(
+        JNIEnv*, jobject, jlong ptr, jint trackIdx, jint slotIdx, jfloat rate, jfloat depth, jfloat delay, jint stereo) {
+    reinterpret_cast<AudioEngine*>(ptr)->setTrackChorusParams(trackIdx, slotIdx, rate, depth, delay, stereo);
+}
+
+JNIEXPORT void JNICALL
+Java_com_example_tracker_AudioEnginePlugin_nativeSetMasterChorusParams(
+        JNIEnv*, jobject, jlong ptr, jint slotIdx, jfloat rate, jfloat depth, jfloat delay, jint stereo) {
+    reinterpret_cast<AudioEngine*>(ptr)->setMasterChorusParams(slotIdx, rate, depth, delay, stereo);
+}
+
+JNIEXPORT void JNICALL
+Java_com_example_tracker_AudioEnginePlugin_nativeSetTrackEqParams(
+        JNIEnv*, jobject, jlong ptr, jint trackIdx, jint slotIdx,
+        jfloat lowGain, jfloat lowFreq, jfloat midGain, jfloat midFreq, jfloat midQ, jfloat highGain, jfloat highFreq) {
+    reinterpret_cast<AudioEngine*>(ptr)->setTrackEqParams(trackIdx, slotIdx, lowGain, lowFreq, midGain, midFreq, midQ, highGain, highFreq);
+}
+
+JNIEXPORT void JNICALL
+Java_com_example_tracker_AudioEnginePlugin_nativeSetMasterEqParams(
+        JNIEnv*, jobject, jlong ptr, jint slotIdx,
+        jfloat lowGain, jfloat lowFreq, jfloat midGain, jfloat midFreq, jfloat midQ, jfloat highGain, jfloat highFreq) {
+    reinterpret_cast<AudioEngine*>(ptr)->setMasterEqParams(slotIdx, lowGain, lowFreq, midGain, midFreq, midQ, highGain, highFreq);
+}
+
+JNIEXPORT void JNICALL
+Java_com_example_tracker_AudioEnginePlugin_nativeSetTrackCompressorParams(
+        JNIEnv*, jobject, jlong ptr, jint trackIdx, jint slotIdx,
+        jfloat threshold, jfloat ratio, jfloat attack, jfloat release, jfloat makeup, jint knee) {
+    reinterpret_cast<AudioEngine*>(ptr)->setTrackCompressorParams(trackIdx, slotIdx, threshold, ratio, attack, release, makeup, knee);
+}
+
+JNIEXPORT void JNICALL
+Java_com_example_tracker_AudioEnginePlugin_nativeSetMasterCompressorParams(
+        JNIEnv*, jobject, jlong ptr, jint slotIdx,
+        jfloat threshold, jfloat ratio, jfloat attack, jfloat release, jfloat makeup, jint knee) {
+    reinterpret_cast<AudioEngine*>(ptr)->setMasterCompressorParams(slotIdx, threshold, ratio, attack, release, makeup, knee);
+}
+
 JNIEXPORT jboolean JNICALL
 Java_com_example_tracker_AudioEnginePlugin_nativeSetSamplerSample(
         JNIEnv* env, jobject, jlong ptr, jint slot, jstring path) {
