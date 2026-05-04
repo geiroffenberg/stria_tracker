@@ -117,6 +117,64 @@ Java_com_example_tracker_AudioEnginePlugin_nativeQueueMixerCommands(
     reinterpret_cast<AudioEngine*>(ptr)->queueMixerCommands(vec);
 }
 
+JNIEXPORT void JNICALL
+Java_com_example_tracker_AudioEnginePlugin_nativeQueueInsertFxCommands(
+        JNIEnv* env, jobject, jlong ptr, jintArray data) {
+    jsize len  = env->GetArrayLength(data);
+    jint* elms = env->GetIntArrayElements(data, nullptr);
+    std::vector<int> vec(elms, elms + len);
+    env->ReleaseIntArrayElements(data, elms, JNI_ABORT);
+    reinterpret_cast<AudioEngine*>(ptr)->queueInsertFxCommands(vec);
+}
+
+JNIEXPORT void JNICALL
+Java_com_example_tracker_AudioEnginePlugin_nativeSetMasterInsertEffect(
+        JNIEnv* env, jobject, jlong ptr, jint slotIdx, jint effectType, jfloat dryWet) {
+    reinterpret_cast<AudioEngine*>(ptr)->setMasterInsertEffect(slotIdx, effectType, dryWet);
+}
+
+JNIEXPORT void JNICALL
+Java_com_example_tracker_AudioEnginePlugin_nativeSetMasterInsertMix(
+        JNIEnv*, jobject, jlong ptr, jint slotIdx, jfloat dryLevel, jfloat wetLevel) {
+    reinterpret_cast<AudioEngine*>(ptr)->setMasterInsertMix(slotIdx, dryLevel, wetLevel);
+}
+
+JNIEXPORT void JNICALL
+Java_com_example_tracker_AudioEnginePlugin_nativeSetMasterInsertBypass(
+        JNIEnv*, jobject, jlong ptr, jint slotIdx, jboolean bypass) {
+    reinterpret_cast<AudioEngine*>(ptr)->setMasterInsertBypass(slotIdx, bypass);
+}
+
+JNIEXPORT void JNICALL
+Java_com_example_tracker_AudioEnginePlugin_nativeSetMasterReverbParams(
+        JNIEnv* env, jobject, jlong ptr, jint slotIdx, jfloat roomSize, jfloat damp, jfloat width, jboolean freeze) {
+    reinterpret_cast<AudioEngine*>(ptr)->setMasterReverbParams(slotIdx, roomSize, damp, width, freeze);
+}
+
+JNIEXPORT void JNICALL
+Java_com_example_tracker_AudioEnginePlugin_nativeSetTrackInsertEffect(
+        JNIEnv* env, jobject, jlong ptr, jint trackIdx, jint slotIdx, jint effectType, jfloat dryWet) {
+    reinterpret_cast<AudioEngine*>(ptr)->setTrackInsertEffect(trackIdx, slotIdx, effectType, dryWet);
+}
+
+JNIEXPORT void JNICALL
+Java_com_example_tracker_AudioEnginePlugin_nativeSetTrackInsertMix(
+        JNIEnv*, jobject, jlong ptr, jint trackIdx, jint slotIdx, jfloat dryLevel, jfloat wetLevel) {
+    reinterpret_cast<AudioEngine*>(ptr)->setTrackInsertMix(trackIdx, slotIdx, dryLevel, wetLevel);
+}
+
+JNIEXPORT void JNICALL
+Java_com_example_tracker_AudioEnginePlugin_nativeSetTrackInsertBypass(
+        JNIEnv*, jobject, jlong ptr, jint trackIdx, jint slotIdx, jboolean bypass) {
+    reinterpret_cast<AudioEngine*>(ptr)->setTrackInsertBypass(trackIdx, slotIdx, bypass);
+}
+
+JNIEXPORT void JNICALL
+Java_com_example_tracker_AudioEnginePlugin_nativeSetTrackReverbParams(
+        JNIEnv* env, jobject, jlong ptr, jint trackIdx, jint slotIdx, jfloat roomSize, jfloat damp, jfloat width, jboolean freeze) {
+    reinterpret_cast<AudioEngine*>(ptr)->setTrackReverbParams(trackIdx, slotIdx, roomSize, damp, width, freeze);
+}
+
 JNIEXPORT jboolean JNICALL
 Java_com_example_tracker_AudioEnginePlugin_nativeSetSamplerSample(
         JNIEnv* env, jobject, jlong ptr, jint slot, jstring path) {

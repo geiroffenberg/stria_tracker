@@ -7,6 +7,7 @@ find_package(oboe REQUIRED CONFIG)
 add_library(tracker_audio SHARED
     audio_engine.cpp
     jni_bridge.cpp
+    freeverb.cpp
 )
 
 target_include_directories(tracker_audio PRIVATE

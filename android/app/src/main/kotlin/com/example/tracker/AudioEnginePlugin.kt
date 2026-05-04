@@ -108,6 +108,74 @@ class AudioEnginePlugin : FlutterPlugin, MethodCallHandler {
                 if (enginePtr != 0L) nativeQueueMixerCommands(enginePtr, data.toIntArray())
                 result.success(null)
             }
+            "queueInsertFxCommands" -> {
+                @Suppress("UNCHECKED_CAST")
+                val data = call.argument<List<Int>>("data") ?: emptyList()
+                if (enginePtr != 0L) nativeQueueInsertFxCommands(enginePtr, data.toIntArray())
+                result.success(null)
+            }
+            "setMasterInsertEffect" -> {
+                val slotIdx = call.argument<Int>("slotIdx") ?: 0
+                val effectType = call.argument<Int>("effectType") ?: -1
+                val dryWet = call.argument<Double>("dryWet") ?: 0.5
+                if (enginePtr != 0L) nativeSetMasterInsertEffect(enginePtr, slotIdx, effectType, dryWet.toFloat())
+                result.success(null)
+            }
+            "setMasterInsertMix" -> {
+                val slotIdx = call.argument<Int>("slotIdx") ?: 0
+                val dryLevel = call.argument<Double>("dryLevel") ?: 1.0
+                val wetLevel = call.argument<Double>("wetLevel") ?: 0.3
+                if (enginePtr != 0L) nativeSetMasterInsertMix(enginePtr, slotIdx, dryLevel.toFloat(), wetLevel.toFloat())
+                result.success(null)
+            }
+            "setMasterInsertBypass" -> {
+                val slotIdx = call.argument<Int>("slotIdx") ?: 0
+                val bypass = call.argument<Boolean>("bypass") ?: false
+                if (enginePtr != 0L) nativeSetMasterInsertBypass(enginePtr, slotIdx, bypass)
+                result.success(null)
+            }
+            "setMasterReverbParams" -> {
+                val slotIdx = call.argument<Int>("slotIdx") ?: 0
+                val roomSize = call.argument<Double>("roomSize") ?: 0.5
+                val damp = call.argument<Double>("damp") ?: 0.5
+                val width = call.argument<Double>("width") ?: 1.0
+                val freeze = call.argument<Boolean>("freeze") ?: false
+                if (enginePtr != 0L) nativeSetMasterReverbParams(enginePtr, slotIdx, roomSize.toFloat(), damp.toFloat(), width.toFloat(), freeze)
+                result.success(null)
+            }
+            "setTrackInsertEffect" -> {
+                val trackIdx = call.argument<Int>("trackIdx") ?: 0
+                val slotIdx = call.argument<Int>("slotIdx") ?: 0
+                val effectType = call.argument<Int>("effectType") ?: -1
+                val dryWet = call.argument<Double>("dryWet") ?: 0.5
+                if (enginePtr != 0L) nativeSetTrackInsertEffect(enginePtr, trackIdx, slotIdx, effectType, dryWet.toFloat())
+                result.success(null)
+            }
+            "setTrackInsertMix" -> {
+                val trackIdx = call.argument<Int>("trackIdx") ?: 0
+                val slotIdx = call.argument<Int>("slotIdx") ?: 0
+                val dryLevel = call.argument<Double>("dryLevel") ?: 1.0
+                val wetLevel = call.argument<Double>("wetLevel") ?: 0.3
+                if (enginePtr != 0L) nativeSetTrackInsertMix(enginePtr, trackIdx, slotIdx, dryLevel.toFloat(), wetLevel.toFloat())
+                result.success(null)
+            }
+            "setTrackInsertBypass" -> {
+                val trackIdx = call.argument<Int>("trackIdx") ?: 0
+                val slotIdx = call.argument<Int>("slotIdx") ?: 0
+                val bypass = call.argument<Boolean>("bypass") ?: false
+                if (enginePtr != 0L) nativeSetTrackInsertBypass(enginePtr, trackIdx, slotIdx, bypass)
+                result.success(null)
+            }
+            "setTrackReverbParams" -> {
+                val trackIdx = call.argument<Int>("trackIdx") ?: 0
+                val slotIdx = call.argument<Int>("slotIdx") ?: 0
+                val roomSize = call.argument<Double>("roomSize") ?: 0.5
+                val damp = call.argument<Double>("damp") ?: 0.5
+                val width = call.argument<Double>("width") ?: 1.0
+                val freeze = call.argument<Boolean>("freeze") ?: false
+                if (enginePtr != 0L) nativeSetTrackReverbParams(enginePtr, trackIdx, slotIdx, roomSize.toFloat(), damp.toFloat(), width.toFloat(), freeze)
+                result.success(null)
+            }
             "setSamplerSample" -> {
                 val slot = call.argument<Int>("slot") ?: -1
                 val path = call.argument<String>("path")
@@ -160,6 +228,15 @@ class AudioEnginePlugin : FlutterPlugin, MethodCallHandler {
     private external fun nativeQueueKills(ptr: Long, data: IntArray)
     private external fun nativeQueueSliceCommands(ptr: Long, data: IntArray)
     private external fun nativeQueueMixerCommands(ptr: Long, data: IntArray)
+    private external fun nativeQueueInsertFxCommands(ptr: Long, data: IntArray)
+    private external fun nativeSetMasterInsertEffect(ptr: Long, slotIdx: Int, effectType: Int, dryWet: Float)
+    private external fun nativeSetMasterInsertMix(ptr: Long, slotIdx: Int, dryLevel: Float, wetLevel: Float)
+    private external fun nativeSetMasterInsertBypass(ptr: Long, slotIdx: Int, bypass: Boolean)
+    private external fun nativeSetMasterReverbParams(ptr: Long, slotIdx: Int, roomSize: Float, damp: Float, width: Float, freeze: Boolean)
+    private external fun nativeSetTrackInsertEffect(ptr: Long, trackIdx: Int, slotIdx: Int, effectType: Int, dryWet: Float)
+    private external fun nativeSetTrackInsertMix(ptr: Long, trackIdx: Int, slotIdx: Int, dryLevel: Float, wetLevel: Float)
+    private external fun nativeSetTrackInsertBypass(ptr: Long, trackIdx: Int, slotIdx: Int, bypass: Boolean)
+    private external fun nativeSetTrackReverbParams(ptr: Long, trackIdx: Int, slotIdx: Int, roomSize: Float, damp: Float, width: Float, freeze: Boolean)
     private external fun nativeSetSamplerSample(ptr: Long, slot: Int, path: String): Boolean
     private external fun nativeStartRecording(ptr: Long)
     private external fun nativeStopRecording(ptr: Long, outSampleRate: IntArray): FloatArray?

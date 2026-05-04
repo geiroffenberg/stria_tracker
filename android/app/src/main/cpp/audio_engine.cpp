@@ -12,6 +12,60 @@ float byteToNorm(int v) {
     return static_cast<float>(std::clamp(v, 0, 255)) / 255.0f;
 }
 
+float fxValueToUnit(int value) {
+    return std::clamp(value, 0, 99) / 99.0f;
+}
+
+void syncReverbState(InsertEffect& fx) {
+    fx.reverb.setroomsize(fx.reverbRoomSize);
+    fx.reverb.setdamp(fx.reverbDamp);
+    fx.reverb.setwidth(fx.reverbWidth);
+    fx.reverb.setdry(0.0f);
+    fx.reverb.setwet(1.0f);
+    fx.reverb.setmode(fx.reverbFreeze ? 1.0f : 0.0f);
+}
+
+void applyInsertFxCommand(InsertEffect& fx, int function, int value) {
+    switch (function) {
+        case 1:
+            fx.bypass = (value > 0);
+            return;
+        case 6:
+            fx.dryLevel = fxValueToUnit(value);
+            fx.dryWet = fx.wetLevel;
+            return;
+        case 7:
+            fx.wetLevel = fxValueToUnit(value);
+            fx.dryWet = fx.wetLevel;
+            return;
+        default:
+            break;
+    }
+
+    if (fx.type != 0) return;
+
+    switch (function) {
+        case 2:
+            fx.reverbFreeze = (value > 0);
+            syncReverbState(fx);
+            break;
+        case 3:
+            fx.reverbRoomSize = fxValueToUnit(value);
+            syncReverbState(fx);
+            break;
+        case 4:
+            fx.reverbDamp = fxValueToUnit(value);
+            syncReverbState(fx);
+            break;
+        case 5:
+            fx.reverbWidth = fxValueToUnit(value);
+            syncReverbState(fx);
+            break;
+        default:
+            break;
+    }
+}
+
 // Map normalized UI values to musically useful envelope times.
 float normToAttackSec(float n) {
     const float x = std::clamp(n, 0.0f, 1.0f);
@@ -624,6 +678,134 @@ void AudioEngine::queueMixerCommands(const std::vector<int>& data) {
     }
 }
 
+void AudioEngine::queueInsertFxCommands(const std::vector<int>& data) {
+    // data format: groups of 4 ints — [trackIdx, slotIdx, function, value].
+    std::lock_guard<std::mutex> lock(mVoiceMutex);
+    for (size_t i = 0; i + 3 < data.size(); i += 4) {
+        const int trackIdx = std::clamp(data[i], 0, kMaxVoices - 1);
+        const int slotIdx = std::clamp(data[i + 1], 0, kMaxInsertSlots - 1);
+        const int function = std::clamp(data[i + 2], 1, 9);
+        const int value = std::clamp(data[i + 3], 0, 99);
+        mPendingInsertFxCommands.push_back({0, trackIdx, slotIdx, function, value});
+    }
+}
+
+void AudioEngine::setMasterInsertEffect(int slotIdx, int effectType, float initialWetLevel) {
+    if (slotIdx < 0 || slotIdx >= kMaxInsertSlots) return;
+    std::lock_guard<std::mutex> lock(mVoiceMutex);
+    mMasterInserts[slotIdx].type = effectType;
+    mMasterInserts[slotIdx].dryWet = std::clamp(initialWetLevel, 0.0f, 1.0f);
+    mMasterInserts[slotIdx].dryLevel = 1.0f;
+    mMasterInserts[slotIdx].wetLevel = std::clamp(initialWetLevel, 0.0f, 1.0f);
+    mMasterInserts[slotIdx].reverb.setdry(0.0f);
+    mMasterInserts[slotIdx].reverb.setwet(1.0f);
+    mMasterInserts[slotIdx].reverb.setmode(mMasterInserts[slotIdx].reverbFreeze ? 1.0f : 0.0f);
+}
+
+void AudioEngine::setMasterInsertMix(int slotIdx, float dryLevel, float wetLevel) {
+    if (slotIdx < 0 || slotIdx >= kMaxInsertSlots) return;
+    std::lock_guard<std::mutex> lock(mVoiceMutex);
+    mMasterInserts[slotIdx].dryLevel = std::clamp(dryLevel, 0.0f, 1.0f);
+    mMasterInserts[slotIdx].wetLevel = std::clamp(wetLevel, 0.0f, 1.0f);
+    mMasterInserts[slotIdx].dryWet = mMasterInserts[slotIdx].wetLevel;
+}
+
+void AudioEngine::setMasterInsertBypass(int slotIdx, bool bypass) {
+    if (slotIdx < 0 || slotIdx >= kMaxInsertSlots) return;
+    std::lock_guard<std::mutex> lock(mVoiceMutex);
+    mMasterInserts[slotIdx].bypass = bypass;
+}
+
+void AudioEngine::setMasterReverbParams(int slotIdx, float roomSize, float damp, float width, bool freeze) {
+    if (slotIdx < 0 || slotIdx >= kMaxInsertSlots) return;
+    if (mMasterInserts[slotIdx].type != 0) return; // type 0 = reverb
+    std::lock_guard<std::mutex> lock(mVoiceMutex);
+    mMasterInserts[slotIdx].reverbRoomSize = std::clamp(roomSize, 0.0f, 1.0f);
+    mMasterInserts[slotIdx].reverbDamp = std::clamp(damp, 0.0f, 1.0f);
+    mMasterInserts[slotIdx].reverbWidth = std::clamp(width, 0.0f, 1.0f);
+    mMasterInserts[slotIdx].reverbFreeze = freeze;
+    // Update freeverb instance
+    mMasterInserts[slotIdx].reverb.setroomsize(roomSize);
+    mMasterInserts[slotIdx].reverb.setdamp(damp);
+    mMasterInserts[slotIdx].reverb.setwidth(width);
+    mMasterInserts[slotIdx].reverb.setdry(0.0f);
+    mMasterInserts[slotIdx].reverb.setwet(1.0f);
+    mMasterInserts[slotIdx].reverb.setmode(freeze ? 1.0f : 0.0f);
+}
+
+void AudioEngine::setTrackInsertEffect(int trackIdx, int slotIdx, int effectType, float initialWetLevel) {
+    if (trackIdx < 0 || trackIdx >= kMaxVoices) return;
+    if (slotIdx < 0 || slotIdx >= kMaxInsertSlots) return;
+    std::lock_guard<std::mutex> lock(mVoiceMutex);
+    mTrackInserts[trackIdx][slotIdx].type = effectType;
+    mTrackInserts[trackIdx][slotIdx].dryWet = std::clamp(initialWetLevel, 0.0f, 1.0f);
+    mTrackInserts[trackIdx][slotIdx].dryLevel = 1.0f;
+    mTrackInserts[trackIdx][slotIdx].wetLevel = std::clamp(initialWetLevel, 0.0f, 1.0f);
+    mTrackInserts[trackIdx][slotIdx].reverb.setdry(0.0f);
+    mTrackInserts[trackIdx][slotIdx].reverb.setwet(1.0f);
+    mTrackInserts[trackIdx][slotIdx].reverb.setmode(mTrackInserts[trackIdx][slotIdx].reverbFreeze ? 1.0f : 0.0f);
+}
+
+void AudioEngine::setTrackInsertMix(int trackIdx, int slotIdx, float dryLevel, float wetLevel) {
+    if (trackIdx < 0 || trackIdx >= kMaxVoices) return;
+    if (slotIdx < 0 || slotIdx >= kMaxInsertSlots) return;
+    std::lock_guard<std::mutex> lock(mVoiceMutex);
+    mTrackInserts[trackIdx][slotIdx].dryLevel = std::clamp(dryLevel, 0.0f, 1.0f);
+    mTrackInserts[trackIdx][slotIdx].wetLevel = std::clamp(wetLevel, 0.0f, 1.0f);
+    mTrackInserts[trackIdx][slotIdx].dryWet = mTrackInserts[trackIdx][slotIdx].wetLevel;
+}
+
+void AudioEngine::setTrackInsertBypass(int trackIdx, int slotIdx, bool bypass) {
+    if (trackIdx < 0 || trackIdx >= kMaxVoices) return;
+    if (slotIdx < 0 || slotIdx >= kMaxInsertSlots) return;
+    std::lock_guard<std::mutex> lock(mVoiceMutex);
+    mTrackInserts[trackIdx][slotIdx].bypass = bypass;
+}
+
+void AudioEngine::setTrackReverbParams(int trackIdx, int slotIdx, float roomSize, float damp, float width, bool freeze) {
+    if (trackIdx < 0 || trackIdx >= kMaxVoices) return;
+    if (slotIdx < 0 || slotIdx >= kMaxInsertSlots) return;
+    if (mTrackInserts[trackIdx][slotIdx].type != 0) return; // type 0 = reverb
+    std::lock_guard<std::mutex> lock(mVoiceMutex);
+    mTrackInserts[trackIdx][slotIdx].reverbRoomSize = std::clamp(roomSize, 0.0f, 1.0f);
+    mTrackInserts[trackIdx][slotIdx].reverbDamp = std::clamp(damp, 0.0f, 1.0f);
+    mTrackInserts[trackIdx][slotIdx].reverbWidth = std::clamp(width, 0.0f, 1.0f);
+    mTrackInserts[trackIdx][slotIdx].reverbFreeze = freeze;
+    // Update freeverb instance
+    mTrackInserts[trackIdx][slotIdx].reverb.setroomsize(roomSize);
+    mTrackInserts[trackIdx][slotIdx].reverb.setdamp(damp);
+    mTrackInserts[trackIdx][slotIdx].reverb.setwidth(width);
+    mTrackInserts[trackIdx][slotIdx].reverb.setdry(0.0f);
+    mTrackInserts[trackIdx][slotIdx].reverb.setwet(1.0f);
+    mTrackInserts[trackIdx][slotIdx].reverb.setmode(freeze ? 1.0f : 0.0f);
+}
+
+void AudioEngine::processEffects(float* outL, float* outR, int numFrames, InsertEffect* effects) {
+    if (!effects) return;
+
+    if (static_cast<int>(mFxWetL.size()) < numFrames) {
+        mFxWetL.resize(numFrames);
+        mFxWetR.resize(numFrames);
+    }
+    
+    // Process each insert effect slot
+    for (int slot = 0; slot < kMaxInsertSlots; ++slot) {
+        InsertEffect& fx = effects[slot];
+        if (fx.type == -1 || fx.bypass) continue;
+        
+        if (fx.type == 0) {
+            // Reverb effect
+            fx.reverb.process(outL, outR, mFxWetL.data(), mFxWetR.data(), numFrames);
+            
+            // Mix host dry/wet levels so every insert can share the same template.
+            for (int i = 0; i < numFrames; ++i) {
+                outL[i] = (outL[i] * fx.dryLevel) + (mFxWetL[i] * fx.wetLevel);
+                outR[i] = (outR[i] * fx.dryLevel) + (mFxWetR[i] * fx.wetLevel);
+            }
+        }
+    }
+}
+
 oboe::DataCallbackResult AudioEngine::onAudioReady(
         oboe::AudioStream* stream,
         void*              audioData,
@@ -868,7 +1050,30 @@ oboe::DataCallbackResult AudioEngine::onAudioReady(
         mPendingMixerCommands.clear();
     }
 
-    for (auto& v : mVoices) {
+    // Process own-channel insert FX commands (F11-F69) at row start.
+    if (!mPendingInsertFxCommands.empty()) {
+        for (auto& ev : mPendingInsertFxCommands) {
+            if (ev.trackIdx < 0 || ev.trackIdx >= kMaxVoices) continue;
+            if (ev.slotIdx < 0 || ev.slotIdx >= kMaxInsertSlots) continue;
+            InsertEffect& fx = mTrackInserts[ev.trackIdx][ev.slotIdx];
+            if (fx.type == -1) continue;
+            applyInsertFxCommand(fx, ev.function, ev.value);
+        }
+        mPendingInsertFxCommands.clear();
+    }
+
+    // Prepare per-track buses for insert processing.
+    for (int track = 0; track < kMaxVoices; ++track) {
+        if (static_cast<int>(mTrackBusL[track].size()) < numFrames) {
+            mTrackBusL[track].resize(numFrames);
+            mTrackBusR[track].resize(numFrames);
+        }
+        std::fill_n(mTrackBusL[track].data(), numFrames, 0.0f);
+        std::fill_n(mTrackBusR[track].data(), numFrames, 0.0f);
+    }
+
+    for (int trackIdx = 0; trackIdx < static_cast<int>(mVoices.size()); ++trackIdx) {
+        auto& v = mVoices[trackIdx];
         if (v.samplerMode) {
             if (!v.sampleActive || v.sampleSlot < 0 ||
                 v.sampleSlot >= static_cast<int>(mSamplerSlots.size())) {
@@ -949,8 +1154,8 @@ oboe::DataCallbackResult AudioEngine::onAudioReady(
                 const float leftGain  = std::cos(angle);
                 const float rightGain = std::sin(angle);
 
-                out[i * 2]     += dry * leftGain;
-                out[i * 2 + 1] += dry * rightGain;
+                mTrackBusL[trackIdx][i] += dry * leftGain;
+                mTrackBusR[trackIdx][i] += dry * rightGain;
 
                 v.samplePos += v.samplePingDir ? -ratio : ratio;
                 v.sampleElapsedFrames += 1.0;
@@ -1151,10 +1356,24 @@ oboe::DataCallbackResult AudioEngine::onAudioReady(
             const float leftGain = std::cos(angle);
             const float rightGain = std::sin(angle);
 
-            out[i * 2]     += sample * leftGain;
-            out[i * 2 + 1] += sample * rightGain;
+            mTrackBusL[trackIdx][i] += sample * leftGain;
+            mTrackBusR[trackIdx][i] += sample * rightGain;
             v.phase += phaseInc;
             if (v.phase >= twoPi) v.phase -= twoPi;
+        }
+    }
+
+    // Apply track insert effects, then sum all track buses into master output.
+    for (int track = 0; track < kMaxVoices; ++track) {
+        processEffects(
+            mTrackBusL[track].data(),
+            mTrackBusR[track].data(),
+            numFrames,
+            mTrackInserts[track]
+        );
+        for (int i = 0; i < numFrames; ++i) {
+            out[i * 2]     += mTrackBusL[track][i];
+            out[i * 2 + 1] += mTrackBusR[track][i];
         }
     }
 
@@ -1170,6 +1389,25 @@ oboe::DataCallbackResult AudioEngine::onAudioReady(
         for (int i = 0; i < numFrames * 2; ++i) {
             out[i] *= masterVolume;
         }
+    }
+
+    // ── Apply master insert effects ─────────────────────────────────────────────
+    // Process reverb and other effects on the master bus.
+    if (static_cast<int>(mMasterBusL.size()) < numFrames) {
+        mMasterBusL.resize(numFrames);
+        mMasterBusR.resize(numFrames);
+    }
+
+    for (int i = 0; i < numFrames; ++i) {
+        mMasterBusL[i] = out[i * 2];
+        mMasterBusR[i] = out[i * 2 + 1];
+    }
+
+    processEffects(mMasterBusL.data(), mMasterBusR.data(), numFrames, mMasterInserts);
+
+    for (int i = 0; i < numFrames; ++i) {
+        out[i * 2] = mMasterBusL[i];
+        out[i * 2 + 1] = mMasterBusR[i];
     }
 
     // ── Record output if enabled ──────────────────────────────────────────────

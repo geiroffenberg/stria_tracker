@@ -325,12 +325,55 @@ const int kFxVIB = 8;
 const int kFxVOL = 9;
 const int kFxSL0 = 22;
 const int kFxSL9 = 31;
-const int kFxARC = 45;
-const int kFxSLC = 46;
+const int kFxARC = 178;
+const int kFxSLC = 179;
+const int kFxInsertStart = 180;
+const int kFxInsertEnd = 233;
+
+String fxInsertFunctionName(int function) {
+  switch (function) {
+    case 1:
+      return 'bypass';
+    case 2:
+      return 'mode/toggle';
+    case 3:
+      return 'main param A';
+    case 4:
+      return 'main param B';
+    case 5:
+      return 'main param C';
+    case 6:
+      return 'dry';
+    case 7:
+      return 'wet';
+    case 8:
+      return 'extra param D';
+    case 9:
+      return 'extra param E';
+    default:
+      return 'unknown';
+  }
+}
+
+bool isInsertFxCommand(int? cmd) =>
+    cmd != null && cmd >= kFxInsertStart && cmd <= kFxInsertEnd;
+
+int fxInsertCommand(int slotNumber, int function) {
+  final safeSlot = slotNumber.clamp(1, 6);
+  final safeFunction = function.clamp(1, 9);
+  return kFxInsertStart + ((safeSlot - 1) * 9) + (safeFunction - 1);
+}
+
+int fxInsertSlotFromCommand(int cmd) => ((cmd - kFxInsertStart) ~/ 9) + 1;
+
+int fxInsertFunctionFromCommand(int cmd) => ((cmd - kFxInsertStart) % 9) + 1;
 
 /// Returns the 3-letter FX command name, or '---' if null/unknown.
 String fxCommandName(int? cmd) {
   if (cmd == null) return '---';
+  if (isInsertFxCommand(cmd)) {
+    return 'F${fxInsertSlotFromCommand(cmd)}${fxInsertFunctionFromCommand(cmd)}';
+  }
   if (cmd < kFxCommandNames.length) return kFxCommandNames[cmd];
   return cmd.toRadixString(16).toUpperCase().padLeft(3, '0');
 }
@@ -338,6 +381,11 @@ String fxCommandName(int? cmd) {
 /// Returns the description for an FX command.
 String fxCommandDescription(int? cmd) {
   if (cmd == null) return '';
+  if (isInsertFxCommand(cmd)) {
+    final slot = fxInsertSlotFromCommand(cmd);
+    final function = fxInsertFunctionFromCommand(cmd);
+    return 'Own-channel insert slot $slot — F$slot$function = ${fxInsertFunctionName(function)}';
+  }
   if (cmd >= 0 && cmd < kFxCommandDescriptions.length) {
     return kFxCommandDescriptions[cmd];
   }

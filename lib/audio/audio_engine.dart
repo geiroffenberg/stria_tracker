@@ -123,6 +123,101 @@ class AudioEngine {
     await _channel.invokeMethod('queueMixerCommands', {'data': data});
   }
 
+  /// Queue own-channel insert FX commands (F11-F69).
+  /// [data] is packed in groups of 4: [trackIdx, slotIdx, function, value].
+  /// slotIdx is 0-5, function is 1-9, value is 0-99.
+  Future<void> queueInsertFxCommands(List<int> data) async {
+    if (!_initialised) return;
+    await _channel.invokeMethod('queueInsertFxCommands', {'data': data});
+  }
+
+  /// Configure a master bus insert effect.
+  /// [slotIdx] is 0-5 (6 insert slots).
+  /// [effectType] is -1=empty, 0=reverb.
+  /// [dryWet] is 0.0-1.0 (0=all dry, 1.0=all wet).
+  Future<void> setMasterInsertEffect(int slotIdx, int effectType, double dryWet) async {
+    if (!_initialised) return;
+    await _channel.invokeMethod('setMasterInsertEffect', {
+      'slotIdx': slotIdx,
+      'effectType': effectType,
+      'dryWet': dryWet,
+    });
+  }
+
+  Future<void> setMasterInsertMix(int slotIdx, double dryLevel, double wetLevel) async {
+    if (!_initialised) return;
+    await _channel.invokeMethod('setMasterInsertMix', {
+      'slotIdx': slotIdx,
+      'dryLevel': dryLevel,
+      'wetLevel': wetLevel,
+    });
+  }
+
+  Future<void> setMasterInsertBypass(int slotIdx, bool bypass) async {
+    if (!_initialised) return;
+    await _channel.invokeMethod('setMasterInsertBypass', {
+      'slotIdx': slotIdx,
+      'bypass': bypass,
+    });
+  }
+
+  /// Configure reverb parameters on a master insert effect.
+  /// [roomSize], [damp], [width] are 0.0-1.0.
+  Future<void> setMasterReverbParams(int slotIdx, double roomSize, double damp, double width, bool freeze) async {
+    if (!_initialised) return;
+    await _channel.invokeMethod('setMasterReverbParams', {
+      'slotIdx': slotIdx,
+      'roomSize': roomSize,
+      'damp': damp,
+      'width': width,
+      'freeze': freeze,
+    });
+  }
+
+  /// Configure a track insert effect.
+  /// [trackIdx] is 0-7 (track index), [slotIdx] is 0-5.
+  Future<void> setTrackInsertEffect(int trackIdx, int slotIdx, int effectType, double dryWet) async {
+    if (!_initialised) return;
+    await _channel.invokeMethod('setTrackInsertEffect', {
+      'trackIdx': trackIdx,
+      'slotIdx': slotIdx,
+      'effectType': effectType,
+      'dryWet': dryWet,
+    });
+  }
+
+  Future<void> setTrackInsertMix(int trackIdx, int slotIdx, double dryLevel, double wetLevel) async {
+    if (!_initialised) return;
+    await _channel.invokeMethod('setTrackInsertMix', {
+      'trackIdx': trackIdx,
+      'slotIdx': slotIdx,
+      'dryLevel': dryLevel,
+      'wetLevel': wetLevel,
+    });
+  }
+
+  Future<void> setTrackInsertBypass(int trackIdx, int slotIdx, bool bypass) async {
+    if (!_initialised) return;
+    await _channel.invokeMethod('setTrackInsertBypass', {
+      'trackIdx': trackIdx,
+      'slotIdx': slotIdx,
+      'bypass': bypass,
+    });
+  }
+
+  /// Configure reverb parameters on a track insert effect.
+  Future<void> setTrackReverbParams(int trackIdx, int slotIdx, double roomSize, double damp, double width, bool freeze) async {
+    if (!_initialised) return;
+    await _channel.invokeMethod('setTrackReverbParams', {
+      'trackIdx': trackIdx,
+      'slotIdx': slotIdx,
+      'roomSize': roomSize,
+      'damp': damp,
+      'width': width,
+      'freeze': freeze,
+    });
+  }
+
   /// Assigns a sample file to a sampler instrument slot.
   /// [slot] is 0-based instrument index.
   /// Pass null or empty [path] to clear sample assignment.
@@ -143,7 +238,7 @@ class AudioEngine {
   }
 
   /// Stop recording and return the recorded samples.
-  /// Returns a map with 'samples' (List<double>) and 'sampleRate' (int).
+  /// Returns a map with 'samples' (list of doubles) and 'sampleRate' (int).
   Future<Map<String, dynamic>?> stopRecording() async {
     if (!_initialised) return null;
     final result = await _channel.invokeMethod<Map<dynamic, dynamic>>('stopRecording');

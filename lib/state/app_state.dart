@@ -109,6 +109,10 @@ class AppState extends ChangeNotifier {
     (i) => InstrumentModel.empty(i + 1),
   );
 
+  // Per-track insert slot occupancy, used by the FX command picker.
+  // Indexed as [trackIdx][slotIdx]. Grows on demand.
+  final List<List<bool>> _trackInsertOccupied = [];
+
   int _currentPatternIndex = 0;
   int _currentTrackIndex = 0;
   int _currentInstrumentIndex = 0;
@@ -165,6 +169,7 @@ class AppState extends ChangeNotifier {
   bool get isPreviewingCurrentSampler =>
       _previewSamplerSlot == _currentInstrumentIndex;
   String? get defaultSampleFolder => _defaultSampleFolder;
+  List<List<bool>> get trackInsertOccupied => _trackInsertOccupied;
   double get currentSamplerPreviewStartNorm {
     final slot = _previewSamplerSlot;
     if (slot < 0 || slot >= instruments.length) {
@@ -455,13 +460,17 @@ class AppState extends ChangeNotifier {
     }
   }
 
+  void setTrackInsertOccupied(int trackIdx, int slotIdx, bool occupied) {
+    while (_trackInsertOccupied.length <= trackIdx) {
+      _trackInsertOccupied.add(List<bool>.filled(6, false));
+    }
+    _trackInsertOccupied[trackIdx][slotIdx] = occupied;
+    notifyListeners();
+  }
+
   void setTrackMixerVolume(int trackIndex, double value) {
     if (trackIndex < 0 || trackIndex >= currentPattern.tracks.length) return;
     currentPattern.tracks[trackIndex].mixerVolume = value.clamp(0.0, 1.0);
-    // Queue mixer command: M{channel}4 (volume controller)
-    // Channel N (1-15) uses commands 34-43, where index 3 = volume (controller 4)
-    final baseCmd = 34 + (trackIndex * 10);
-    final volumeCmd = baseCmd + 3; // controller 4 = volume
     final volumeValue = (currentPattern.tracks[trackIndex].mixerVolume * 99).round().clamp(0, 99);
     AudioEngine.instance.queueMixerCommands([trackIndex + 1, 4, volumeValue, 0]);
     notifyListeners();
@@ -1462,6 +1471,8 @@ class AppState extends ChangeNotifier {
     // controller: 1-4 for implemented (pan/mute/solo/volume), 5-9 reserved
     // value: 0-99
     final List<int> mixerCommandQueue = [];
+    // Pending own-channel insert FX events: [trackIdx, slotIdx, function, value, ...]
+    final List<int> insertFxCommandQueue = [];
     // Pending RET events: flat list [sampleOffset, trackIdx, note, volume, ...]
     // passed directly to the C++ engine for sample-accurate firing.
     final List<int> retrigQueue = [];
@@ -1653,6 +1664,16 @@ class AppState extends ChangeNotifier {
                 }
               }
             }
+          }
+          if (isInsertFxCommand(fx.command)) {
+            final cmd = fx.command!;
+            final value = (fx.value ?? 0).clamp(0, 99);
+            insertFxCommandQueue.addAll([
+              t,
+              fxInsertSlotFromCommand(cmd) - 1,
+              fxInsertFunctionFromCommand(cmd),
+              value,
+            ]);
           }
         }
 
@@ -1875,6 +1896,9 @@ class AppState extends ChangeNotifier {
     }
     if (mixerCommandQueue.isNotEmpty) {
       AudioEngine.instance.queueMixerCommands(mixerCommandQueue);
+    }
+    if (insertFxCommandQueue.isNotEmpty) {
+      AudioEngine.instance.queueInsertFxCommands(insertFxCommandQueue);
     }
 
     if (pendingArp.isNotEmpty) {

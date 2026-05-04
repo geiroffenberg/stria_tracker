@@ -8,6 +8,7 @@
 #include <cmath>
 #include <cstdint>
 #include <string>
+#include "freeverb.h"
 
 static constexpr int kMaxVoices = 8; // one per track
 
@@ -132,6 +133,34 @@ struct MixerCommandEvent {
     int     value;        ///< 0-99 parameter value
 };
 
+/// A pending own-channel insert FX command.
+struct InsertFxCommandEvent {
+    int32_t sampleTarget; ///< fire when mSubRowSampleCounter >= this value (currently 0 = immediate)
+    int     trackIdx;     ///< owning pattern track / channel index
+    int     slotIdx;      ///< insert slot index (0-based)
+    int     function;     ///< function number (1-9)
+    int     value;        ///< 0-99 parameter value
+};
+
+/// Effect state for a single insert effect slot
+struct InsertEffect {
+    int type = -1; // -1=empty, 0=reverb, 1=delay, 2=eq, 3=distortion, etc.
+    bool bypass = false;
+    float inputGain = 1.0f;  // 0.0-2.0
+    float outputGain = 1.0f; // 0.0-2.0
+    float dryWet = 0.5f;     // 0.0-1.0
+    float dryLevel = 1.0f;   // 0.0-1.0
+    float wetLevel = 0.3f;   // 0.0-1.0
+    
+    // Reverb-specific parameters
+    float reverbRoomSize = 0.5f;  // 0.0-1.0
+    float reverbDamp = 0.5f;      // 0.0-1.0
+    float reverbWidth = 1.0f;     // 0.0-1.0
+    bool reverbFreeze = false;
+    
+    freeverb::revmodel reverb;
+};
+
 /**
  * AudioEngine — polyphonic sine synthesiser via Oboe.
  *
@@ -213,6 +242,32 @@ public:
     /// value: 0-99 parameter value
     void queueMixerCommands(const std::vector<int>& data);
 
+    /// Queue own-channel insert FX commands (F11-F69).
+    /// [data] is packed in groups of 4: [trackIdx, slotIdx, function, value].
+    void queueInsertFxCommands(const std::vector<int>& data);
+
+    /// Configure an insert effect on the master bus.
+    /// slotIdx: 0-5 (6 insert slots)
+    /// effectType: -1=empty, 0=reverb
+    /// initialWetLevel: default wet gain when the effect is first created.
+    void setMasterInsertEffect(int slotIdx, int effectType, float initialWetLevel);
+    void setMasterInsertMix(int slotIdx, float dryLevel, float wetLevel);
+    void setMasterInsertBypass(int slotIdx, bool bypass);
+
+    /// Configure reverb parameters on a master insert effect
+    /// slotIdx: 0-5, roomSize: 0.0-1.0, damp: 0.0-1.0, width: 0.0-1.0
+    void setMasterReverbParams(int slotIdx, float roomSize, float damp, float width, bool freeze);
+
+    /// Configure an insert effect on a track (1-8).
+    /// trackIdx: 0-7 (track index), slotIdx: 0-5
+    /// effectType: -1=empty, 0=reverb
+    void setTrackInsertEffect(int trackIdx, int slotIdx, int effectType, float initialWetLevel);
+    void setTrackInsertMix(int trackIdx, int slotIdx, float dryLevel, float wetLevel);
+    void setTrackInsertBypass(int trackIdx, int slotIdx, bool bypass);
+
+    /// Configure reverb parameters on a track insert effect
+    void setTrackReverbParams(int trackIdx, int slotIdx, float roomSize, float damp, float width, bool freeze);
+
     /// Assign a sample file to an instrument slot for sampler playback.
     /// Pass empty path to clear assignment.
     bool setSamplerSample(int slot, const std::string& path);
@@ -268,6 +323,7 @@ private:
     std::vector<KillEvent>   mPendingKills;
     std::vector<SliceCommandEvent> mPendingSliceCommands;
     std::vector<MixerCommandEvent>  mPendingMixerCommands;
+    std::vector<InsertFxCommandEvent> mPendingInsertFxCommands;
     
     // Mixer state (master channel: mute, volume)
     std::atomic<bool>   mMasterMute{false};  // true = muted, false = unmuted
@@ -283,6 +339,19 @@ private:
     int                              mRecordingWarmupFrames{0}; // frames to skip at stream open
     static constexpr int             kMaxRecordingFrames  = 44100 * 60; // 60 seconds at 44.1kHz
     static constexpr int             kWarmupFrames        = 4096;       // ~85ms at 48kHz
+
+    // Insert effects (master + per-track)
+    static constexpr int             kMaxInsertSlots = 6;
+    InsertEffect                     mMasterInserts[kMaxInsertSlots];
+    InsertEffect                     mTrackInserts[kMaxVoices][kMaxInsertSlots];
+    std::array<std::vector<float>, kMaxVoices> mTrackBusL;
+    std::array<std::vector<float>, kMaxVoices> mTrackBusR;
+    std::vector<float>               mMasterBusL;
+    std::vector<float>               mMasterBusR;
+    std::vector<float>               mFxWetL;
+    std::vector<float>               mFxWetR;
+
+    void processEffects(float* outL, float* outR, int numFrames, InsertEffect* effects);
 
     bool loadWavMono16OrFloat(const std::string& path, SampleData& outSample);
 

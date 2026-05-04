@@ -501,13 +501,6 @@ class _NumericActions extends StatelessWidget {
 
 class _FxCmdActions extends StatelessWidget {
   static const int _classicCount = 10;
-  static const int _classicCommands = 11; // 0-9 + ARC
-  // SLC is at index 46
-  static const int _slcCommand = 46;
-  // Mixer FX: Master (M01-M02) + 15 channels (M11-M19, M21-M29, ..., MF1-MF9)
-  // Command indices: 32-33 (master), 34-43 (ch1), 44-53 (ch2), ..., 174-183 (ch15)
-  static const int _masterStart = 32;
-  static const int _masterEnd = 183;
 
   final AppState state;
   final int row;
@@ -532,29 +525,32 @@ class _FxCmdActions extends StatelessWidget {
     }
   }
 
-  List<int> _indexRange(int start, int endInclusive) {
-    return List<int>.generate(endInclusive - start + 1, (i) => start + i);
+  List<int> _getInsertFxCommands() {
+    final trackIdx = state.currentTrackIndex;
+    final occupied = state.trackInsertOccupied;
+    if (trackIdx >= occupied.length) return [];
+    final slots = occupied[trackIdx];
+    final commands = <int>[];
+    for (int slot = 0; slot < slots.length; slot++) {
+      if (slots[slot]) {
+        final base = kFxInsertStart + slot * 9;
+        for (int fn = 0; fn < 9; fn++) {
+          commands.add(base + fn);
+        }
+      }
+    }
+    return commands;
   }
 
   /// Get assignable commands for instruments/effects that are actually configured.
   /// Returns command indices for configured instruments.
-  /// Format: 01-50 for instruments 1-50, 51-99 for effects 51-99.
   List<int> _getAssignableCommands() {
     final assigned = <int>[];
-    // Check instruments 01-50
     for (int i = 1; i <= 50; i++) {
       final instr = state.instruments[i - 1];
-      if (instr.type != InstrumentType.empty) {
-        // Instrument exists: add command index i (01-50 range)
-        assigned.add(i);
-      }
+      if (instr.type != InstrumentType.empty) assigned.add(i);
     }
-    // TODO: Check effects 51-99 when available
     return assigned;
-  }
-
-  bool _hasAssignedCommands() {
-    return _getAssignableCommands().isNotEmpty;
   }
 
   /// Get valid mixer FX commands: Master (M01-M02), Channels 1-15 (M11-M14, M21-M24, etc.)
@@ -613,9 +609,7 @@ class _FxCmdActions extends StatelessWidget {
                 borderRadius: BorderRadius.circular(4),
               ),
               child: Text(
-                kFxCommandNames.length > cmd
-                    ? kFxCommandNames[cmd]
-                    : '${cmd.toRadixString(16).toUpperCase().padLeft(2, '0')}',
+                fxCommandName(cmd),
                 style: kStyleBase.copyWith(
                   color: selected ? kColFxCmd : kColHeader,
                   fontSize: 12,
@@ -658,9 +652,7 @@ class _FxCmdActions extends StatelessWidget {
                 borderRadius: BorderRadius.circular(4),
               ),
               child: Text(
-                kFxCommandNames.length > cmd
-                    ? kFxCommandNames[cmd]
-                    : '${cmd.toRadixString(16).toUpperCase().padLeft(2, '0')}',
+                fxCommandName(cmd),
                 style: kStyleBase.copyWith(
                   color: selected ? kColFxCmd : kColHeader,
                   fontSize: 12,
@@ -771,8 +763,18 @@ class _FxCmdActions extends StatelessWidget {
           _commandStrip([
             ...List<int>.generate(_classicCount, (i) => i),
             kFxARC,
-            _slcCommand, // SLC - unified slice command
+            kFxSLC,
           ], current),
+          ...() {
+            final insertCmds = _getInsertFxCommands();
+            if (insertCmds.isEmpty) return <Widget>[];
+            return [
+              const SizedBox(height: 5),
+              _sectionLabel('Insert FX'),
+              const SizedBox(height: 3),
+              _commandStrip(insertCmds, current),
+            ];
+          }(),
           const SizedBox(height: 5),
           _sectionLabel('Mixer FX'),
           const SizedBox(height: 3),
