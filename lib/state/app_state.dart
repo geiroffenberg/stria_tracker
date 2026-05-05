@@ -90,10 +90,6 @@ class AppState extends ChangeNotifier {
 
   // Per-track segments from the last row trigger (for DEL replay).
   List<List<int>> _rowSegments = [];
-  // One-shot timers scheduled for FX events within the current line
-  // (DEL note-fires, KIL note-offs at xx% into the line). Cancelled on
-  // every row advance and on stop.
-  final List<Timer> _rowFxTimers = [];
 
   // Drift-corrected playhead clock anchor.
   DateTime? _playClockAnchor;
@@ -1250,7 +1246,6 @@ class AppState extends ChangeNotifier {
   void stop() {
     _playheadTimer?.cancel();
     _playheadTimer = null;
-    _cancelRowFxTimers();
     isPlaying = false;
     _queuedArrangementSlot = null;
     playheadRow = 0;
@@ -1351,13 +1346,6 @@ class AppState extends ChangeNotifier {
     _scheduleNextLine();
   }
 
-  void _cancelRowFxTimers() {
-    for (final t in _rowFxTimers) {
-      t.cancel();
-    }
-    _rowFxTimers.clear();
-  }
-
   void _clampSelectionToPattern() {
     if (playheadRow >= rowCount) {
       playheadRow = rowCount - 1;
@@ -1377,8 +1365,6 @@ class AppState extends ChangeNotifier {
   }
 
   void _advanceRow() {
-    // Cancel any pending mid-line FX from the previous line.
-    _cancelRowFxTimers();
     if (_playbackFollowsSong && song.patterns.isNotEmpty) {
       final curPat =
           song.patterns[_playheadArrangementSlot.clamp(
