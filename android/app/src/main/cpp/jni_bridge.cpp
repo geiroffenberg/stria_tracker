@@ -230,6 +230,12 @@ Java_com_example_tracker_AudioEnginePlugin_nativeSetTrackInsertBypass(
 }
 
 JNIEXPORT void JNICALL
+Java_com_example_tracker_AudioEnginePlugin_nativeSetVoicePreviewBypassTrackInserts(
+        JNIEnv*, jobject, jlong ptr, jint trackIdx, jboolean bypass) {
+    reinterpret_cast<AudioEngine*>(ptr)->setVoicePreviewBypassTrackInserts(trackIdx, bypass);
+}
+
+JNIEXPORT void JNICALL
 Java_com_example_tracker_AudioEnginePlugin_nativeSetTrackReverbParams(
         JNIEnv* env, jobject, jlong ptr, jint trackIdx, jint slotIdx, jfloat roomSize, jfloat damp, jfloat width, jboolean freeze) {
     reinterpret_cast<AudioEngine*>(ptr)->setTrackReverbParams(trackIdx, slotIdx, roomSize, damp, width, freeze);

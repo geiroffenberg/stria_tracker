@@ -274,6 +274,14 @@ class AudioEngine {
     });
   }
 
+  Future<void> setVoicePreviewBypassTrackInserts(int trackIdx, bool bypass) async {
+    if (!_initialised) return;
+    await _channel.invokeMethod('setVoicePreviewBypassTrackInserts', {
+      'trackIdx': trackIdx,
+      'bypass': bypass,
+    });
+  }
+
   /// Configure reverb parameters on a track insert effect.
   Future<void> setTrackReverbParams(int trackIdx, int slotIdx, double roomSize, double damp, double width, bool freeze) async {
     if (!_initialised) return;

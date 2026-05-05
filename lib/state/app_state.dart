@@ -95,6 +95,9 @@ class _ScheduledPlaybackRow {
 }
 
 class AppState extends ChangeNotifier {
+  static const int _audioVoiceCount = 8;
+  static const int _audioRowStride = 25;
+
   AppState() {
     _loadAppSettings();
   }
@@ -132,6 +135,8 @@ class AppState extends ChangeNotifier {
   // Per-track insert slot occupancy, used by the FX command picker.
   // Indexed as [trackIdx][slotIdx]. Grows on demand.
   final List<List<bool>> _trackInsertOccupied = [];
+  // Per-track insert effect names (e.g. DELAY, REVERB) for slot-specific UI labels/hints.
+  final List<List<String?>> _trackInsertEffectNames = [];
 
   // Pending insert reset requests from pattern F[S]0 commands.
   // Drained by mixer_screen listener to re-send current slider values to native.
@@ -141,6 +146,7 @@ class AppState extends ChangeNotifier {
   int _currentTrackIndex = 0;
   int _currentInstrumentIndex = 0;
   int _previewSamplerSlot = -1;
+  int _previewBypassVoice = -1;
   String? _defaultSampleFolder;
 
   CellPosition? selectedCell;
@@ -170,6 +176,8 @@ class AppState extends ChangeNotifier {
   List<double?> _carryVibDepthByTrack = const [];
   List<({List<int> cycle, int notesPerLine, int phase})?> _carryArpByTrack =
       const [];
+  // Per-track Pxx automation carries: map of param-index → raw 00-99 value.
+  List<Map<int, int>> _carryInstrumentParamsByTrack = const [];
   int _carryPatternIndex = -1;
 
   bool isPlaying = false;
@@ -194,6 +202,7 @@ class AppState extends ChangeNotifier {
       _previewSamplerSlot == _currentInstrumentIndex;
   String? get defaultSampleFolder => _defaultSampleFolder;
   List<List<bool>> get trackInsertOccupied => _trackInsertOccupied;
+  List<List<String?>> get trackInsertEffectNames => _trackInsertEffectNames;
 
   /// Resets queued by F[S]0 pattern commands. Mixer screen drains this list
   /// by re-sending its current slider values to native, then calls [clearInsertResets].
@@ -527,12 +536,82 @@ class AppState extends ChangeNotifier {
     }
   }
 
-  void setTrackInsertOccupied(int trackIdx, int slotIdx, bool occupied) {
+  bool _isMixerFxCommand(int? cmd) => cmd != null && cmd >= 32 && cmd <= 194;
+
+  void _appendMasterMixerSnapshot(List<int> queue) {
+    final muteValue = song.masterMute ? 1 : 0;
+    final volumeValue = (song.masterVolume * 99).round().clamp(0, 99);
+    queue.addAll([0, 1, muteValue, 0]);
+    queue.addAll([0, 2, volumeValue, 0]);
+  }
+
+  void _appendTrackMixerSnapshot(
+    List<int> queue,
+    PatternModel pattern,
+    int trackIndex,
+  ) {
+    if (trackIndex < 0 || trackIndex >= pattern.tracks.length) return;
+    final track = pattern.tracks[trackIndex];
+    final panValue = ((track.mixerPan + 1.0) * 49.5).round().clamp(0, 99);
+    final muteValue = track.mixerMute ? 1 : 0;
+    final soloValue = track.mixerSolo ? 1 : 0;
+    final volumeValue = (track.mixerVolume * 99).round().clamp(0, 99);
+    final channel = trackIndex + 1;
+    queue.addAll([channel, 1, panValue, 0]);
+    queue.addAll([channel, 2, muteValue, 0]);
+    queue.addAll([channel, 3, soloValue, 0]);
+    queue.addAll([channel, 4, volumeValue, 0]);
+  }
+
+  void _appendFullMixerSnapshot(List<int> queue, PatternModel pattern) {
+    _appendMasterMixerSnapshot(queue);
+    for (int i = 0; i < pattern.tracks.length; i++) {
+      _appendTrackMixerSnapshot(queue, pattern, i);
+    }
+  }
+
+  void _queueCurrentMixerSnapshotToEngine({int? trackIndex}) {
+    final queue = <int>[];
+    if (trackIndex == null) {
+      _appendFullMixerSnapshot(queue, currentPattern);
+    } else {
+      _appendTrackMixerSnapshot(queue, currentPattern, trackIndex);
+    }
+    if (queue.isNotEmpty) {
+      AudioEngine.instance.queueMixerCommands(queue);
+    }
+  }
+
+  void _ensureTrackInsertLists(int trackIdx) {
     while (_trackInsertOccupied.length <= trackIdx) {
       _trackInsertOccupied.add(List<bool>.filled(6, false));
     }
+    while (_trackInsertEffectNames.length <= trackIdx) {
+      _trackInsertEffectNames.add(List<String?>.filled(6, null));
+    }
+  }
+
+  void setTrackInsertOccupied(int trackIdx, int slotIdx, bool occupied) {
+    _ensureTrackInsertLists(trackIdx);
     _trackInsertOccupied[trackIdx][slotIdx] = occupied;
+    if (!occupied) {
+      _trackInsertEffectNames[trackIdx][slotIdx] = null;
+    }
     notifyListeners();
+  }
+
+  void setTrackInsertEffectName(int trackIdx, int slotIdx, String? effectName) {
+    _ensureTrackInsertLists(trackIdx);
+    _trackInsertEffectNames[trackIdx][slotIdx] = effectName;
+    _trackInsertOccupied[trackIdx][slotIdx] = effectName != null;
+    notifyListeners();
+  }
+
+  String? trackInsertEffectName(int trackIdx, int slotIdx) {
+    if (trackIdx < 0 || trackIdx >= _trackInsertEffectNames.length) return null;
+    final row = _trackInsertEffectNames[trackIdx];
+    if (slotIdx < 0 || slotIdx >= row.length) return null;
+    return row[slotIdx];
   }
 
   void setTrackMixerVolume(int trackIndex, double value) {
@@ -1170,6 +1249,9 @@ class AppState extends ChangeNotifier {
 
   int _norm01ToAudio255(double v) => (v.clamp(0.0, 1.0) * 255.0).round();
 
+  /// Converts a 00-99 UI value to a 0-255 audio byte.
+  int _ui99ToAudio255(int v) => ((v.clamp(0, 99) * 255) / 99).round();
+
   List<int> _synthParamsForInstrumentSlot(
     int slot, {
     int samplerSlice = 0,
@@ -1256,6 +1338,112 @@ class AppState extends ChangeNotifier {
     ];
   }
 
+  /// Apply any active Pxx carries for track [t] to [synthParams] (mutates it).
+  /// Returns the (possibly overridden) waveCmd for the track.
+  ///
+  /// synthParams layout (20 values, indices 0-19):
+  ///  0=detune, 1=cutoff, 2=res, 3=fMode, 4-8=filterADSR+amt,
+  ///  9=atk, 10=dec, 11=sus, 12=rel, 13=glide, 14=instVol,
+  ///  15=lfoRate/start, 16=lfoDepth/end, 17=lfoTgt, 18=drive/loop, 19=reverse
+  int _applyInstrumentParamCarry(
+      int t, int slot, List<int> synthParams, int waveCmd) {
+    if (t >= _carryInstrumentParamsByTrack.length) return waveCmd;
+    final carry = _carryInstrumentParamsByTrack[t];
+    if (carry.isEmpty) return waveCmd;
+    final isSampler = instruments[slot.clamp(0, instruments.length - 1)].type !=
+        InstrumentType.simpleSynth;
+    int overriddenWave = waveCmd;
+    carry.forEach((paramIdx, rawVal) {
+      if (isSampler) {
+        switch (paramIdx) {
+          case 1: synthParams[15] = _ui99ToAudio255(rawVal); // start
+          case 2: synthParams[16] = _ui99ToAudio255(rawVal); // end
+          case 3: synthParams[0]  = _ui99ToAudio255(rawVal); // pitch/detune
+          case 4: synthParams[14] = _ui99ToAudio255(rawVal); // volume
+          case 5: synthParams[9]  = _ui99ToAudio255(rawVal); // attack
+          case 6: synthParams[12] = _ui99ToAudio255(rawVal); // release
+          case 7: synthParams[18] = rawVal.clamp(0, 2);      // loop mode (direct)
+        }
+      } else {
+        switch (paramIdx) {
+          case 1:  synthParams[14] = _ui99ToAudio255(rawVal); // volume
+          case 2:  synthParams[9]  = _ui99ToAudio255(rawVal); // attack
+          case 3:  synthParams[10] = _ui99ToAudio255(rawVal); // decay
+          case 4:  synthParams[11] = _ui99ToAudio255(rawVal); // sustain
+          case 5:  synthParams[12] = _ui99ToAudio255(rawVal); // release
+          case 6:  synthParams[1]  = _ui99ToAudio255(rawVal); // cutoff
+          case 7:  synthParams[2]  = _ui99ToAudio255(rawVal); // resonance
+          case 8:  synthParams[18] = _ui99ToAudio255(rawVal); // drive
+          case 9:  synthParams[0]  = _ui99ToAudio255(rawVal); // detune
+          case 10: synthParams[13] = _ui99ToAudio255(rawVal); // glide
+          case 11: synthParams[15] = _ui99ToAudio255(rawVal); // lfoRate
+          case 12: synthParams[16] = _ui99ToAudio255(rawVal); // lfoDepth
+          case 13: overriddenWave  = rawVal.clamp(0, 5);      // waveform (direct)
+        }
+      }
+    });
+    return overriddenWave;
+  }
+
+  int _previewVoiceIndexForInstrumentSlot(int slot) {
+    return slot.clamp(0, _audioVoiceCount - 1);
+  }
+
+  List<int> _buildPreviewRowData({
+    required int voiceIdx,
+    required int note,
+    required int waveCmd,
+    required int instrumentTypeCmd,
+    required List<int> synthParams,
+  }) {
+    final rowData = List<int>.filled(_audioVoiceCount * _audioRowStride, 0);
+    for (int track = 0; track < _audioVoiceCount; track++) {
+      final base = track * _audioRowStride;
+      rowData[base] = -1; // hold/empty
+      rowData[base + 1] = -1; // keep volume
+      rowData[base + 2] = -1; // keep pan
+      rowData[base + 3] = 0;
+      rowData[base + 4] = 0;
+      for (int i = 0; i < synthParams.length; i++) {
+        rowData[base + 5 + i] = 0;
+      }
+    }
+
+    final targetBase = voiceIdx.clamp(0, _audioVoiceCount - 1) *
+        _audioRowStride;
+    rowData[targetBase] = note;
+    rowData[targetBase + 1] = 255;
+    rowData[targetBase + 2] = 128;
+    rowData[targetBase + 3] = waveCmd;
+    rowData[targetBase + 4] = instrumentTypeCmd;
+    for (int i = 0; i < synthParams.length; i++) {
+      rowData[targetBase + 5 + i] = synthParams[i];
+    }
+
+    return rowData;
+  }
+
+  Future<void> _primeAudioForPreview() async {
+    // Preview must not resume stale queued transport rows.
+    await AudioEngine.instance.clearQueuedPlaybackRows();
+    await AudioEngine.instance.setQueuedPlaybackLooping(false);
+    await AudioEngine.instance.resetPlayheadPhase();
+    await AudioEngine.instance.start();
+  }
+
+  Future<void> _setPreviewDryBypass(int voiceIdx, bool enabled) async {
+    final safeVoice = voiceIdx.clamp(0, _audioVoiceCount - 1);
+    await AudioEngine.instance.setVoicePreviewBypassTrackInserts(
+      safeVoice,
+      enabled,
+    );
+    if (enabled) {
+      _previewBypassVoice = safeVoice;
+    } else if (_previewBypassVoice == safeVoice) {
+      _previewBypassVoice = -1;
+    }
+  }
+
   void _resetInstrumentCarry() {
     _carryInstrumentByTrack = const [];
     _carryNoteByTrack = const [];
@@ -1263,6 +1451,7 @@ class AppState extends ChangeNotifier {
     _carryVibSpeedByTrack = const [];
     _carryVibDepthByTrack = const [];
     _carryArpByTrack = const [];
+    _carryInstrumentParamsByTrack = const [];
     _carryPatternIndex = -1;
   }
 
@@ -1317,6 +1506,15 @@ class AppState extends ChangeNotifier {
     _songRowMap = [];
     _songFlatRowIndex = 0;
     _resetInstrumentCarry();
+    // Queue all occupied inserts for reset so mixer_screen restores slider values.
+    _pendingInsertResets.clear();
+    for (int t = 0; t < _trackInsertOccupied.length; t++) {
+      for (int s = 0; s < _trackInsertOccupied[t].length; s++) {
+        if (_trackInsertOccupied[t][s]) _pendingInsertResets.add((t, s));
+      }
+    }
+    // Restore mixer snapshot (UI state is source of truth) before stopping.
+    _queueCurrentMixerSnapshotToEngine();
     AudioEngine.instance.stop();
     notifyListeners();
   }
@@ -1674,6 +1872,8 @@ class AppState extends ChangeNotifier {
             pattern.tracks.length,
             null,
           );
+      _carryInstrumentParamsByTrack =
+          List<Map<int, int>>.generate(pattern.tracks.length, (_) => {});
     }
 
     _rowSegments = [];
@@ -1835,60 +2035,58 @@ class AppState extends ChangeNotifier {
             samplerPlayThrough =
                 (fx.value ?? 0) == 0; // 00=play through, 01=stop at next slice
           }
-          // Mixer FX: queue mixer control commands (M01-M99).
-          if (fx.command != null && fx.command! >= 32 && fx.command! <= 183) {
+          // Mixer FX commands. UI state remains the snapshot source of truth.
+          final isMixerCommand = _isMixerFxCommand(fx.command);
+          if (isMixerCommand) {
             final cmd = fx.command!;
             final value = (fx.value ?? 0).clamp(0, 99);
-            
-            if (cmd == 32) {
+
+            if (cmd == 194) {
+              // M00: reset full mixer to current UI snapshot.
+              _appendFullMixerSnapshot(mixerCommandQueue, pattern);
+            } else if (cmd == 32) {
               // M01: master mute
               mixerCommandQueue.addAll([0, 1, value, 0]);
-              // Also update UI state so mixer button shows correct state
-              song.masterMute = (value > 0);
             } else if (cmd == 33) {
               // M02: master volume
               mixerCommandQueue.addAll([0, 2, value, 0]);
-              // Also update UI state so mixer slider shows correct state
-              song.masterVolume = value / 99.0;
             } else if (cmd >= 34) {
-              // Channels 1-15: each occupies 10 indices
+              // Channels 1-16: each occupies 10 indices.
               final offset = cmd - 34;
               final channel = (offset ~/ 10) + 1;
               final slot = offset % 10;
               final trackIdx = channel - 1;
-              
-              // Slot 0-3: controller 1-4 (pan, mute, solo, volume)
-              // Slot 4-9: reserved for future controllers
-              if (slot <= 3) {
+
+              // Slot 9 is treated as Mx0: reset this channel to snapshot.
+              if (slot == 9) {
+                _appendTrackMixerSnapshot(mixerCommandQueue, pattern, trackIdx);
+              } else if (slot <= 3) {
+                // Slot 0-3: controller 1-4 (pan, mute, solo, volume)
                 final controller = slot + 1;
                 mixerCommandQueue.addAll([channel, controller, value, 0]);
-                
-                // Update UI state for the track
-                if (trackIdx >= 0 && trackIdx < pattern.tracks.length) {
-                  final track = pattern.tracks[trackIdx];
-                  if (controller == 1) {
-                    // Pan: 0-99 → -1.0 to 1.0
-                    track.mixerPan = (value / 49.5) - 1.0;
-                  } else if (controller == 2) {
-                    // Mute: value > 0 = muted
-                    track.mixerMute = (value > 0);
-                  } else if (controller == 3) {
-                    // Solo: value > 0 = soloed
-                    track.mixerSolo = (value > 0);
-                  } else if (controller == 4) {
-                    // Volume: 0-99 → 0.0-1.0
-                    track.mixerVolume = value / 99.0;
-                  }
-                }
               }
             }
           }
-          if (isInsertFxCommand(fx.command)) {
+          if (isInsertFxCommand(fx.command) && !isMixerCommand) {
             final cmd = fx.command!;
             final value = (fx.value ?? 0).clamp(0, 99);
             final fn = fxInsertFunctionFromCommand(cmd);
             final slotIdx = fxInsertSlotFromCommand(cmd) - 1;
             insertFxCommandQueue.addAll([t, slotIdx, fn, value]);
+          }
+          // Pxx: instrument parameter automation.
+          if (isPParamCommand(fx.command) && fx.value != null) {
+            final idx = pParamIndex(fx.command!);
+            final val = fx.value!.clamp(0, 99);
+            while (_carryInstrumentParamsByTrack.length <= t) {
+              _carryInstrumentParamsByTrack.add({});
+            }
+            if (idx == 0) {
+              // P00: reset — clear all overrides for this track.
+              _carryInstrumentParamsByTrack[t].clear();
+            } else {
+              _carryInstrumentParamsByTrack[t][idx] = val;
+            }
           }
         }
 
@@ -1920,6 +2118,9 @@ class AppState extends ChangeNotifier {
 
         if (killPct == 0) immediateKill = true;
       }
+
+      // Pxx carry: patch synthParams (and waveCmd) with any active overrides.
+      waveCmd = _applyInstrumentParamCarry(t, currentSlot, synthParams, waveCmd);
 
       final isMixerMuted = _isTrackMutedByMixer(
         pattern,
@@ -2599,6 +2800,10 @@ class AppState extends ChangeNotifier {
     double? endNorm,
   }) async {
     try {
+      if (isPlaying) {
+        return 'Stop playback before sampler preview';
+      }
+
       final slot = currentInstrumentIndex.clamp(0, instruments.length - 1);
       final ins = instruments[slot];
       if (ins.type != InstrumentType.sampler) {
@@ -2626,16 +2831,20 @@ class AppState extends ChangeNotifier {
         samplerEndNorm: clampedEnd,
       );
 
-      final noteOn = <int>[
-        60,
-        255,
-        128,
-        waveCmd,
-        instrumentTypeCmd,
-        ...synthParams,
-      ];
+      final previewVoice = _previewVoiceIndexForInstrumentSlot(slot);
+      if (_previewBypassVoice >= 0 && _previewBypassVoice != previewVoice) {
+        await _setPreviewDryBypass(_previewBypassVoice, false);
+      }
+      final noteOn = _buildPreviewRowData(
+        voiceIdx: previewVoice,
+        note: 60,
+        waveCmd: waveCmd,
+        instrumentTypeCmd: instrumentTypeCmd,
+        synthParams: synthParams,
+      );
 
-      await AudioEngine.instance.start();
+      await _primeAudioForPreview();
+      await _setPreviewDryBypass(previewVoice, true);
       await AudioEngine.instance.setRowData(noteOn);
       _previewSamplerSlot = slot;
       _previewStartedAt = DateTime.now();
@@ -2677,24 +2886,27 @@ class AppState extends ChangeNotifier {
       final instrumentTypeCmd = _instrumentTypeCodeForSlot(slot);
       final synthParams = _synthParamsForInstrumentSlot(slot);
 
-      final noteOff = <int>[
-        -2,
-        -1,
-        -1,
-        waveCmd,
-        instrumentTypeCmd,
-        ...synthParams,
-      ];
-      final noteOn = <int>[
-        midiNote.clamp(0, 127),
-        255,
-        128,
-        waveCmd,
-        instrumentTypeCmd,
-        ...synthParams,
-      ];
+      final previewVoice = _previewVoiceIndexForInstrumentSlot(slot);
+      if (_previewBypassVoice >= 0 && _previewBypassVoice != previewVoice) {
+        await _setPreviewDryBypass(_previewBypassVoice, false);
+      }
+      final noteOff = _buildPreviewRowData(
+        voiceIdx: previewVoice,
+        note: -2,
+        waveCmd: waveCmd,
+        instrumentTypeCmd: instrumentTypeCmd,
+        synthParams: synthParams,
+      );
+      final noteOn = _buildPreviewRowData(
+        voiceIdx: previewVoice,
+        note: midiNote.clamp(0, 127),
+        waveCmd: waveCmd,
+        instrumentTypeCmd: instrumentTypeCmd,
+        synthParams: synthParams,
+      );
 
-      await AudioEngine.instance.start();
+      await _primeAudioForPreview();
+      await _setPreviewDryBypass(previewVoice, true);
       await AudioEngine.instance.setRowData(noteOff);
       await AudioEngine.instance.setRowData(noteOn);
 
@@ -2713,10 +2925,13 @@ class AppState extends ChangeNotifier {
             await AudioEngine.instance.setRowData(noteOff);
           }
           if (noteOffSent) {
-            final isStillPlaying = await AudioEngine.instance.isVoicePlaying(slot);
+            final isStillPlaying = await AudioEngine.instance.isVoicePlaying(
+              previewVoice,
+            );
             if (!isStillPlaying) {
               _synthPreviewStopTimer?.cancel();
               _synthPreviewStopTimer = null;
+              await _setPreviewDryBypass(previewVoice, false);
             }
           }
         },
@@ -2745,17 +2960,18 @@ class AppState extends ChangeNotifier {
     final waveCmd = _waveCodeForInstrumentSlot(slot);
     final instrumentTypeCmd = _instrumentTypeCodeForSlot(slot);
     final synthParams = _synthParamsForInstrumentSlot(slot);
-    final noteOff = <int>[
-      -2,
-      -1,
-      -1,
-      waveCmd,
-      instrumentTypeCmd,
-      ...synthParams,
-    ];
+    final previewVoice = _previewVoiceIndexForInstrumentSlot(slot);
+    final noteOff = _buildPreviewRowData(
+      voiceIdx: previewVoice,
+      note: -2,
+      waveCmd: waveCmd,
+      instrumentTypeCmd: instrumentTypeCmd,
+      synthParams: synthParams,
+    );
     await AudioEngine.instance.setRowData(noteOff);
     // Hard-stop any lingering release/reverb tails from preview.
-    await AudioEngine.instance.killVoices(List<int>.filled(8, 1));
+    await AudioEngine.instance.killVoices(List<int>.filled(_audioVoiceCount, 1));
+    await _setPreviewDryBypass(previewVoice, false);
     // Do NOT stop the output stream here — stopping it causes an Android
     // hardware route change that produces a transient burst in the next
     // mic capture. The output stream stays open but silent.
@@ -3037,6 +3253,9 @@ class AppState extends ChangeNotifier {
     _playheadTimer?.cancel();
     _previewAutoStopTimer?.cancel();
     _synthPreviewStopTimer?.cancel();
+    if (_previewBypassVoice >= 0) {
+      unawaited(_setPreviewDryBypass(_previewBypassVoice, false));
+    }
     super.dispose();
   }
 }

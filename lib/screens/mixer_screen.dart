@@ -342,6 +342,8 @@ class _MixerScreenState extends State<MixerScreen> {
       _boundAppState?.removeListener(_handleInsertResets);
       _boundAppState = newState;
       _boundAppState!.addListener(_handleInsertResets);
+      // Drain any resets queued while mixer screen was not mounted.
+      _handleInsertResets();
     }
   }
 
@@ -867,7 +869,7 @@ class _MixerScreenState extends State<MixerScreen> {
                     _trackEqStates[i][slot] = const _EqUiState();
                     _trackCompressorStates[i][slot] = const _CompressorUiState();
                   });
-                  state.setTrackInsertOccupied(i, slot, false);
+                  state.setTrackInsertEffectName(i, slot, null);
                   AudioEngine.instance.setTrackInsertEffect(i, slot, -1, 0.0);
                 },
               ),
@@ -925,7 +927,7 @@ class _MixerScreenState extends State<MixerScreen> {
 
     if (picked != null) {
       setState(() => _inserts[trackIdx][slotIdx] = picked);
-      state.setTrackInsertOccupied(trackIdx, slotIdx, true);
+      state.setTrackInsertEffectName(trackIdx, slotIdx, picked);
 
       if (picked == 'REVERB') {
         final rs = _trackReverbStates[trackIdx][slotIdx];

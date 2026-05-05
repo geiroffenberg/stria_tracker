@@ -199,7 +199,7 @@ class SimpleSynthParams {
         drive: (j['drive'] as num?)?.toDouble() ?? 0.0,
       );
 
-  /// Create a deep copy of this synth configuration.
+  /// Deep copy.
   SimpleSynthParams copy() => SimpleSynthParams(
     wave: wave,
     detune: detune,
@@ -222,6 +222,51 @@ class SimpleSynthParams {
     lfoTarget: lfoTarget,
     drive: drive,
   );
+
+  /// Highest Pxx param index supported for synth instruments.
+  static const int maxParamIndex = 13;
+
+  /// Display name for synth Pxx param slot [idx] (0=reset, 1–13=params).
+  static String paramName(int idx) {
+    switch (idx) {
+      case 0:  return 'Reset';
+      case 1:  return 'Volume';
+      case 2:  return 'Attack';
+      case 3:  return 'Decay';
+      case 4:  return 'Sustain';
+      case 5:  return 'Release';
+      case 6:  return 'Cutoff';
+      case 7:  return 'Resonance';
+      case 8:  return 'Drive';
+      case 9:  return 'Detune';
+      case 10: return 'Glide';
+      case 11: return 'LFO Rate';
+      case 12: return 'LFO Depth';
+      case 13: return 'Waveform';
+      default: return 'P${idx.toString().padLeft(2, '0')}';
+    }
+  }
+
+  /// One-line description for synth Pxx param slot [idx].
+  static String paramDescription(int idx) {
+    switch (idx) {
+      case 0:  return 'P00 — reset all synth params to original slider values';
+      case 1:  return 'P01 Volume — instrument level (00=silent, 99=full)';
+      case 2:  return 'P02 Attack — envelope attack (00=instant, 99=slowest)';
+      case 3:  return 'P03 Decay — envelope decay (00=instant, 99=slowest)';
+      case 4:  return 'P04 Sustain — envelope sustain level (00=silent, 99=full)';
+      case 5:  return 'P05 Release — envelope release (00=instant, 99=slowest)';
+      case 6:  return 'P06 Cutoff — filter cutoff (00=closed, 99=open)';
+      case 7:  return 'P07 Resonance — filter resonance (00=none, 99=max)';
+      case 8:  return 'P08 Drive — saturation (00=clean, 99=full drive)';
+      case 9:  return 'P09 Detune — pitch offset (00=−12st, 50=centre, 99=+12st)';
+      case 10: return 'P10 Glide — portamento time (00=instant, 99=slowest)';
+      case 11: return 'P11 LFO Rate — LFO speed (00=slowest, 99=fastest)';
+      case 12: return 'P12 LFO Depth — LFO intensity (00=off, 99=max)';
+      case 13: return 'P13 Waveform — 00=sine 01=tri 02=saw 03=sqr 04=pul 05=nse';
+      default: return '';
+    }
+  }
 }
 
 enum SamplerLoopMode { off, forward, pingPong }
@@ -380,6 +425,39 @@ class SamplerParams {
     release: release,
     sliceStarts: List<int>.from(sliceStarts),
   );
+
+  /// Highest Pxx param index supported for sampler instruments.
+  static const int maxParamIndex = 7;
+
+  /// Display name for sampler Pxx param slot [idx] (0=reset, 1–7=params).
+  static String paramName(int idx) {
+    switch (idx) {
+      case 0: return 'Reset';
+      case 1: return 'Start';
+      case 2: return 'End';
+      case 3: return 'Pitch';
+      case 4: return 'Volume';
+      case 5: return 'Attack';
+      case 6: return 'Release';
+      case 7: return 'Loop';
+      default: return 'P${idx.toString().padLeft(2, '0')}';
+    }
+  }
+
+  /// One-line description for sampler Pxx param slot [idx].
+  static String paramDescription(int idx) {
+    switch (idx) {
+      case 0: return 'P00 — reset all sampler params to original slider values';
+      case 1: return 'P01 Start — sample start position (00=beginning, 99=end)';
+      case 2: return 'P02 End — sample end position (00=beginning, 99=end)';
+      case 3: return 'P03 Pitch — detune in semitones (00=−12st, 50=centre, 99=+12st)';
+      case 4: return 'P04 Volume — instrument level (00=silent, 99=full)';
+      case 5: return 'P05 Attack — fade-in length (00=instant, 99=slowest)';
+      case 6: return 'P06 Release — fade-out length (00=instant, 99=slowest)';
+      case 7: return 'P07 Loop — 00=off, 01=loop forward, 02=ping-pong';
+      default: return '';
+    }
+  }
 }
 
 class InstrumentModel {

@@ -157,7 +157,7 @@ class TrackModel {
         column == CellColumn.fx2val) {
       return 99;
     }
-    return 255; // FX command columns
+    return kFxInsertEnd; // FX command columns
   }
 
   /// Min value for clamping scroll input.

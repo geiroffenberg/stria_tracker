@@ -371,6 +371,7 @@ public:
     void setTrackInsertEffect(int trackIdx, int slotIdx, int effectType, float initialWetLevel);
     void setTrackInsertMix(int trackIdx, int slotIdx, float dryLevel, float wetLevel);
     void setTrackInsertBypass(int trackIdx, int slotIdx, bool bypass);
+    void setVoicePreviewBypassTrackInserts(int trackIdx, bool bypass);
 
     /// Configure reverb parameters on a track insert effect
     void setTrackReverbParams(int trackIdx, int slotIdx, float roomSize, float damp, float width, bool freeze);
@@ -509,6 +510,7 @@ private:
     static constexpr int             kMaxInsertSlots = 6;
     InsertEffect                     mMasterInserts[kMaxInsertSlots];
     InsertEffect                     mTrackInserts[kMaxVoices][kMaxInsertSlots];
+    std::array<bool, kMaxVoices>     mPreviewBypassTrackInserts{};
     std::array<std::vector<float>, kMaxVoices> mTrackBusL;
     std::array<std::vector<float>, kMaxVoices> mTrackBusR;
     std::vector<float>               mMasterBusL;

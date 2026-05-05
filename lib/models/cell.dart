@@ -65,39 +65,41 @@ const List<String> kFxCommandNames = [
   'SL7',
   'SL8',
   'SL9',
-  // Mixer channel-strip FX (32-183): Master (32-33) + 15 channels * 10 slots (34-183)
+  // Mixer channel-strip FX (32-193): Master (32-33) + 16 channels * 10 slots (34-193)
   'M01', // 32 – master mute
   'M02', // 33 – master volume
-  // Channel 1 (34-43): M11-M19 (1-4 implemented, 5-9 reserved)
-  'M11', 'M12', 'M13', 'M14', 'M15', 'M16', 'M17', 'M18', 'M19',
+  // Channel 1 (34-43): M11-M1A (1-4 implemented, 5-A reserved)
+  'M11', 'M12', 'M13', 'M14', 'M15', 'M16', 'M17', 'M18', 'M19', 'M1A',
   // Channel 2 (44-53)
-  'M21', 'M22', 'M23', 'M24', 'M25', 'M26', 'M27', 'M28', 'M29',
+  'M21', 'M22', 'M23', 'M24', 'M25', 'M26', 'M27', 'M28', 'M29', 'M2A',
   // Channel 3 (54-63)
-  'M31', 'M32', 'M33', 'M34', 'M35', 'M36', 'M37', 'M38', 'M39',
+  'M31', 'M32', 'M33', 'M34', 'M35', 'M36', 'M37', 'M38', 'M39', 'M3A',
   // Channel 4 (64-73)
-  'M41', 'M42', 'M43', 'M44', 'M45', 'M46', 'M47', 'M48', 'M49',
+  'M41', 'M42', 'M43', 'M44', 'M45', 'M46', 'M47', 'M48', 'M49', 'M4A',
   // Channel 5 (74-83)
-  'M51', 'M52', 'M53', 'M54', 'M55', 'M56', 'M57', 'M58', 'M59',
+  'M51', 'M52', 'M53', 'M54', 'M55', 'M56', 'M57', 'M58', 'M59', 'M5A',
   // Channel 6 (84-93)
-  'M61', 'M62', 'M63', 'M64', 'M65', 'M66', 'M67', 'M68', 'M69',
+  'M61', 'M62', 'M63', 'M64', 'M65', 'M66', 'M67', 'M68', 'M69', 'M6A',
   // Channel 7 (94-103)
-  'M71', 'M72', 'M73', 'M74', 'M75', 'M76', 'M77', 'M78', 'M79',
+  'M71', 'M72', 'M73', 'M74', 'M75', 'M76', 'M77', 'M78', 'M79', 'M7A',
   // Channel 8 (104-113)
-  'M81', 'M82', 'M83', 'M84', 'M85', 'M86', 'M87', 'M88', 'M89',
+  'M81', 'M82', 'M83', 'M84', 'M85', 'M86', 'M87', 'M88', 'M89', 'M8A',
   // Channel 9 (114-123)
-  'M91', 'M92', 'M93', 'M94', 'M95', 'M96', 'M97', 'M98', 'M99',
+  'M91', 'M92', 'M93', 'M94', 'M95', 'M96', 'M97', 'M98', 'M99', 'M9A',
   // Channel 10 (124-133)
-  'MA1', 'MA2', 'MA3', 'MA4', 'MA5', 'MA6', 'MA7', 'MA8', 'MA9',
+  'MA1', 'MA2', 'MA3', 'MA4', 'MA5', 'MA6', 'MA7', 'MA8', 'MA9', 'MAA',
   // Channel 11 (134-143)
-  'MB1', 'MB2', 'MB3', 'MB4', 'MB5', 'MB6', 'MB7', 'MB8', 'MB9',
+  'MB1', 'MB2', 'MB3', 'MB4', 'MB5', 'MB6', 'MB7', 'MB8', 'MB9', 'MBA',
   // Channel 12 (144-153)
-  'MC1', 'MC2', 'MC3', 'MC4', 'MC5', 'MC6', 'MC7', 'MC8', 'MC9',
+  'MC1', 'MC2', 'MC3', 'MC4', 'MC5', 'MC6', 'MC7', 'MC8', 'MC9', 'MCA',
   // Channel 13 (154-163)
-  'MD1', 'MD2', 'MD3', 'MD4', 'MD5', 'MD6', 'MD7', 'MD8', 'MD9',
+  'MD1', 'MD2', 'MD3', 'MD4', 'MD5', 'MD6', 'MD7', 'MD8', 'MD9', 'MDA',
   // Channel 14 (164-173)
-  'ME1', 'ME2', 'ME3', 'ME4', 'ME5', 'ME6', 'ME7', 'ME8', 'ME9',
+  'ME1', 'ME2', 'ME3', 'ME4', 'ME5', 'ME6', 'ME7', 'ME8', 'ME9', 'MEA',
   // Channel 15 (174-183)
-  'MF1', 'MF2', 'MF3', 'MF4', 'MF5', 'MF6', 'MF7', 'MF8', 'MF9',
+  'MF1', 'MF2', 'MF3', 'MF4', 'MF5', 'MF6', 'MF7', 'MF8', 'MF9', 'MFA',
+  // Channel 16 (184-193)
+  'MG1', 'MG2', 'MG3', 'MG4', 'MG5', 'MG6', 'MG7', 'MG8', 'MG9', 'MGA',
   // Master insert routing (numeric)
   '101',
   '201',
@@ -145,10 +147,10 @@ const List<String> kFxCommandDescriptions = [
   'Select Slice 7',
   'Select Slice 8',
   'Select Slice 9',
-  // Mixer channel-strip FX (32-183): Master + 15 channels * 10 slots
+  // Mixer channel-strip FX (32-193): Master + 16 channels * 10 slots
   'Master mute (00=off, >00=on)',
   'Master volume (00-99)',
-  // Channel 1 (34-43): M11-M19
+  // Channel 1 (34-43): M11-M1A
   'Channel 1 pan (00=left, 50=centre, 99=right)',
   'Channel 1 mute (00=off, >00=on)',
   'Channel 1 solo (00=off, >00=on)',
@@ -158,7 +160,8 @@ const List<String> kFxCommandDescriptions = [
   'Channel 1 reserved M17',
   'Channel 1 reserved M18',
   'Channel 1 reserved M19',
-  // Channel 2 (44-53): M21-M29
+  'Channel 1 reserved M1A',
+  // Channel 2 (44-53): M21-M2A
   'Channel 2 pan (00=left, 50=centre, 99=right)',
   'Channel 2 mute (00=off, >00=on)',
   'Channel 2 solo (00=off, >00=on)',
@@ -168,7 +171,8 @@ const List<String> kFxCommandDescriptions = [
   'Channel 2 reserved M27',
   'Channel 2 reserved M28',
   'Channel 2 reserved M29',
-  // Channel 3 (54-63): M31-M39
+  'Channel 2 reserved M2A',
+  // Channel 3 (54-63): M31-M3A
   'Channel 3 pan (00=left, 50=centre, 99=right)',
   'Channel 3 mute (00=off, >00=on)',
   'Channel 3 solo (00=off, >00=on)',
@@ -178,7 +182,8 @@ const List<String> kFxCommandDescriptions = [
   'Channel 3 reserved M37',
   'Channel 3 reserved M38',
   'Channel 3 reserved M39',
-  // Channel 4 (64-73): M41-M49
+  'Channel 3 reserved M3A',
+  // Channel 4 (64-73): M41-M4A
   'Channel 4 pan (00=left, 50=centre, 99=right)',
   'Channel 4 mute (00=off, >00=on)',
   'Channel 4 solo (00=off, >00=on)',
@@ -188,7 +193,8 @@ const List<String> kFxCommandDescriptions = [
   'Channel 4 reserved M47',
   'Channel 4 reserved M48',
   'Channel 4 reserved M49',
-  // Channel 5 (74-83): M51-M59
+  'Channel 4 reserved M4A',
+  // Channel 5 (74-83): M51-M5A
   'Channel 5 pan (00=left, 50=centre, 99=right)',
   'Channel 5 mute (00=off, >00=on)',
   'Channel 5 solo (00=off, >00=on)',
@@ -198,7 +204,8 @@ const List<String> kFxCommandDescriptions = [
   'Channel 5 reserved M57',
   'Channel 5 reserved M58',
   'Channel 5 reserved M59',
-  // Channel 6 (84-93): M61-M69
+  'Channel 5 reserved M5A',
+  // Channel 6 (84-93): M61-M6A
   'Channel 6 pan (00=left, 50=centre, 99=right)',
   'Channel 6 mute (00=off, >00=on)',
   'Channel 6 solo (00=off, >00=on)',
@@ -208,7 +215,8 @@ const List<String> kFxCommandDescriptions = [
   'Channel 6 reserved M67',
   'Channel 6 reserved M68',
   'Channel 6 reserved M69',
-  // Channel 7 (94-103): M71-M79
+  'Channel 6 reserved M6A',
+  // Channel 7 (94-103): M71-M7A
   'Channel 7 pan (00=left, 50=centre, 99=right)',
   'Channel 7 mute (00=off, >00=on)',
   'Channel 7 solo (00=off, >00=on)',
@@ -218,7 +226,8 @@ const List<String> kFxCommandDescriptions = [
   'Channel 7 reserved M77',
   'Channel 7 reserved M78',
   'Channel 7 reserved M79',
-  // Channel 8 (104-113): M81-M89
+  'Channel 7 reserved M7A',
+  // Channel 8 (104-113): M81-M8A
   'Channel 8 pan (00=left, 50=centre, 99=right)',
   'Channel 8 mute (00=off, >00=on)',
   'Channel 8 solo (00=off, >00=on)',
@@ -228,7 +237,8 @@ const List<String> kFxCommandDescriptions = [
   'Channel 8 reserved M87',
   'Channel 8 reserved M88',
   'Channel 8 reserved M89',
-  // Channel 9 (114-123): M91-M99
+  'Channel 8 reserved M8A',
+  // Channel 9 (114-123): M91-M9A
   'Channel 9 pan (00=left, 50=centre, 99=right)',
   'Channel 9 mute (00=off, >00=on)',
   'Channel 9 solo (00=off, >00=on)',
@@ -238,7 +248,8 @@ const List<String> kFxCommandDescriptions = [
   'Channel 9 reserved M97',
   'Channel 9 reserved M98',
   'Channel 9 reserved M99',
-  // Channel 10 (124-133): MA1-MA9
+  'Channel 9 reserved M9A',
+  // Channel 10 (124-133): MA1-MAA
   'Channel 10 pan (00=left, 50=centre, 99=right)',
   'Channel 10 mute (00=off, >00=on)',
   'Channel 10 solo (00=off, >00=on)',
@@ -248,7 +259,8 @@ const List<String> kFxCommandDescriptions = [
   'Channel 10 reserved MA7',
   'Channel 10 reserved MA8',
   'Channel 10 reserved MA9',
-  // Channel 11 (134-143): MB1-MB9
+  'Channel 10 reserved MAA',
+  // Channel 11 (134-143): MB1-MBA
   'Channel 11 pan (00=left, 50=centre, 99=right)',
   'Channel 11 mute (00=off, >00=on)',
   'Channel 11 solo (00=off, >00=on)',
@@ -258,7 +270,8 @@ const List<String> kFxCommandDescriptions = [
   'Channel 11 reserved MB7',
   'Channel 11 reserved MB8',
   'Channel 11 reserved MB9',
-  // Channel 12 (144-153): MC1-MC9
+  'Channel 11 reserved MBA',
+  // Channel 12 (144-153): MC1-MCA
   'Channel 12 pan (00=left, 50=centre, 99=right)',
   'Channel 12 mute (00=off, >00=on)',
   'Channel 12 solo (00=off, >00=on)',
@@ -268,7 +281,8 @@ const List<String> kFxCommandDescriptions = [
   'Channel 12 reserved MC7',
   'Channel 12 reserved MC8',
   'Channel 12 reserved MC9',
-  // Channel 13 (154-163): MD1-MD9
+  'Channel 12 reserved MCA',
+  // Channel 13 (154-163): MD1-MDA
   'Channel 13 pan (00=left, 50=centre, 99=right)',
   'Channel 13 mute (00=off, >00=on)',
   'Channel 13 solo (00=off, >00=on)',
@@ -278,7 +292,8 @@ const List<String> kFxCommandDescriptions = [
   'Channel 13 reserved MD7',
   'Channel 13 reserved MD8',
   'Channel 13 reserved MD9',
-  // Channel 14 (164-173): ME1-ME9
+  'Channel 13 reserved MDA',
+  // Channel 14 (164-173): ME1-MEA
   'Channel 14 pan (00=left, 50=centre, 99=right)',
   'Channel 14 mute (00=off, >00=on)',
   'Channel 14 solo (00=off, >00=on)',
@@ -288,7 +303,8 @@ const List<String> kFxCommandDescriptions = [
   'Channel 14 reserved ME7',
   'Channel 14 reserved ME8',
   'Channel 14 reserved ME9',
-  // Channel 15 (174-183): MF1-MF9
+  'Channel 14 reserved MEA',
+  // Channel 15 (174-183): MF1-MFA
   'Channel 15 pan (00=left, 50=centre, 99=right)',
   'Channel 15 mute (00=off, >00=on)',
   'Channel 15 solo (00=off, >00=on)',
@@ -298,7 +314,19 @@ const List<String> kFxCommandDescriptions = [
   'Channel 15 reserved MF7',
   'Channel 15 reserved MF8',
   'Channel 15 reserved MF9',
-  // Master insert routing (184+)
+  'Channel 15 reserved MFA',
+  // Channel 16 (184-193): MG1-MGA
+  'Channel 16 pan (00=left, 50=centre, 99=right)',
+  'Channel 16 mute (00=off, >00=on)',
+  'Channel 16 solo (00=off, >00=on)',
+  'Channel 16 volume (00-99)',
+  'Channel 16 reserved MG5',
+  'Channel 16 reserved MG6',
+  'Channel 16 reserved MG7',
+  'Channel 16 reserved MG8',
+  'Channel 16 reserved MG9',
+  'Channel 16 reserved MGA',
+  // Master insert routing (194+)
   'Insert 1 param 01 (reserved)',
   'Insert 2 param 01 (reserved)',
   'Insert 3 param 01 (reserved)',
@@ -327,33 +355,386 @@ const int kFxSL0 = 22;
 const int kFxSL9 = 31;
 const int kFxARC = 178;
 const int kFxSLC = 179;
-const int kFxInsertStart = 180;
-const int kFxInsertEnd = 239; // 6 slots × 10 functions (0–9) = 60 commands
+const int kFxInsertStart = 340;
+const int kFxInsertEnd = 399; // 6 slots × 10 functions (0–9) = 60 commands
+
+// Instrument parameter automation (Pxx).
+// P00 = reset to snapshot. P01–P99 = per-type param slots.
+// Sampler:  P01=start, P02=end, P03=pitch, P04=volume, P05=attack, P06=release, P07=loop
+// Synth:    P01=volume, P02=attack, P03=decay, P04=sustain, P05=release,
+//           P06=cutoff, P07=resonance, P08=drive, P09=detune, P10=glide,
+//           P11=lfoRate, P12=lfoDepth, P13=waveform
+const int kFxPParamStart = 240; // P00
+const int kFxPParamEnd   = 339; // P99
+
+bool isPParamCommand(int? cmd) =>
+    cmd != null && cmd >= kFxPParamStart && cmd <= kFxPParamEnd;
+
+bool isMixerValueCommand(int? cmd) => cmd != null && cmd >= 32 && cmd <= 194;
+
+String _mixerChannelCode(int channel) {
+  if (channel <= 9) return '$channel';
+  final letter = String.fromCharCode('A'.codeUnitAt(0) + (channel - 10));
+  return letter;
+}
+
+String mixerValueName(int cmd) {
+  if (cmd == 194) return 'M00';
+  if (cmd == 32) return 'M01';
+  if (cmd == 33) return 'M02';
+  final offset = cmd - 34;
+  if (offset < 0) {
+    return cmd.toRadixString(16).toUpperCase().padLeft(3, '0');
+  }
+  final channel = (offset ~/ 10) + 1;
+  final slot = (offset % 10) + 1;
+  if (channel < 1 || channel > 16) {
+    return cmd.toRadixString(16).toUpperCase().padLeft(3, '0');
+  }
+  final slotCode = slot == 10 ? '0' : '$slot';
+  return 'M${_mixerChannelCode(channel)}$slotCode';
+}
+
+String mixerValueDescription(int cmd) {
+  if (cmd == 194) return 'Master reset — re-apply current mixer snapshot';
+  if (cmd == 32) return 'Master mute (00=off, >00=on)';
+  if (cmd == 33) return 'Master volume (00-99)';
+  final offset = cmd - 34;
+  final channel = (offset ~/ 10) + 1;
+  final slot = (offset % 10) + 1;
+  if (channel < 1 || channel > 16) return '';
+  switch (slot) {
+    case 1:
+      return 'Channel $channel pan (00=left, 50=centre, 99=right)';
+    case 2:
+      return 'Channel $channel mute (00=off, >00=on)';
+    case 3:
+      return 'Channel $channel solo (00=off, >00=on)';
+    case 4:
+      return 'Channel $channel volume (00-99)';
+    case 10:
+      return 'Channel $channel reset — re-apply current mixer snapshot';
+    default:
+      return 'Channel $channel reserved ${mixerValueName(cmd)}';
+  }
+}
+
+String mixerValueShortLabel(int cmd) {
+  if (cmd == 194) return 'RESET';
+  if (cmd == 32) return 'MUTE';
+  if (cmd == 33) return 'VOL';
+
+  final offset = cmd - 34;
+  final slot = (offset % 10) + 1;
+  switch (slot) {
+    case 1:
+      return 'PAN';
+    case 2:
+      return 'MUTE';
+    case 3:
+      return 'SOLO';
+    case 4:
+      return 'VOL';
+    case 10:
+      return 'RESET';
+    default:
+      return 'RES';
+  }
+}
+
+/// Returns 0 for P00, 1 for P01, …, 99 for P99.  -1 if not a Pxx command.
+int pParamIndex(int? cmd) =>
+    (cmd != null && isPParamCommand(cmd)) ? cmd - kFxPParamStart : -1;
 
 String fxInsertFunctionName(int function) {
   switch (function) {
     case 0:
-      return 'reset — re-applies current slider values to effect';
+      return 'reset';
     case 1:
-      return 'bypass (00=active, >00=bypassed)';
+      return 'bypass';
     case 2:
-      return 'mode / toggle (LP·HP·BP · clip·fold · freeze·free)';
+      return 'mode / toggle';
     case 3:
-      return 'main param — room size · cutoff · drive · bit depth · push gain (limiter) · rate (chorus) · low gain (EQ) · threshold (cmp)';
+      return 'main param';
     case 4:
-      return 'secondary param — damp · resonance · feedback · tone · rate · depth (chorus) · mid gain (EQ) · ratio (cmp)';
+      return 'secondary param';
     case 5:
-      return 'third param — width · hi-pass cutoff · delay (chorus) · high gain (EQ) · makeup (cmp)';
+      return 'third param';
     case 6:
-      return 'dry mix (00=no dry, 99=full dry)';
+      return 'dry mix';
     case 7:
-      return 'wet mix (00=no wet, 99=full wet)';
+      return 'wet mix';
     case 8:
       return 'extra param D';
     case 9:
       return 'extra param E';
     default:
       return 'unknown';
+  }
+}
+
+String fxInsertFunctionNameForEffect(String? effectName, int function) {
+  final fx = (effectName ?? '').toUpperCase();
+  switch (function) {
+    case 0:
+      return 'Reset to snapshot';
+    case 1:
+      return 'Bypass on/off';
+    case 6:
+      return 'Dry mix';
+    case 7:
+      return 'Wet mix';
+  }
+  switch (fx) {
+    case 'REVERB':
+      switch (function) {
+        case 2:
+          return 'Freeze';
+        case 3:
+          return 'Room size';
+        case 4:
+          return 'Damp';
+        case 5:
+          return 'Width';
+      }
+      break;
+    case 'DELAY':
+      switch (function) {
+        case 2:
+          return 'Sync';
+        case 3:
+          return 'Timing';
+        case 4:
+          return 'Feedback';
+        case 5:
+          return 'High-pass cutoff';
+      }
+      break;
+    case 'FILTER':
+      switch (function) {
+        case 2:
+          return 'Mode (LP/HP/BP)';
+        case 3:
+          return 'Cutoff';
+        case 4:
+          return 'Resonance';
+      }
+      break;
+    case 'DISTORTION':
+      switch (function) {
+        case 2:
+          return 'Type';
+        case 3:
+          return 'Drive';
+        case 4:
+          return 'Tone';
+      }
+      break;
+    case 'BITCRUSHER':
+      switch (function) {
+        case 3:
+          return 'Bit depth';
+        case 4:
+          return 'Sample rate';
+      }
+      break;
+    case 'LIMITER':
+      switch (function) {
+        case 3:
+          return 'Input gain';
+      }
+      break;
+    case 'CHORUS':
+      switch (function) {
+        case 2:
+          return 'Stereo mode';
+        case 3:
+          return 'Rate';
+        case 4:
+          return 'Depth';
+        case 5:
+          return 'Delay';
+      }
+      break;
+    case 'EQ':
+      switch (function) {
+        case 3:
+          return 'Low gain';
+        case 4:
+          return 'Mid gain';
+        case 5:
+          return 'High gain';
+      }
+      break;
+    case 'COMPRESSOR':
+      switch (function) {
+        case 2:
+          return 'Knee';
+        case 3:
+          return 'Threshold';
+        case 4:
+          return 'Ratio';
+        case 5:
+          return 'Makeup gain';
+      }
+      break;
+  }
+  return fxInsertFunctionName(function);
+}
+
+String fxInsertFunctionHintForEffect(String? effectName, int function) {
+  final name = fxInsertFunctionNameForEffect(effectName, function);
+  switch (function) {
+    case 0:
+      return '$name - trigger command (value ignored; use 00)';
+    case 1:
+      return '$name - 00=off, 01-99=on';
+    case 2:
+      return '$name - mode/select (00-99)';
+    case 3:
+    case 4:
+    case 5:
+    case 6:
+    case 7:
+    case 8:
+    case 9:
+      return '$name - 00-99 amount';
+    default:
+      return '$name - 00-99';
+  }
+}
+
+String fxInsertFunctionShortLabelForEffect(String? effectName, int function) {
+  final fx = (effectName ?? '').toUpperCase();
+  switch (function) {
+    case 0:
+      return 'RESET';
+    case 1:
+      return 'BYP';
+    case 6:
+      return 'DRY';
+    case 7:
+      return 'WET';
+  }
+
+  switch (fx) {
+    case 'REVERB':
+      switch (function) {
+        case 2:
+          return 'FREEZE';
+        case 3:
+          return 'ROOM';
+        case 4:
+          return 'DAMP';
+        case 5:
+          return 'WIDTH';
+      }
+      break;
+    case 'DELAY':
+      switch (function) {
+        case 2:
+          return 'SYNC';
+        case 3:
+          return 'TIME';
+        case 4:
+          return 'FDBK';
+        case 5:
+          return 'HP';
+      }
+      break;
+    case 'FILTER':
+      switch (function) {
+        case 2:
+          return 'MODE';
+        case 3:
+          return 'CUTOFF';
+        case 4:
+          return 'RESO';
+      }
+      break;
+    case 'DISTORTION':
+      switch (function) {
+        case 2:
+          return 'TYPE';
+        case 3:
+          return 'DRIVE';
+        case 4:
+          return 'TONE';
+      }
+      break;
+    case 'BITCRUSHER':
+      switch (function) {
+        case 3:
+          return 'BITS';
+        case 4:
+          return 'RATE';
+      }
+      break;
+    case 'LIMITER':
+      if (function == 3) return 'PUSH';
+      break;
+    case 'CHORUS':
+      switch (function) {
+        case 2:
+          return 'STEREO';
+        case 3:
+          return 'RATE';
+        case 4:
+          return 'DEPTH';
+        case 5:
+          return 'DELAY';
+      }
+      break;
+    case 'EQ':
+      switch (function) {
+        case 3:
+          return 'LOW';
+        case 4:
+          return 'MID';
+        case 5:
+          return 'HIGH';
+      }
+      break;
+    case 'COMPRESSOR':
+      switch (function) {
+        case 2:
+          return 'KNEE';
+        case 3:
+          return 'THRESH';
+        case 4:
+          return 'RATIO';
+        case 5:
+          return 'MAKEUP';
+      }
+      break;
+  }
+
+  return fxInsertFunctionName(function).toUpperCase();
+}
+
+bool fxInsertFunctionIsUsedForEffect(String? effectName, int function) {
+  // Common insert controls available for all effects.
+  if (function == 0 || function == 1 || function == 6 || function == 7) {
+    return true;
+  }
+
+  final fx = (effectName ?? '').toUpperCase();
+  switch (fx) {
+    case 'REVERB':
+    case 'DELAY':
+    case 'CHORUS':
+    case 'COMPRESSOR':
+      return function >= 2 && function <= 5;
+    case 'FILTER':
+    case 'DISTORTION':
+    case 'BITCRUSHER':
+    case 'EQ':
+      return function >= 3 && function <= 4;
+    case 'LIMITER':
+      return function == 3;
+    default:
+      // Unknown effect: keep full function set visible for safety.
+      return function >= 0 && function <= 9;
   }
 }
 
@@ -373,8 +754,14 @@ int fxInsertFunctionFromCommand(int cmd) => (cmd - kFxInsertStart) % 10;
 /// Returns the 3-letter FX command name, or '---' if null/unknown.
 String fxCommandName(int? cmd) {
   if (cmd == null) return '---';
+  if (isMixerValueCommand(cmd)) {
+    return mixerValueName(cmd);
+  }
   if (isInsertFxCommand(cmd)) {
     return 'F${fxInsertSlotFromCommand(cmd)}${fxInsertFunctionFromCommand(cmd)}';
+  }
+  if (isPParamCommand(cmd)) {
+    return 'P${pParamIndex(cmd).toString().padLeft(2, '0')}';
   }
   if (cmd < kFxCommandNames.length) return kFxCommandNames[cmd];
   return cmd.toRadixString(16).toUpperCase().padLeft(3, '0');
@@ -383,10 +770,18 @@ String fxCommandName(int? cmd) {
 /// Returns the description for an FX command.
 String fxCommandDescription(int? cmd) {
   if (cmd == null) return '';
+  if (isMixerValueCommand(cmd)) {
+    return mixerValueDescription(cmd);
+  }
   if (isInsertFxCommand(cmd)) {
     final slot = fxInsertSlotFromCommand(cmd);
     final function = fxInsertFunctionFromCommand(cmd);
     return 'Own-channel insert slot $slot — F$slot$function = ${fxInsertFunctionName(function)}';
+  }
+  if (isPParamCommand(cmd)) {
+    final idx = pParamIndex(cmd);
+    if (idx == 0) return 'P00 — reset instrument params to original slider values';
+    return 'P${idx.toString().padLeft(2, '0')} — instrument param (meaning set by instrument type in IN cell)';
   }
   if (cmd >= 0 && cmd < kFxCommandDescriptions.length) {
     return kFxCommandDescriptions[cmd];

@@ -317,6 +317,7 @@ void AudioEngine::stop() {
     if (mStream) {
         {
             std::lock_guard<std::mutex> lock(mVoiceMutex);
+            mPreviewBypassTrackInserts.fill(false);
             for (auto& v : mVoices) {
                 v.gainTarget        = 0.0f;
                 v.pendingWaveform   = -1;   // cancel any mid-swap; prevents re-trigger after stop
@@ -1118,6 +1119,12 @@ void AudioEngine::setTrackInsertBypass(int trackIdx, int slotIdx, bool bypass) {
     if (slotIdx < 0 || slotIdx >= kMaxInsertSlots) return;
     std::lock_guard<std::mutex> lock(mVoiceMutex);
     mTrackInserts[trackIdx][slotIdx].bypass = bypass;
+}
+
+void AudioEngine::setVoicePreviewBypassTrackInserts(int trackIdx, bool bypass) {
+    if (trackIdx < 0 || trackIdx >= kMaxVoices) return;
+    std::lock_guard<std::mutex> lock(mVoiceMutex);
+    mPreviewBypassTrackInserts[trackIdx] = bypass;
 }
 
 void AudioEngine::setTrackReverbParams(int trackIdx, int slotIdx, float roomSize, float damp, float width, bool freeze) {
@@ -2231,12 +2238,14 @@ oboe::DataCallbackResult AudioEngine::onAudioReady(
 
     // Apply track insert effects, then sum all track buses into master output.
     for (int track = 0; track < kMaxVoices; ++track) {
-        processEffects(
-            mTrackBusL[track].data(),
-            mTrackBusR[track].data(),
-            numFrames,
-            mTrackInserts[track]
-        );
+        if (!mPreviewBypassTrackInserts[track]) {
+            processEffects(
+                mTrackBusL[track].data(),
+                mTrackBusR[track].data(),
+                numFrames,
+                mTrackInserts[track]
+            );
+        }
         for (int i = 0; i < numFrames; ++i) {
             out[i * 2]     += mTrackBusL[track][i];
             out[i * 2 + 1] += mTrackBusR[track][i];

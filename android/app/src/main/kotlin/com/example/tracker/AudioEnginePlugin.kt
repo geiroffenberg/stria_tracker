@@ -219,6 +219,12 @@ class AudioEnginePlugin : FlutterPlugin, MethodCallHandler {
                 if (enginePtr != 0L) nativeSetTrackInsertBypass(enginePtr, trackIdx, slotIdx, bypass)
                 result.success(null)
             }
+            "setVoicePreviewBypassTrackInserts" -> {
+                val trackIdx = call.argument<Int>("trackIdx") ?: 0
+                val bypass = call.argument<Boolean>("bypass") ?: false
+                if (enginePtr != 0L) nativeSetVoicePreviewBypassTrackInserts(enginePtr, trackIdx, bypass)
+                result.success(null)
+            }
             "setTrackReverbParams" -> {
                 val trackIdx = call.argument<Int>("trackIdx") ?: 0
                 val slotIdx = call.argument<Int>("slotIdx") ?: 0
@@ -480,6 +486,7 @@ class AudioEnginePlugin : FlutterPlugin, MethodCallHandler {
     private external fun nativeSetTrackInsertEffect(ptr: Long, trackIdx: Int, slotIdx: Int, effectType: Int, dryWet: Float)
     private external fun nativeSetTrackInsertMix(ptr: Long, trackIdx: Int, slotIdx: Int, dryLevel: Float, wetLevel: Float)
     private external fun nativeSetTrackInsertBypass(ptr: Long, trackIdx: Int, slotIdx: Int, bypass: Boolean)
+    private external fun nativeSetVoicePreviewBypassTrackInserts(ptr: Long, trackIdx: Int, bypass: Boolean)
     private external fun nativeSetTrackReverbParams(ptr: Long, trackIdx: Int, slotIdx: Int, roomSize: Float, damp: Float, width: Float, freeze: Boolean)
     private external fun nativeSetMasterDelayParams(ptr: Long, slotIdx: Int, timeMs: Float, feedback: Float, hpCutoff: Float, sync: Boolean)
     private external fun nativeSetTrackDelayParams(ptr: Long, trackIdx: Int, slotIdx: Int, timeMs: Float, feedback: Float, hpCutoff: Float, sync: Boolean)
