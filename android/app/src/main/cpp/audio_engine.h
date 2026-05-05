@@ -413,11 +413,20 @@ public:
     /// Pass empty path to clear assignment.
     bool setSamplerSample(int slot, const std::string& path);
 
-    /// Start recording mic input to internal buffer
+    /// Open the mic input stream and keep it running silently (no accumulation).
+    /// Call once when entering the recording UI so the stream is warm before
+    /// the first RECORD press, avoiding Android duplex-mode transients.
+    void openRecordingStream();
+
+    /// Close the persistent mic input stream. Call when leaving the recording UI.
+    void closeRecordingStream();
+
+    /// Start accumulating mic input into the internal buffer.
+    /// Requires openRecordingStream() to have been called first.
     void startRecording();
 
-    /// Stop recording and return the recorded samples + sample rate
-    /// Returns a vector of floats normalized [-1..1]
+    /// Stop accumulating and return the recorded samples + sample rate.
+    /// The mic stream remains open and running silently.
     std::vector<float> stopRecording(int& outSampleRate);
 
     /// Called by Oboe's recording callback (input stream audio thread)

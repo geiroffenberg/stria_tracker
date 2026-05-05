@@ -351,6 +351,18 @@ Java_com_example_tracker_AudioEnginePlugin_nativeDispose(JNIEnv*, jobject, jlong
 }
 
 JNIEXPORT void JNICALL
+Java_com_example_tracker_AudioEnginePlugin_nativeOpenRecordingStream(
+        JNIEnv*, jobject, jlong ptr) {
+    reinterpret_cast<AudioEngine*>(ptr)->openRecordingStream();
+}
+
+JNIEXPORT void JNICALL
+Java_com_example_tracker_AudioEnginePlugin_nativeCloseRecordingStream(
+        JNIEnv*, jobject, jlong ptr) {
+    reinterpret_cast<AudioEngine*>(ptr)->closeRecordingStream();
+}
+
+JNIEXPORT void JNICALL
 Java_com_example_tracker_AudioEnginePlugin_nativeStartRecording(
         JNIEnv*, jobject, jlong ptr) {
     reinterpret_cast<AudioEngine*>(ptr)->startRecording();

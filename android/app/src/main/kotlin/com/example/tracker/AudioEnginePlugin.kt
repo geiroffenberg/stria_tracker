@@ -385,6 +385,14 @@ class AudioEnginePlugin : FlutterPlugin, MethodCallHandler {
                 } else false
                 result.success(ok)
             }
+            "openRecordingStream" -> {
+                if (enginePtr != 0L) nativeOpenRecordingStream(enginePtr)
+                result.success(null)
+            }
+            "closeRecordingStream" -> {
+                if (enginePtr != 0L) nativeCloseRecordingStream(enginePtr)
+                result.success(null)
+            }
             "startRecording" -> {
                 if (enginePtr != 0L) nativeStartRecording(enginePtr)
                 result.success(null)
@@ -490,6 +498,8 @@ class AudioEnginePlugin : FlutterPlugin, MethodCallHandler {
     private external fun nativeSetTrackCompressorParams(ptr: Long, trackIdx: Int, slotIdx: Int, threshold: Float, ratio: Float, attack: Float, release: Float, makeup: Float, knee: Int)
     private external fun nativeSetMasterCompressorParams(ptr: Long, slotIdx: Int, threshold: Float, ratio: Float, attack: Float, release: Float, makeup: Float, knee: Int)
     private external fun nativeSetSamplerSample(ptr: Long, slot: Int, path: String): Boolean
+    private external fun nativeOpenRecordingStream(ptr: Long)
+    private external fun nativeCloseRecordingStream(ptr: Long)
     private external fun nativeStartRecording(ptr: Long)
     private external fun nativeStopRecording(ptr: Long, outSampleRate: IntArray): FloatArray?
     private external fun nativeIsVoicePlaying(ptr: Long, trackIdx: Int): Boolean

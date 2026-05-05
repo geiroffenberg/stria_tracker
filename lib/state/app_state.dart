@@ -123,14 +123,6 @@ class AppState extends ChangeNotifier {
   // Per-track segments from the last row trigger (for DEL replay).
   List<List<int>> _rowSegments = [];
 
-  // Drift-corrected playhead clock anchor.
-  DateTime? _playClockAnchor;
-
-  /// Accumulated microseconds from [_playClockAnchor] up to the last fired line.
-  /// Replaces a fixed-duration line counter so per-beat subdivision overrides
-  /// can use different line durations without drifting.
-  int _microsSinceAnchor = 0;
-
   /// Instrument bank — fixed length, indexed by the cell's instrument byte.
   final List<InstrumentModel> instruments = List.generate(
     kInstrumentSlots,
@@ -1322,8 +1314,6 @@ class AppState extends ChangeNotifier {
     isPlaying = false;
     _queuedArrangementSlot = null;
     playheadRow = 0;
-    _playClockAnchor = null;
-    _microsSinceAnchor = 0;
     _songRowMap = [];
     _songFlatRowIndex = 0;
     _resetInstrumentCarry();
@@ -1386,11 +1376,8 @@ class AppState extends ChangeNotifier {
     return Duration(microseconds: microsPerLine);
   }
 
-  Duration _lineDurationForRow(int row) =>
-      _lineDurationForPatternRow(currentPattern, row);
-
   /// Duration of the current playhead row (used by FX schedulers).
-  Duration _lineDuration() => _lineDurationForRow(playheadRow);
+  Duration _lineDuration() => _lineDurationForPatternRow(currentPattern, playheadRow);
 
   Future<void> _loadNativePatternPlaybackQueue({required int startRow}) async {
     final originalSong = song;
@@ -1404,13 +1391,13 @@ class AppState extends ChangeNotifier {
     _resetInstrumentCarry();
     for (int row = 0; row < safeStartRow; row++) {
       playheadRow = row;
-      _triggerCurrentRow(sendToAudio: false, recordInsertResets: false);
+      _triggerCurrentRow();
     }
     for (int offset = 0; offset < pattern.rowCount; offset++) {
       final row = (safeStartRow + offset) % pattern.rowCount;
       playheadRow = row;
       scheduledRows.add(
-        _triggerCurrentRow(sendToAudio: false, recordInsertResets: false),
+        _triggerCurrentRow(),
       );
     }
 
@@ -1486,7 +1473,7 @@ class AppState extends ChangeNotifier {
       for (int row = 0; row < pat.rowCount; row++) {
         _playheadArrangementSlot = slotIdx;
         playheadRow = row;
-        _triggerCurrentRow(sendToAudio: false, recordInsertResets: false);
+        _triggerCurrentRow();
       }
     }
     if (startSlot < clonedSong.patterns.length) {
@@ -1495,7 +1482,7 @@ class AppState extends ChangeNotifier {
       for (int row = 0; row < safeStart; row++) {
         _playheadArrangementSlot = startSlot;
         playheadRow = row;
-        _triggerCurrentRow(sendToAudio: false, recordInsertResets: false);
+        _triggerCurrentRow();
       }
     }
 
@@ -1509,7 +1496,7 @@ class AppState extends ChangeNotifier {
         playheadRow = row;
         rowMap.add((arrangementSlot: slotIdx, rowWithinSlot: row));
         scheduledRows.add(
-          _triggerCurrentRow(sendToAudio: false, recordInsertResets: false),
+          _triggerCurrentRow(),
         );
       }
       if (slotIdx + 1 >= clonedSong.patterns.length ||
@@ -1607,32 +1594,6 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Schedule the next line trigger using a drift-corrected, single-shot
-  /// timer anchored to [_playClockAnchor]. This avoids the cumulative drift
-  /// of [Timer.periodic] and keeps tempo accurate at high BPM / high LPB.
-  /// Per-beat subdivision overrides are respected via [_lineDurationForRow].
-  void _scheduleNextLine() {
-    _playheadTimer?.cancel();
-    if (!isPlaying) return;
-    final anchor = _playClockAnchor;
-    if (anchor == null) return;
-
-    final rowDurMicros = _lineDurationForRow(playheadRow).inMicroseconds;
-    final targetMicros = _microsSinceAnchor + rowDurMicros;
-    final elapsedMicros = DateTime.now().difference(anchor).inMicroseconds;
-    final delayMicros = targetMicros - elapsedMicros;
-    final delay = Duration(microseconds: delayMicros < 0 ? 0 : delayMicros);
-
-    _playheadTimer = Timer(delay, () {
-      if (!isPlaying) return;
-      _microsSinceAnchor = targetMicros;
-      _advanceRow();
-      _scheduleNextLine();
-    });
-  }
-
-  /// Re-anchor the playback clock (called on tempo / LPB changes so the
-  /// new line duration takes effect immediately without drift).
   void _restartPlayheadTimerIfNeeded() {
     if (!isPlaying) return;
     if (_playbackFollowsSong) {
@@ -1671,59 +1632,9 @@ class AppState extends ChangeNotifier {
     }
   }
 
-  void _advanceRow() {
-    if (_playbackFollowsSong && song.patterns.isNotEmpty) {
-      final curPat =
-          song.patterns[_playheadArrangementSlot.clamp(
-            0,
-            song.patterns.length - 1,
-          )];
-      playheadRow += 1;
-      if (playheadRow >= curPat.rowCount) {
-        playheadRow = 0;
-
-        final queued = _queuedArrangementSlot;
-        if (queued != null &&
-            queued >= 0 &&
-            queued < song.patterns.length &&
-            !song.patterns[queued].isEmpty) {
-          _playheadArrangementSlot = queued;
-          _queuedArrangementSlot = null;
-          _syncCurrentPatternToSongPlayhead();
-          _playClockAnchor = DateTime.now();
-          _microsSinceAnchor = 0;
-          _triggerCurrentRow();
-          notifyListeners();
-          return;
-        }
-
-        final next = _playheadArrangementSlot + 1;
-        // Stop at end of list or first empty pattern ("stop marker").
-        if (next >= song.patterns.length || song.patterns[next].isEmpty) {
-          _triggerCurrentRow();
-          notifyListeners();
-          stop();
-          return;
-        }
-        _playheadArrangementSlot = next;
-        _syncCurrentPatternToSongPlayhead();
-        // Tempo/LPB may have changed across the pattern boundary.
-        _playClockAnchor = DateTime.now();
-        _microsSinceAnchor = 0;
-      }
-    } else {
-      playheadRow = (playheadRow + 1) % rowCount;
-    }
-    _triggerCurrentRow();
-    notifyListeners();
-  }
-
   /// Reads the current row from all tracks in the playing pattern and builds
   /// the packed note/volume/pan/wave + synth params for the audio engine.
-  _ScheduledPlaybackRow _triggerCurrentRow({
-    bool sendToAudio = true,
-    bool recordInsertResets = true,
-  }) {
+  _ScheduledPlaybackRow _triggerCurrentRow() {
     int ui99ToAudio255(int v) => ((v.clamp(0, 99) * 255) / 99).round();
     int pitchOnlyNoteCmd(int midi) => -1000 - midi.clamp(0, 127);
     int retrigVolumeForStep(int baseVolume, int mode, int step) {
@@ -1977,11 +1888,6 @@ class AppState extends ChangeNotifier {
             final value = (fx.value ?? 0).clamp(0, 99);
             final fn = fxInsertFunctionFromCommand(cmd);
             final slotIdx = fxInsertSlotFromCommand(cmd) - 1;
-            if (fn == 0 && recordInsertResets) {
-              // Reset: C++ is handled via the queue; also signal Dart mixer
-              // to re-apply its current slider values.
-              _pendingInsertResets.add((t, slotIdx));
-            }
             insertFxCommandQueue.addAll([t, slotIdx, fn, value]);
           }
         }
@@ -2211,37 +2117,6 @@ class AppState extends ChangeNotifier {
       insertFxCommandData: List<int>.unmodifiable(insertFxCommandQueue),
       lineSamples: lineSamples,
     );
-
-    if (sendToAudio) {
-      AudioEngine.instance.setRowData(scheduled.rowData);
-      if (scheduled.immediateKillMask.isNotEmpty) {
-        AudioEngine.instance.killVoices(scheduled.immediateKillMask);
-      }
-      AudioEngine.instance.setLineSamplesPerRow(scheduled.lineSamples);
-      if (scheduled.retrigData.isNotEmpty) {
-        AudioEngine.instance.queueRetrigs(scheduled.retrigData);
-      }
-      if (scheduled.delayData.isNotEmpty) {
-        AudioEngine.instance.queueDelays(scheduled.delayData);
-      }
-      if (scheduled.killData.isNotEmpty) {
-        AudioEngine.instance.queueKills(scheduled.killData);
-      }
-      if (scheduled.sliceCommandData.isNotEmpty) {
-        AudioEngine.instance.queueSliceCommands(scheduled.sliceCommandData);
-      }
-      if (scheduled.mixerCommandData.isNotEmpty) {
-        AudioEngine.instance.queueMixerCommands(scheduled.mixerCommandData);
-      }
-      if (scheduled.insertFxCommandData.isNotEmpty) {
-        AudioEngine.instance.queueInsertFxCommands(
-          scheduled.insertFxCommandData,
-        );
-      }
-      if (scheduled.arpData.isNotEmpty) {
-        AudioEngine.instance.queueArp(scheduled.arpData);
-      }
-    }
 
     return scheduled;
   }
@@ -2879,6 +2754,11 @@ class AppState extends ChangeNotifier {
       ...synthParams,
     ];
     await AudioEngine.instance.setRowData(noteOff);
+    // Hard-stop any lingering release/reverb tails from preview.
+    await AudioEngine.instance.killVoices(List<int>.filled(8, 1));
+    // Do NOT stop the output stream here — stopping it causes an Android
+    // hardware route change that produces a transient burst in the next
+    // mic capture. The output stream stays open but silent.
     _previewSamplerSlot = -1;
     notifyListeners();
   }

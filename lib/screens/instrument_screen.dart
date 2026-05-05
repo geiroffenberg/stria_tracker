@@ -764,6 +764,10 @@ class _SamplerEditorState extends State<_SamplerEditor>
   void initState() {
     super.initState();
     _syncWaveformForCurrent();
+    // Open the mic input stream now so it's warm before the first RECORD press.
+    // Keeps Android in duplex mode continuously, eliminating the hardware
+    // route-change transient that causes a burst at the start of each take.
+    AudioEngine.instance.openRecordingStream();
   }
 
   void _syncPlayheadTicker(bool shouldRun) {
@@ -790,6 +794,7 @@ class _SamplerEditorState extends State<_SamplerEditor>
     _recordingTimer?.stop();
     _recordingTimer?.dispose();
     _recordingTimer = null;
+    AudioEngine.instance.closeRecordingStream();
     super.dispose();
   }
 
@@ -1355,15 +1360,54 @@ class _SamplerEditorState extends State<_SamplerEditor>
         return;
       }
 
-      // Normalize to peak 0.9 so quiet mic input is brought up to a useful level
       final rawSamples = samples.cast<double>();
-      final peak = rawSamples.fold<double>(
+
+      // Successive takes (especially after preview) can include a startup burst.
+      // Use adaptive head trim: always trim a minimum, then keep trimming while
+      // the short-window average absolute amplitude is still "hot".
+      final minTrimFrames = (sampleRate * 0.06).round();
+      final maxSearchFrames = (sampleRate * 0.35).round();
+      final windowFrames = (sampleRate * 0.02).round().clamp(8, 4096);
+      final stepFrames = (windowFrames ~/ 2).clamp(1, 2048);
+      int startupTrim = minTrimFrames.clamp(
+        0,
+        rawSamples.length > 1 ? rawSamples.length - 1 : 0,
+      );
+      final searchLimit = maxSearchFrames.clamp(0, rawSamples.length);
+      const hotThreshold = 0.08; // average |sample| above this is likely transient
+      while (startupTrim + windowFrames < searchLimit) {
+        double sumAbs = 0.0;
+        for (int i = startupTrim; i < startupTrim + windowFrames; i++) {
+          sumAbs += rawSamples[i].abs();
+        }
+        final avgAbs = sumAbs / windowFrames;
+        if (avgAbs <= hotThreshold) break;
+        startupTrim += stepFrames;
+      }
+      final trimmedSamples = startupTrim > 0 && rawSamples.length > startupTrim
+          ? rawSamples.sublist(startupTrim)
+          : rawSamples;
+
+      // Normalize to peak 0.9 so quiet mic input is brought up to a useful level.
+      final peak = trimmedSamples.fold<double>(
         0.0,
         (m, s) => s.abs() > m ? s.abs() : m,
       );
       final normalizedSamples = peak > 0.0
-          ? rawSamples.map((s) => (s / peak) * 0.9).toList()
-          : rawSamples;
+          ? trimmedSamples.map((s) => (s / peak) * 0.9).toList()
+          : List<double>.from(trimmedSamples);
+
+      // Tiny endpoint fades prevent discontinuity clicks.
+      final fadeSamples = ((sampleRate * 0.005).round()).clamp(
+        0,
+        normalizedSamples.length ~/ 2,
+      );
+      for (int i = 0; i < fadeSamples; i++) {
+        final gain = i / fadeSamples;
+        normalizedSamples[i] *= gain;
+        final tailIndex = normalizedSamples.length - 1 - i;
+        normalizedSamples[tailIndex] *= gain;
+      }
 
       // Encode as WAV and save
       final wavPath = await _saveRecordedSample(normalizedSamples, sampleRate);
@@ -1646,6 +1690,11 @@ class _SamplerEditorState extends State<_SamplerEditor>
     SamplerParams p,
   ) async {
     if (_previewBusy || p.samplePath == null || width <= 0) return;
+    // If already previewing, stop and return — tap acts as stop button.
+    if (state.isPreviewingCurrentSampler) {
+      await state.stopPreviewCurrentSampler();
+      return;
+    }
     setState(() => _previewBusy = true);
     try {
       final tapNorm = (details.localPosition.dx / width).clamp(0.0, 1.0);
@@ -1855,12 +1904,22 @@ class _SamplerEditorState extends State<_SamplerEditor>
                 const SizedBox(width: 8),
                 Expanded(
                   child: ElevatedButton.icon(
-                    onPressed: _busy
+                    onPressed: (_busy || isPreviewing)
                         ? null
                         : () => _showRecordingWindow(context),
                     icon: const Icon(Icons.mic),
                     label: const Text('RECORD'),
                   ),
+                ),
+                const SizedBox(width: 8),
+                IconButton(
+                  tooltip: 'Delete sample',
+                  onPressed: (_busy || p.samplePath == null)
+                      ? null
+                      : () {
+                          state.clearCurrentSamplerSample();
+                        },
+                  icon: const Icon(Icons.delete_outline),
                 ),
               ],
             ),

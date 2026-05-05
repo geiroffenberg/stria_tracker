@@ -2282,16 +2282,19 @@ oboe::DataCallbackResult AudioEngine::onAudioReady(
     return oboe::DataCallbackResult::Continue;
 }
 
-void AudioEngine::startRecording() {
-    // Clear previous recording
-    {
-        std::lock_guard<std::mutex> lock(mRecordingMutex);
-        mRecordingBuffer.clear();
-        mRecordingWarmupFrames = 0;
-    }
-    mIsRecording.store(true);
+// ---------------------------------------------------------------------------
+// Persistent input stream management
+// ---------------------------------------------------------------------------
 
-    // Build a callback-driven input stream (no polling thread needed)
+void AudioEngine::openRecordingStream() {
+    // Close any stale stream first.
+    if (mRecordingStream) {
+        mIsRecording.store(false);
+        mRecordingStream->stop();
+        mRecordingStream.reset();
+        mRecordingCallback.reset();
+    }
+
     mRecordingCallback = std::make_unique<RecordingCallback>(*this);
 
     oboe::AudioStreamBuilder builder;
@@ -2304,40 +2307,90 @@ void AudioEngine::startRecording() {
 
     oboe::Result result = builder.openManagedStream(mRecordingStream);
     if (result != oboe::Result::OK) {
-        LOGE("Failed to open recording stream: %s", oboe::convertToText(result));
-        mIsRecording.store(false);
+        LOGE("openRecordingStream: failed to open: %s", oboe::convertToText(result));
         mRecordingCallback.reset();
         return;
     }
 
     result = mRecordingStream->start();
     if (result != oboe::Result::OK) {
-        LOGE("Failed to start recording stream: %s", oboe::convertToText(result));
+        LOGE("openRecordingStream: failed to start: %s", oboe::convertToText(result));
         mRecordingStream.reset();
-        mIsRecording.store(false);
         mRecordingCallback.reset();
         return;
     }
 
-    LOGI("Recording started (callback mode): %d Hz, framesPerBurst=%d",
-         (int)mRecordingStream->getSampleRate(),
-         (int)mRecordingStream->getFramesPerBurst());
+    // mIsRecording stays false — callbacks drain silently until RECORD pressed.
+    LOGI("openRecordingStream: stream running silently at %d Hz",
+         (int)mRecordingStream->getSampleRate());
+}
+
+void AudioEngine::closeRecordingStream() {
+    mIsRecording.store(false);
+    if (mRecordingStream) {
+        mRecordingStream->stop();
+        mRecordingStream.reset();
+    }
+    mRecordingCallback.reset();
+    LOGI("closeRecordingStream: input stream closed");
+}
+
+// ---------------------------------------------------------------------------
+// Per-take accumulation control
+// ---------------------------------------------------------------------------
+
+void AudioEngine::startRecording() {
+    // Clear buffer for the new take. Stream is already running.
+    {
+        std::lock_guard<std::mutex> lock(mRecordingMutex);
+        mRecordingBuffer.clear();
+        // Stream has been warm for a while — no per-take warmup needed.
+        mRecordingWarmupFrames = kWarmupFrames;
+    }
+
+    if (!mRecordingStream) {
+        // Fallback: stream not open yet (e.g. called without openRecordingStream).
+        LOGW("startRecording: stream not open, opening now (may cause transient)");
+        openRecordingStream();
+        // Reset warmup so we skip startup noise on this cold open.
+        std::lock_guard<std::mutex> lock(mRecordingMutex);
+        mRecordingWarmupFrames = 0;
+    }
+
+    mIsRecording.store(true);
+    LOGI("startRecording: accumulation started");
 }
 
 oboe::DataCallbackResult AudioEngine::onRecordingAudioReady(
-        oboe::AudioStream* /*stream*/,
+    oboe::AudioStream* stream,
         void*              audioData,
         int32_t            numFrames) {
 
+    // Stream identity check — stop stale callbacks from a previous stream.
+    {
+        std::lock_guard<std::mutex> lock(mRecordingMutex);
+        if (!mRecordingStream || mRecordingStream.get() != stream) {
+            return oboe::DataCallbackResult::Stop;
+        }
+    }
+
+    // When idle (not accumulating), drain silently to keep the stream alive.
     if (!mIsRecording.load()) {
-        return oboe::DataCallbackResult::Stop;
+        return oboe::DataCallbackResult::Continue;
     }
 
     const float* samples = static_cast<const float*>(audioData);
 
     std::lock_guard<std::mutex> lock(mRecordingMutex);
 
-    // Skip the first kWarmupFrames to discard hardware start-up noise
+    // Re-check after lock in case stopRecording() raced.
+    if (!mIsRecording.load()) {
+        return oboe::DataCallbackResult::Continue;
+    }
+
+    // Per-take warmup: skip frames if the stream was cold-opened inside
+    // startRecording() (the fallback path). Normally kWarmupFrames is
+    // pre-satisfied so this loop body never executes.
     if (mRecordingWarmupFrames < kWarmupFrames) {
         const int32_t skip = std::min<int32_t>(numFrames, kWarmupFrames - mRecordingWarmupFrames);
         mRecordingWarmupFrames += skip;
@@ -2350,7 +2403,8 @@ oboe::DataCallbackResult AudioEngine::onRecordingAudioReady(
         if ((int)mRecordingBuffer.size() >= kMaxRecordingFrames) {
             mIsRecording.store(false);
             LOGI("Recording buffer full");
-            return oboe::DataCallbackResult::Stop;
+            // Keep stream running so the next take can start without reopening.
+            return oboe::DataCallbackResult::Continue;
         }
         mRecordingBuffer.push_back(samples[i]);
     }
@@ -2358,18 +2412,17 @@ oboe::DataCallbackResult AudioEngine::onRecordingAudioReady(
 }
 
 std::vector<float> AudioEngine::stopRecording(int& outSampleRate) {
+    // Stop accumulating. Stream stays open and drains silently.
     mIsRecording.store(false);
+
+    std::lock_guard<std::mutex> lock(mRecordingMutex);
 
     if (mRecordingStream) {
         outSampleRate = (int)mRecordingStream->getSampleRate();
-        mRecordingStream->stop();
-        mRecordingStream.reset();
     } else {
         outSampleRate = 44100;
     }
-    mRecordingCallback.reset();
 
-    std::lock_guard<std::mutex> lock(mRecordingMutex);
     LOGI("Recording stopped: %zu frames at %d Hz",
          mRecordingBuffer.size(), outSampleRate);
 

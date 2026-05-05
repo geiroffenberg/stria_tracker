@@ -494,7 +494,22 @@ class AudioEngine {
     return result ?? false;
   }
 
-  /// Start recording audio from the output mix to buffer.
+  /// Open the mic input stream and keep it warm (no accumulation).
+  /// Call when entering the recording UI. Avoids Android duplex-mode transients
+  /// that would otherwise appear at the start of the first RECORD take.
+  Future<void> openRecordingStream() async {
+    if (!_initialised) return;
+    await _channel.invokeMethod('openRecordingStream');
+  }
+
+  /// Close the persistent mic input stream.
+  /// Call when leaving the recording UI.
+  Future<void> closeRecordingStream() async {
+    if (!_initialised) return;
+    await _channel.invokeMethod('closeRecordingStream');
+  }
+
+  /// Start accumulating mic input into the buffer (stream must already be open).
   Future<void> startRecording() async {
     if (!_initialised) return;
     await _channel.invokeMethod('startRecording');
