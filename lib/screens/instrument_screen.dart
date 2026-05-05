@@ -1844,7 +1844,7 @@ class _SamplerEditorState extends State<_SamplerEditor>
                         min: 0,
                         max: 99,
                         divisions: 99,
-                        activeColor: Colors.amber.shade600,
+                        activeColor: kColComplement,
                         inactiveColor: kColInactive.withAlpha(70),
                         onChanged: (v) {
                           setState(() {
@@ -2016,29 +2016,45 @@ class _SamplerEditorState extends State<_SamplerEditor>
                   'START  ${(p.start * 100).round()}%',
                   style: kStyleHeader.copyWith(fontSize: 11, color: kColHeader),
                 ),
-                Slider(
-                  value: p.start,
-                  onChanged: (v) {
-                    p.start = v.clamp(0.0, 1.0);
-                    if (p.end < p.start + 0.01) {
-                      p.end = (p.start + 0.01).clamp(0.0, 1.0);
-                    }
-                    state.instrumentParamsChanged();
-                  },
+                SliderTheme(
+                  data: SliderTheme.of(context).copyWith(
+                    activeTrackColor: kColComplement,
+                    inactiveTrackColor: kColInactive.withAlpha(80),
+                    thumbColor: kColComplement,
+                    overlayShape: SliderComponentShape.noOverlay,
+                  ),
+                  child: Slider(
+                    value: p.start,
+                    onChanged: (v) {
+                      p.start = v.clamp(0.0, 1.0);
+                      if (p.end < p.start + 0.01) {
+                        p.end = (p.start + 0.01).clamp(0.0, 1.0);
+                      }
+                      state.instrumentParamsChanged();
+                    },
+                  ),
                 ),
                 Text(
                   'END  ${(p.end * 100).round()}%',
                   style: kStyleHeader.copyWith(fontSize: 11, color: kColHeader),
                 ),
-                Slider(
-                  value: p.end,
-                  onChanged: (v) {
-                    p.end = v.clamp(0.0, 1.0);
-                    if (p.end < p.start + 0.01) {
-                      p.start = (p.end - 0.01).clamp(0.0, 1.0);
-                    }
-                    state.instrumentParamsChanged();
-                  },
+                SliderTheme(
+                  data: SliderTheme.of(context).copyWith(
+                    activeTrackColor: kColComplement,
+                    inactiveTrackColor: kColInactive.withAlpha(80),
+                    thumbColor: kColComplement,
+                    overlayShape: SliderComponentShape.noOverlay,
+                  ),
+                  child: Slider(
+                    value: p.end,
+                    onChanged: (v) {
+                      p.end = v.clamp(0.0, 1.0);
+                      if (p.end < p.start + 0.01) {
+                        p.start = (p.end - 0.01).clamp(0.0, 1.0);
+                      }
+                      state.instrumentParamsChanged();
+                    },
+                  ),
                 ),
                 Row(
                   children: [

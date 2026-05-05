@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../main.dart' show switchPalette, paletteNotifier;
 import '../models/note_value.dart';
 import '../models/pattern_model.dart';
 import '../models/song_model.dart';
@@ -14,6 +15,7 @@ enum _SongMenuAction {
   newSong,
   saveSong,
   loadSong,
+  changePalette,
 }
 
 /// Song arrangement screen.
@@ -341,6 +343,11 @@ class _SongScreenState extends State<SongScreen> {
                     ),
                     PopupMenuDivider(),
                     PopupMenuItem(
+                      value: _SongMenuAction.changePalette,
+                      child: Text('Color Palette', style: TextStyle(fontSize: 16)),
+                    ),
+                    PopupMenuDivider(),
+                    PopupMenuItem(
                       enabled: false,
                       child: Text('Export WAV (coming soon)', style: TextStyle(fontSize: 16)),
                     ),
@@ -521,7 +528,77 @@ class _SongScreenState extends State<SongScreen> {
       case _SongMenuAction.loadSong:
         _toggleLoadMenu(state);
         break;
+      case _SongMenuAction.changePalette:
+        _showPalettePicker(ctx);
+        break;
     }
+  }
+
+  void _showPalettePicker(BuildContext ctx) {
+    showModalBottomSheet<void>(
+      context: ctx,
+      backgroundColor: kBgTrackHeader,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (_) => ValueListenableBuilder<TrackerPalette>(
+        valueListenable: paletteNotifier,
+        builder: (_, active, __) => Padding(
+          padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Color Palette',
+                  style: TextStyle(
+                      color: kColAccent,
+                      fontSize: 18,
+                      fontWeight: FontWeight.w700,
+                      fontFamily: kFontMono)),
+              const SizedBox(height: 20),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                children: kAllPalettes.map((p) {
+                  final selected = p.name == active.name;
+                  return GestureDetector(
+                    onTap: () {
+                      switchPalette(p);
+                      Navigator.of(ctx).pop();
+                    },
+                    child: Column(
+                      children: [
+                        Container(
+                          width: 44,
+                          height: 44,
+                          decoration: BoxDecoration(
+                            color: p.previewColor,
+                            shape: BoxShape.circle,
+                            border: Border.all(
+                              color: selected ? Colors.white : Colors.transparent,
+                              width: 3,
+                            ),
+                            boxShadow: selected
+                                ? [BoxShadow(color: p.previewColor.withAlpha(180), blurRadius: 12)]
+                                : null,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        Text(p.name,
+                            style: TextStyle(
+                                color: selected ? Colors.white : kColHeader,
+                                fontSize: 11,
+                                fontFamily: kFontMono)),
+                      ],
+                    ),
+                  );
+                }).toList(),
+              ),
+              const SizedBox(height: 8),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   Future<void> _toggleLoadMenu(AppState state) async {

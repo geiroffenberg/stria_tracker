@@ -58,7 +58,7 @@ class CellActionBar extends StatelessWidget {
           (selCell.column == CellColumn.fx0cmd ||
               selCell.column == CellColumn.fx1cmd ||
               selCell.column == CellColumn.fx2cmd)
-          ? 208
+          ? 240
           : 56;
       if (isFxValColumn(selCell.column) && selectedFxCommand(selCell) != null) {
         height = 78;
@@ -71,7 +71,7 @@ class CellActionBar extends StatelessWidget {
     return AnimatedContainer(
       duration: const Duration(milliseconds: 100),
       height: height,
-      decoration: const BoxDecoration(color: kBgTrackHeader),
+      decoration: BoxDecoration(color: kBgTrackHeader),
       child: body,
     );
   }
@@ -321,10 +321,10 @@ class _NumericActions extends StatelessWidget {
             decoration: InputDecoration(
               hintText: '$minV-$maxV',
               hintStyle: kStyleBase.copyWith(color: kColInactive),
-              enabledBorder: const OutlineInputBorder(
+              enabledBorder: OutlineInputBorder(
                 borderSide: BorderSide(color: kColInactive),
               ),
-              focusedBorder: const OutlineInputBorder(
+              focusedBorder: OutlineInputBorder(
                 borderSide: BorderSide(color: kColAccent),
               ),
             ),
@@ -764,34 +764,44 @@ class _FxCmdActions extends StatelessWidget {
                 ),
             ],
           ),
-          const SizedBox(height: 6),
-          _sectionLabel('Classic FX'),
-          const SizedBox(height: 3),
-          _commandStrip([
-            ...List<int>.generate(_classicCount, (i) => i),
-            kFxARC,
-            kFxSLC,
-          ], current),
-          ...() {
-            final insertCmds = _getInsertFxCommands();
-            if (insertCmds.isEmpty) return <Widget>[];
-            return [
-              const SizedBox(height: 5),
-              _sectionLabel('Insert FX'),
-              const SizedBox(height: 3),
-              _commandStrip(insertCmds, current),
-            ];
-          }(),
-          const SizedBox(height: 5),
-          _sectionLabel('Mixer FX'),
-          const SizedBox(height: 3),
-          _commandStripMixer(_getMixerFxCommands(), current),
-          if (hasAssigned) ...[
-            const SizedBox(height: 5),
-            _sectionLabel('Assigned'),
-            const SizedBox(height: 3),
-            _commandStripAssigned(assignedCmds, current),
-          ],
+          const SizedBox(height: 4),
+          Expanded(
+            child: SingleChildScrollView(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  _sectionLabel('Classic FX'),
+                  const SizedBox(height: 3),
+                  _commandStrip([
+                    ...List<int>.generate(_classicCount, (i) => i),
+                    kFxARC,
+                    kFxSLC,
+                  ], current),
+                  ...() {
+                    final insertCmds = _getInsertFxCommands();
+                    if (insertCmds.isEmpty) return <Widget>[];
+                    return [
+                      const SizedBox(height: 5),
+                      _sectionLabel('Insert FX'),
+                      const SizedBox(height: 3),
+                      _commandStrip(insertCmds, current),
+                    ];
+                  }(),
+                  const SizedBox(height: 5),
+                  _sectionLabel('Mixer FX'),
+                  const SizedBox(height: 3),
+                  _commandStripMixer(_getMixerFxCommands(), current),
+                  if (hasAssigned) ...[
+                    const SizedBox(height: 5),
+                    _sectionLabel('Assigned'),
+                    const SizedBox(height: 3),
+                    _commandStripAssigned(assignedCmds, current),
+                  ],
+                ],
+              ),
+            ),
+          ),
         ],
       ),
     );

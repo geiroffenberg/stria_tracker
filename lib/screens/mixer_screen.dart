@@ -544,12 +544,18 @@ class _MixerScreenState extends State<MixerScreen> {
         initialBypass: initialBypass,
         initialState: initialState,
         onBypassChanged: (b) => setState(() {
-          if (onMaster) _masterBypassed[slotIdx] = b;
-          else _trackBypassed[trackIdx!][slotIdx] = b;
+          if (onMaster) {
+            _masterBypassed[slotIdx] = b;
+          } else {
+            _trackBypassed[trackIdx!][slotIdx] = b;
+          }
         }),
         onParamsChanged: (s) => setState(() {
-          if (onMaster) _masterFilterStates[slotIdx] = s;
-          else _trackFilterStates[trackIdx!][slotIdx] = s;
+          if (onMaster) {
+            _masterFilterStates[slotIdx] = s;
+          } else {
+            _trackFilterStates[trackIdx!][slotIdx] = s;
+          }
         }),
       ),
     );
@@ -573,12 +579,18 @@ class _MixerScreenState extends State<MixerScreen> {
         initialBypass: initialBypass,
         initialState: initialState,
         onBypassChanged: (b) => setState(() {
-          if (onMaster) _masterBypassed[slotIdx] = b;
-          else _trackBypassed[trackIdx!][slotIdx] = b;
+          if (onMaster) {
+            _masterBypassed[slotIdx] = b;
+          } else {
+            _trackBypassed[trackIdx!][slotIdx] = b;
+          }
         }),
         onParamsChanged: (s) => setState(() {
-          if (onMaster) _masterDistortionStates[slotIdx] = s;
-          else _trackDistortionStates[trackIdx!][slotIdx] = s;
+          if (onMaster) {
+            _masterDistortionStates[slotIdx] = s;
+          } else {
+            _trackDistortionStates[trackIdx!][slotIdx] = s;
+          }
         }),
       ),
     );
@@ -602,12 +614,18 @@ class _MixerScreenState extends State<MixerScreen> {
         initialBypass: initialBypass,
         initialState: initialState,
         onBypassChanged: (b) => setState(() {
-          if (onMaster) _masterBypassed[slotIdx] = b;
-          else _trackBypassed[trackIdx!][slotIdx] = b;
+          if (onMaster) {
+            _masterBypassed[slotIdx] = b;
+          } else {
+            _trackBypassed[trackIdx!][slotIdx] = b;
+          }
         }),
         onParamsChanged: (s) => setState(() {
-          if (onMaster) _masterBitcrusherStates[slotIdx] = s;
-          else _trackBitcrusherStates[trackIdx!][slotIdx] = s;
+          if (onMaster) {
+            _masterBitcrusherStates[slotIdx] = s;
+          } else {
+            _trackBitcrusherStates[trackIdx!][slotIdx] = s;
+          }
         }),
       ),
     );
@@ -631,12 +649,18 @@ class _MixerScreenState extends State<MixerScreen> {
         initialBypass: initialBypass,
         initialState: initialState,
         onBypassChanged: (b) => setState(() {
-          if (onMaster) _masterBypassed[slotIdx] = b;
-          else _trackBypassed[trackIdx!][slotIdx] = b;
+          if (onMaster) {
+            _masterBypassed[slotIdx] = b;
+          } else {
+            _trackBypassed[trackIdx!][slotIdx] = b;
+          }
         }),
         onParamsChanged: (s) => setState(() {
-          if (onMaster) _masterLimiterStates[slotIdx] = s;
-          else _trackLimiterStates[trackIdx!][slotIdx] = s;
+          if (onMaster) {
+            _masterLimiterStates[slotIdx] = s;
+          } else {
+            _trackLimiterStates[trackIdx!][slotIdx] = s;
+          }
         }),
       ),
     );
@@ -660,12 +684,18 @@ class _MixerScreenState extends State<MixerScreen> {
         initialBypass: initialBypass,
         initialState: initialState,
         onBypassChanged: (b) => setState(() {
-          if (onMaster) _masterBypassed[slotIdx] = b;
-          else _trackBypassed[trackIdx!][slotIdx] = b;
+          if (onMaster) {
+            _masterBypassed[slotIdx] = b;
+          } else {
+            _trackBypassed[trackIdx!][slotIdx] = b;
+          }
         }),
         onParamsChanged: (s) => setState(() {
-          if (onMaster) _masterChorusStates[slotIdx] = s;
-          else _trackChorusStates[trackIdx!][slotIdx] = s;
+          if (onMaster) {
+            _masterChorusStates[slotIdx] = s;
+          } else {
+            _trackChorusStates[trackIdx!][slotIdx] = s;
+          }
         }),
       ),
     );
@@ -689,12 +719,18 @@ class _MixerScreenState extends State<MixerScreen> {
         initialBypass: initialBypass,
         initialState: initialState,
         onBypassChanged: (b) => setState(() {
-          if (onMaster) _masterBypassed[slotIdx] = b;
-          else _trackBypassed[trackIdx!][slotIdx] = b;
+          if (onMaster) {
+            _masterBypassed[slotIdx] = b;
+          } else {
+            _trackBypassed[trackIdx!][slotIdx] = b;
+          }
         }),
         onParamsChanged: (s) => setState(() {
-          if (onMaster) _masterEqStates[slotIdx] = s;
-          else _trackEqStates[trackIdx!][slotIdx] = s;
+          if (onMaster) {
+            _masterEqStates[slotIdx] = s;
+          } else {
+            _trackEqStates[trackIdx!][slotIdx] = s;
+          }
         }),
       ),
     );
@@ -718,12 +754,18 @@ class _MixerScreenState extends State<MixerScreen> {
         initialBypass: initialBypass,
         initialState: initialState,
         onBypassChanged: (b) => setState(() {
-          if (onMaster) _masterBypassed[slotIdx] = b;
-          else _trackBypassed[trackIdx!][slotIdx] = b;
+          if (onMaster) {
+            _masterBypassed[slotIdx] = b;
+          } else {
+            _trackBypassed[trackIdx!][slotIdx] = b;
+          }
         }),
         onParamsChanged: (s) => setState(() {
-          if (onMaster) _masterCompressorStates[slotIdx] = s;
-          else _trackCompressorStates[trackIdx!][slotIdx] = s;
+          if (onMaster) {
+            _masterCompressorStates[slotIdx] = s;
+          } else {
+            _trackCompressorStates[trackIdx!][slotIdx] = s;
+          }
         }),
       ),
     );
@@ -1158,9 +1200,9 @@ class _MasterStrip extends StatelessWidget {
                             enabledThumbRadius: 8,
                           ),
                           overlayShape: SliderComponentShape.noOverlay,
-                          activeTrackColor: kColAccent,
+                          activeTrackColor: kColComplement,
                           inactiveTrackColor: kColInactive,
-                          thumbColor: kColAccent,
+                          thumbColor: kColComplement,
                         ),
                         child: Slider(value: volume, onChanged: onVolume),
                       ),
@@ -1314,9 +1356,9 @@ class _ChannelStrip extends StatelessWidget {
                             enabledThumbRadius: 7,
                           ),
                           overlayShape: SliderComponentShape.noOverlay,
-                          activeTrackColor: kColAccent,
+                          activeTrackColor: kColComplement,
                           inactiveTrackColor: kColInactive,
-                          thumbColor: kColAccent,
+                          thumbColor: kColComplement,
                         ),
                         child: Slider(value: volume, onChanged: onVolume),
                       ),
@@ -3032,9 +3074,9 @@ class _ReverbSlider extends StatelessWidget {
               trackHeight: 6,
               thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 7),
               overlayShape: SliderComponentShape.noOverlay,
-              activeTrackColor: Colors.amber.shade600,
+              activeTrackColor: kColComplement,
               inactiveTrackColor: kColInactive,
-              thumbColor: Colors.amber.shade600,
+              thumbColor: kColComplement,
             ),
             child: Slider(
               value: value,

@@ -66,9 +66,9 @@ class _MainScreenState extends State<MainScreen> {
     final state = AppStateScope.of(context);
     return Container(
       height: 52,
-      decoration: const BoxDecoration(
+      decoration: BoxDecoration(
         color: kBgTopNav,
-        border: Border(
+        border: const Border(
           bottom: BorderSide(color: Color(0xFF226666), width: 1),
         ),
       ),
