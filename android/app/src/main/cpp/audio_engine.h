@@ -142,6 +142,19 @@ struct InsertFxCommandEvent {
     int     value;        ///< 0-99 parameter value
 };
 
+struct QueuedPlaybackRow {
+    std::vector<int> rowData;
+    std::vector<int> immediateKillMask;
+    std::vector<int> retrigData;
+    std::vector<int> arpData;
+    std::vector<int> delayData;
+    std::vector<int> killData;
+    std::vector<int> sliceCommandData;
+    std::vector<int> mixerCommandData;
+    std::vector<int> insertFxCommandData;
+    int32_t lineSamples = 0;
+};
+
 /// Effect state for a single insert effect slot
 struct InsertEffect {
     int type = -1; // -1=empty, 0=reverb, 1=delay, 2=eq, 3=distortion, etc.
@@ -286,6 +299,21 @@ public:
         mLineSamplesPerRow = samples;
     }
 
+    /// Consume and return the number of row boundaries crossed since the last poll.
+    int32_t consumePendingRowAdvances();
+
+    /// Reset the native playhead phase so the current row restarts its timing.
+    void resetPlayheadPhase();
+
+    /// Clear any queued playback rows prepared by Dart.
+    void clearQueuedPlaybackRows();
+
+    /// Queue one fully built playback row for native sample-accurate playback.
+    void enqueuePlaybackRow(const QueuedPlaybackRow& row);
+
+    /// Control whether queued playback rows loop when the queue end is reached.
+    void setQueuedPlaybackLooping(bool loop);
+
     /// Queue sample-accurate retrigger events for the current row.
     /// [data] is packed in groups of 4: [sampleOffset, trackIdx, note, volume].
     /// Events fire when the internal sample counter reaches sampleOffset.
@@ -404,6 +432,14 @@ public:
         void*              audioData,
         int32_t            numFrames) override;
 
+    /// Check if a specific voice (track) is currently playing.
+    /// Returns true if the voice has an active note or is in release stage.
+    bool isVoicePlaying(int trackIdx) const;
+
+    /// Get the current envelope stage of a voice (for preview timing).
+    /// Returns EnvelopeStage enum value: 0=Idle, 1=Attack, 2=Decay, 3=Sustain, 4=Release
+    int getVoiceEnvelopeStage(int trackIdx) const;
+
 private:
     // Oboe callback shim for the recording (input) stream.
     // Oboe requires a stable pointer so we heap-allocate it.
@@ -425,7 +461,7 @@ private:
     std::unique_ptr<RecordingCallback> mRecordingCallback;
     bool                             mStarted = false;
     std::atomic<double>              mBpm{120.0};
-    std::mutex                       mVoiceMutex;
+    mutable std::mutex               mVoiceMutex;
     std::array<Voice, kMaxVoices>    mVoices{};
     std::array<SampleData, 64>       mSamplerSlots{};
 
@@ -444,7 +480,13 @@ private:
     float               mCachedSampleRate{48000.0f}; // updated on stream open
     
     int32_t                  mSubRowSampleCounter = 0;
+    int32_t                  mPlayheadSampleCounter = 0;
     int32_t                  mLineSamplesPerRow = 0; // Set via setLineSamplesPerRow()
+    std::atomic<int32_t>     mPendingRowAdvances{0};
+    std::atomic<bool>        mPlayheadRunning{false};
+    std::vector<QueuedPlaybackRow> mQueuedPlaybackRows;
+    size_t                   mQueuedPlaybackRowIndex = 0;
+    bool                     mQueuedPlaybackLoop = false;
 
     // Recording state
     std::mutex                       mRecordingMutex;
@@ -468,6 +510,17 @@ private:
     void processEffects(float* outL, float* outR, int numFrames, InsertEffect* effects);
 
     bool loadWavMono16OrFloat(const std::string& path, SampleData& outSample);
+    void triggerRowLocked(const std::vector<int>& rowData);
+    void killVoicesLocked(const std::vector<int>& killMask);
+    void queueRetrigsLocked(const std::vector<int>& data);
+    void queueArpLocked(const std::vector<int>& data);
+    void queueDelaysLocked(const std::vector<int>& data);
+    void queueKillsLocked(const std::vector<int>& data);
+    void queueSliceCommandsLocked(const std::vector<int>& data);
+    void queueMixerCommandsLocked(const std::vector<int>& data);
+    void queueInsertFxCommandsLocked(const std::vector<int>& data);
+    void applyQueuedPlaybackRowLocked(const QueuedPlaybackRow& row);
+    bool primeNextQueuedPlaybackRowLocked();
 
     static double midiToFreq(int note) {
         return 440.0 * std::pow(2.0, (note - 69) / 12.0);

@@ -37,6 +37,66 @@ Java_com_example_tracker_AudioEnginePlugin_nativeSetLineSamplesPerRow(
     reinterpret_cast<AudioEngine*>(ptr)->setLineSamplesPerRow(static_cast<int32_t>(samples));
 }
 
+JNIEXPORT jint JNICALL
+Java_com_example_tracker_AudioEnginePlugin_nativeConsumePendingRowAdvances(
+        JNIEnv*, jobject, jlong ptr) {
+    return reinterpret_cast<AudioEngine*>(ptr)->consumePendingRowAdvances();
+}
+
+JNIEXPORT void JNICALL
+Java_com_example_tracker_AudioEnginePlugin_nativeResetPlayheadPhase(
+        JNIEnv*, jobject, jlong ptr) {
+    reinterpret_cast<AudioEngine*>(ptr)->resetPlayheadPhase();
+}
+
+JNIEXPORT void JNICALL
+Java_com_example_tracker_AudioEnginePlugin_nativeClearQueuedPlaybackRows(
+        JNIEnv*, jobject, jlong ptr) {
+    reinterpret_cast<AudioEngine*>(ptr)->clearQueuedPlaybackRows();
+}
+
+JNIEXPORT void JNICALL
+Java_com_example_tracker_AudioEnginePlugin_nativeSetQueuedPlaybackLooping(
+        JNIEnv*, jobject, jlong ptr, jboolean loop) {
+    reinterpret_cast<AudioEngine*>(ptr)->setQueuedPlaybackLooping(loop);
+}
+
+JNIEXPORT void JNICALL
+Java_com_example_tracker_AudioEnginePlugin_nativeEnqueuePlaybackRow(
+        JNIEnv* env,
+        jobject,
+        jlong ptr,
+        jint lineSamples,
+        jintArray rowData,
+        jintArray immediateKillMask,
+        jintArray retrigData,
+        jintArray arpData,
+        jintArray delayData,
+        jintArray killData,
+        jintArray sliceCommandData,
+        jintArray mixerCommandData,
+        jintArray insertFxCommandData) {
+    auto toVector = [env](jintArray array) {
+        jsize len = env->GetArrayLength(array);
+        jint* elms = env->GetIntArrayElements(array, nullptr);
+        std::vector<int> vec(elms, elms + len);
+        env->ReleaseIntArrayElements(array, elms, JNI_ABORT);
+        return vec;
+    };
+    QueuedPlaybackRow row;
+    row.lineSamples = static_cast<int32_t>(lineSamples);
+    row.rowData = toVector(rowData);
+    row.immediateKillMask = toVector(immediateKillMask);
+    row.retrigData = toVector(retrigData);
+    row.arpData = toVector(arpData);
+    row.delayData = toVector(delayData);
+    row.killData = toVector(killData);
+    row.sliceCommandData = toVector(sliceCommandData);
+    row.mixerCommandData = toVector(mixerCommandData);
+    row.insertFxCommandData = toVector(insertFxCommandData);
+    reinterpret_cast<AudioEngine*>(ptr)->enqueuePlaybackRow(row);
+}
+
 JNIEXPORT void JNICALL
 Java_com_example_tracker_AudioEnginePlugin_nativeSetRowData(
         JNIEnv* env, jobject, jlong ptr, jintArray data) {
@@ -313,6 +373,18 @@ Java_com_example_tracker_AudioEnginePlugin_nativeStopRecording(
         env->SetFloatArrayRegion(result, 0, samples.size(), samples.data());
     }
     return result;
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_example_tracker_AudioEnginePlugin_nativeIsVoicePlaying(
+        JNIEnv*, jobject, jlong ptr, jint trackIdx) {
+    return reinterpret_cast<AudioEngine*>(ptr)->isVoicePlaying(trackIdx);
+}
+
+JNIEXPORT jint JNICALL
+Java_com_example_tracker_AudioEnginePlugin_nativeGetVoiceEnvelopeStage(
+        JNIEnv*, jobject, jlong ptr, jint trackIdx) {
+    return reinterpret_cast<AudioEngine*>(ptr)->getVoiceEnvelopeStage(trackIdx);
 }
 
 } // extern "C"

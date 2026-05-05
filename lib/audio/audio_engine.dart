@@ -45,6 +45,57 @@ class AudioEngine {
     await _channel.invokeMethod('setLineSamplesPerRow', {'samples': samples});
   }
 
+  /// Consume and return the number of row boundaries crossed natively since
+  /// the last poll.
+  Future<int> consumePendingRowAdvances() async {
+    if (!_initialised) return 0;
+    final result = await _channel.invokeMethod<int>('consumePendingRowAdvances');
+    return result ?? 0;
+  }
+
+  /// Reset the native playhead phase so the current row timing restarts now.
+  Future<void> resetPlayheadPhase() async {
+    if (!_initialised) return;
+    await _channel.invokeMethod('resetPlayheadPhase');
+  }
+
+  Future<void> clearQueuedPlaybackRows() async {
+    if (!_initialised) return;
+    await _channel.invokeMethod('clearQueuedPlaybackRows');
+  }
+
+  Future<void> setQueuedPlaybackLooping(bool loop) async {
+    if (!_initialised) return;
+    await _channel.invokeMethod('setQueuedPlaybackLooping', {'loop': loop});
+  }
+
+  Future<void> enqueuePlaybackRow({
+    required int lineSamples,
+    required List<int> rowData,
+    List<int> immediateKillMask = const [],
+    List<int> retrigData = const [],
+    List<int> arpData = const [],
+    List<int> delayData = const [],
+    List<int> killData = const [],
+    List<int> sliceCommandData = const [],
+    List<int> mixerCommandData = const [],
+    List<int> insertFxCommandData = const [],
+  }) async {
+    if (!_initialised) return;
+    await _channel.invokeMethod('enqueuePlaybackRow', {
+      'lineSamples': lineSamples,
+      'rowData': rowData,
+      'immediateKillMask': immediateKillMask,
+      'retrigData': retrigData,
+      'arpData': arpData,
+      'delayData': delayData,
+      'killData': killData,
+      'sliceCommandData': sliceCommandData,
+      'mixerCommandData': mixerCommandData,
+      'insertFxCommandData': insertFxCommandData,
+    });
+  }
+
   /// Feed the current pattern row data to the engine so it knows what to play.
   /// [rowData] is packed per track as
   /// [note, volume, pan, wave, instrumentType, detune, cutoff, resonance, filterMode,
@@ -129,6 +180,24 @@ class AudioEngine {
   Future<void> queueInsertFxCommands(List<int> data) async {
     if (!_initialised) return;
     await _channel.invokeMethod('queueInsertFxCommands', {'data': data});
+  }
+
+  /// Check if a voice (track) is currently playing.
+  /// [trackIdx] is 0-7 (track index).
+  /// Returns true if the voice has an active note or is in release stage.
+  Future<bool> isVoicePlaying(int trackIdx) async {
+    if (!_initialised) return false;
+    final result = await _channel.invokeMethod<bool>('isVoicePlaying', {'trackIdx': trackIdx});
+    return result ?? false;
+  }
+
+  /// Get the current envelope stage of a voice.
+  /// [trackIdx] is 0-7 (track index).
+  /// Returns: 0=Idle, 1=Attack, 2=Decay, 3=Sustain, 4=Release
+  Future<int> getVoiceEnvelopeStage(int trackIdx) async {
+    if (!_initialised) return 0;
+    final result = await _channel.invokeMethod<int>('getVoiceEnvelopeStage', {'trackIdx': trackIdx});
+    return result ?? 0;
   }
 
   /// Configure a master bus insert effect.

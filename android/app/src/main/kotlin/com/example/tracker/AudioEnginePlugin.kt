@@ -60,6 +60,59 @@ class AudioEnginePlugin : FlutterPlugin, MethodCallHandler {
                 if (enginePtr != 0L) nativeSetLineSamplesPerRow(enginePtr, samples)
                 result.success(null)
             }
+            "consumePendingRowAdvances" -> {
+                result.success(if (enginePtr != 0L) nativeConsumePendingRowAdvances(enginePtr) else 0)
+            }
+            "resetPlayheadPhase" -> {
+                if (enginePtr != 0L) nativeResetPlayheadPhase(enginePtr)
+                result.success(null)
+            }
+            "clearQueuedPlaybackRows" -> {
+                if (enginePtr != 0L) nativeClearQueuedPlaybackRows(enginePtr)
+                result.success(null)
+            }
+            "setQueuedPlaybackLooping" -> {
+                val loop = call.argument<Boolean>("loop") ?: false
+                if (enginePtr != 0L) nativeSetQueuedPlaybackLooping(enginePtr, loop)
+                result.success(null)
+            }
+            "enqueuePlaybackRow" -> {
+                val lineSamples = call.argument<Int>("lineSamples") ?: 0
+                @Suppress("UNCHECKED_CAST")
+                val rowData = call.argument<List<Int>>("rowData") ?: emptyList()
+                @Suppress("UNCHECKED_CAST")
+                val immediateKillMask = call.argument<List<Int>>("immediateKillMask") ?: emptyList()
+                @Suppress("UNCHECKED_CAST")
+                val retrigData = call.argument<List<Int>>("retrigData") ?: emptyList()
+                @Suppress("UNCHECKED_CAST")
+                val arpData = call.argument<List<Int>>("arpData") ?: emptyList()
+                @Suppress("UNCHECKED_CAST")
+                val delayData = call.argument<List<Int>>("delayData") ?: emptyList()
+                @Suppress("UNCHECKED_CAST")
+                val killData = call.argument<List<Int>>("killData") ?: emptyList()
+                @Suppress("UNCHECKED_CAST")
+                val sliceCommandData = call.argument<List<Int>>("sliceCommandData") ?: emptyList()
+                @Suppress("UNCHECKED_CAST")
+                val mixerCommandData = call.argument<List<Int>>("mixerCommandData") ?: emptyList()
+                @Suppress("UNCHECKED_CAST")
+                val insertFxCommandData = call.argument<List<Int>>("insertFxCommandData") ?: emptyList()
+                if (enginePtr != 0L) {
+                    nativeEnqueuePlaybackRow(
+                        enginePtr,
+                        lineSamples,
+                        rowData.toIntArray(),
+                        immediateKillMask.toIntArray(),
+                        retrigData.toIntArray(),
+                        arpData.toIntArray(),
+                        delayData.toIntArray(),
+                        killData.toIntArray(),
+                        sliceCommandData.toIntArray(),
+                        mixerCommandData.toIntArray(),
+                        insertFxCommandData.toIntArray(),
+                    )
+                }
+                result.success(null)
+            }
             "setRowData" -> {
                 @Suppress("UNCHECKED_CAST")
                 val data = call.argument<List<Int>>("data") ?: emptyList()
@@ -349,6 +402,24 @@ class AudioEnginePlugin : FlutterPlugin, MethodCallHandler {
                     result.success(null)
                 }
             }
+            "isVoicePlaying" -> {
+                val trackIdx = call.argument<Int>("trackIdx") ?: 0
+                if (enginePtr != 0L) {
+                    val isPlaying = nativeIsVoicePlaying(enginePtr, trackIdx)
+                    result.success(isPlaying)
+                } else {
+                    result.success(false)
+                }
+            }
+            "getVoiceEnvelopeStage" -> {
+                val trackIdx = call.argument<Int>("trackIdx") ?: 0
+                if (enginePtr != 0L) {
+                    val stage = nativeGetVoiceEnvelopeStage(enginePtr, trackIdx)
+                    result.success(stage)
+                } else {
+                    result.success(0)
+                }
+            }
             "dispose" -> {
                 if (enginePtr != 0L) {
                     nativeDispose(enginePtr)
@@ -368,6 +439,23 @@ class AudioEnginePlugin : FlutterPlugin, MethodCallHandler {
     private external fun nativeStop(ptr: Long)
     private external fun nativeSetTempo(ptr: Long, bpm: Double)
     private external fun nativeSetLineSamplesPerRow(ptr: Long, samples: Int)
+    private external fun nativeConsumePendingRowAdvances(ptr: Long): Int
+    private external fun nativeResetPlayheadPhase(ptr: Long)
+    private external fun nativeClearQueuedPlaybackRows(ptr: Long)
+    private external fun nativeSetQueuedPlaybackLooping(ptr: Long, loop: Boolean)
+    private external fun nativeEnqueuePlaybackRow(
+        ptr: Long,
+        lineSamples: Int,
+        rowData: IntArray,
+        immediateKillMask: IntArray,
+        retrigData: IntArray,
+        arpData: IntArray,
+        delayData: IntArray,
+        killData: IntArray,
+        sliceCommandData: IntArray,
+        mixerCommandData: IntArray,
+        insertFxCommandData: IntArray,
+    )
     private external fun nativeSetRowData(ptr: Long, data: IntArray)
     private external fun nativeKillVoices(ptr: Long, mask: IntArray)
     private external fun nativeQueueRetrigs(ptr: Long, data: IntArray)
@@ -404,6 +492,8 @@ class AudioEnginePlugin : FlutterPlugin, MethodCallHandler {
     private external fun nativeSetSamplerSample(ptr: Long, slot: Int, path: String): Boolean
     private external fun nativeStartRecording(ptr: Long)
     private external fun nativeStopRecording(ptr: Long, outSampleRate: IntArray): FloatArray?
+    private external fun nativeIsVoicePlaying(ptr: Long, trackIdx: Int): Boolean
+    private external fun nativeGetVoiceEnvelopeStage(ptr: Long, trackIdx: Int): Int
     private external fun nativeDispose(ptr: Long)
 
     companion object {

@@ -113,7 +113,7 @@ const List<String> kFxCommandNames = [
 ];
 
 const List<String> kFxCommandDescriptions = [
-  'Arpeggio — XY: X=1st interval, Y=2nd interval (1-9 = diatonic degrees)',
+  'Arpeggio — XY: X=1st interval, Y=2nd interval (1-9 = semitones above root)',
   'Chance — 00=never play, 99=always play, 50=50% chance',
   'Delay — 00=line start, 99=line end (note-on offset within row)',
   'Kill — cut note at % through row (00=immediate, 99=end of row)',

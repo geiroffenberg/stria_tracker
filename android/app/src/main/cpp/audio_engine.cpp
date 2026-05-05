@@ -293,6 +293,15 @@ bool AudioEngine::open() {
 
 void AudioEngine::start() {
     if (mStream) {
+        {
+            std::lock_guard<std::mutex> lock(mVoiceMutex);
+            if (!mQueuedPlaybackRows.empty()) {
+                mQueuedPlaybackRowIndex = 0;
+                mPlayheadSampleCounter = 0;
+                primeNextQueuedPlaybackRowLocked();
+                mPlayheadRunning.store(true);
+            }
+        }
         if (!mStarted) {
             mStream->requestStart();
             mStarted = true;
@@ -302,6 +311,9 @@ void AudioEngine::start() {
 }
 
 void AudioEngine::stop() {
+    mPlayheadRunning.store(false);
+    mPendingRowAdvances.store(0);
+    resetPlayheadPhase();
     if (mStream) {
         {
             std::lock_guard<std::mutex> lock(mVoiceMutex);
@@ -487,6 +499,10 @@ bool AudioEngine::setSamplerSample(int slot, const std::string& path) {
 
 void AudioEngine::triggerRow(const std::vector<int>& rowData) {
     std::lock_guard<std::mutex> lock(mVoiceMutex);
+    triggerRowLocked(rowData);
+}
+
+void AudioEngine::triggerRowLocked(const std::vector<int>& rowData) {
     // Reset sub-row event state for the new row so stale events from the
     // previous row cannot fire into this one.
     mSubRowSampleCounter = 0;
@@ -734,8 +750,64 @@ void AudioEngine::triggerRow(const std::vector<int>& rowData) {
     }
 }
 
+int32_t AudioEngine::consumePendingRowAdvances() {
+    return mPendingRowAdvances.exchange(0);
+}
+
+void AudioEngine::resetPlayheadPhase() {
+    std::lock_guard<std::mutex> lock(mVoiceMutex);
+    mPlayheadSampleCounter = 0;
+}
+
+void AudioEngine::clearQueuedPlaybackRows() {
+    std::lock_guard<std::mutex> lock(mVoiceMutex);
+    mQueuedPlaybackRows.clear();
+    mQueuedPlaybackRowIndex = 0;
+}
+
+void AudioEngine::enqueuePlaybackRow(const QueuedPlaybackRow& row) {
+    std::lock_guard<std::mutex> lock(mVoiceMutex);
+    mQueuedPlaybackRows.push_back(row);
+}
+
+void AudioEngine::setQueuedPlaybackLooping(bool loop) {
+    std::lock_guard<std::mutex> lock(mVoiceMutex);
+    mQueuedPlaybackLoop = loop;
+}
+
+void AudioEngine::applyQueuedPlaybackRowLocked(const QueuedPlaybackRow& row) {
+    mLineSamplesPerRow = std::max<int32_t>(1, row.lineSamples);
+    triggerRowLocked(row.rowData);
+    if (!row.immediateKillMask.empty()) {
+        killVoicesLocked(row.immediateKillMask);
+    }
+    if (!row.retrigData.empty()) queueRetrigsLocked(row.retrigData);
+    if (!row.arpData.empty()) queueArpLocked(row.arpData);
+    if (!row.delayData.empty()) queueDelaysLocked(row.delayData);
+    if (!row.killData.empty()) queueKillsLocked(row.killData);
+    if (!row.sliceCommandData.empty()) queueSliceCommandsLocked(row.sliceCommandData);
+    if (!row.mixerCommandData.empty()) queueMixerCommandsLocked(row.mixerCommandData);
+    if (!row.insertFxCommandData.empty()) queueInsertFxCommandsLocked(row.insertFxCommandData);
+}
+
+bool AudioEngine::primeNextQueuedPlaybackRowLocked() {
+    if (mQueuedPlaybackRows.empty()) return false;
+    if (mQueuedPlaybackRowIndex >= mQueuedPlaybackRows.size()) {
+        if (!mQueuedPlaybackLoop) {
+            return false;
+        }
+        mQueuedPlaybackRowIndex = 0;
+    }
+    applyQueuedPlaybackRowLocked(mQueuedPlaybackRows[mQueuedPlaybackRowIndex++]);
+    return true;
+}
+
 void AudioEngine::killVoices(const std::vector<int>& killMask) {
     std::lock_guard<std::mutex> lock(mVoiceMutex);
+    killVoicesLocked(killMask);
+}
+
+void AudioEngine::killVoicesLocked(const std::vector<int>& killMask) {
     const int n = static_cast<int>(std::min(killMask.size(), mVoices.size()));
     for (int i = 0; i < n; ++i) {
         if (killMask[i] != 1) continue;
@@ -748,27 +820,49 @@ void AudioEngine::killVoices(const std::vector<int>& killMask) {
 }
 
 void AudioEngine::queueRetrigs(const std::vector<int>& data) {
-    // data format: groups of 4 ints — [sampleOffset, trackIdx, note, volume].
     std::lock_guard<std::mutex> lock(mVoiceMutex);
-    for (size_t i = 0; i + 3 < data.size(); i += 4) {
-        const int32_t target = static_cast<int32_t>(data[i]) + mSubRowSampleCounter;
-        mPendingRetrigs.push_back({target, data[i + 1], data[i + 2], data[i + 3]});
+    queueRetrigsLocked(data);
+}
+
+void AudioEngine::queueRetrigsLocked(const std::vector<int>& data) {
+    // data format: groups of 5 ints — [stepNum, totalSteps, trackIdx, note, volume].
+    // C++ calculates sample offset from mLineSamplesPerRow so it uses the
+    // real row length without relying on Dart's hardcoded 48 kHz constant.
+    for (size_t i = 0; i + 4 < data.size(); i += 5) {
+        const int stepNum    = data[i];
+        const int totalSteps = std::max(1, data[i + 1]);
+        const int32_t sampleOffset = (static_cast<int64_t>(mLineSamplesPerRow) * stepNum) / totalSteps;
+        const int32_t target = sampleOffset + mSubRowSampleCounter;
+        mPendingRetrigs.push_back({target, data[i + 2], data[i + 3], data[i + 4]});
     }
 }
 
 void AudioEngine::queueArp(const std::vector<int>& data) {
-    // data format: groups of 3 ints — [sampleOffset, trackIdx, note].
     std::lock_guard<std::mutex> lock(mVoiceMutex);
-    for (size_t i = 0; i + 2 < data.size(); i += 3) {
-        const int32_t target = static_cast<int32_t>(data[i]) + mSubRowSampleCounter;
-        mPendingArp.push_back({target, data[i + 1], data[i + 2]});
+    queueArpLocked(data);
+}
+
+void AudioEngine::queueArpLocked(const std::vector<int>& data) {
+    // data format: groups of 4 ints — [stepNum, totalSteps, trackIdx, note].
+    // C++ calculates sample offset from mLineSamplesPerRow so it uses the
+    // real row length without relying on Dart's hardcoded 48 kHz constant.
+    for (size_t i = 0; i + 3 < data.size(); i += 4) {
+        const int stepNum    = data[i];
+        const int totalSteps = std::max(1, data[i + 1]);
+        const int32_t sampleOffset = (static_cast<int64_t>(mLineSamplesPerRow) * stepNum) / totalSteps;
+        const int32_t target = sampleOffset + mSubRowSampleCounter;
+        mPendingArp.push_back({target, data[i + 2], data[i + 3]});
     }
 }
 
 void AudioEngine::queueDelays(const std::vector<int>& data) {
+    std::lock_guard<std::mutex> lock(mVoiceMutex);
+    queueDelaysLocked(data);
+}
+
+void AudioEngine::queueDelaysLocked(const std::vector<int>& data) {
     // data format: groups of 4 ints — [delayPct, trackIdx, note, volume].
     // Convert delay percentage to sample offset using mLineSamplesPerRow.
-    std::lock_guard<std::mutex> lock(mVoiceMutex);
     for (size_t i = 0; i + 3 < data.size(); i += 4) {
         const int delayPct = std::clamp(data[i], 0, 99);
         const double norm = (delayPct >= 99) ? 1.0 : (delayPct / 100.0);
@@ -779,9 +873,13 @@ void AudioEngine::queueDelays(const std::vector<int>& data) {
 }
 
 void AudioEngine::queueKills(const std::vector<int>& data) {
+    std::lock_guard<std::mutex> lock(mVoiceMutex);
+    queueKillsLocked(data);
+}
+
+void AudioEngine::queueKillsLocked(const std::vector<int>& data) {
     // data format: groups of 2 ints — [killPct, trackIdx].
     // Convert kill percentage to sample offset using mLineSamplesPerRow.
-    std::lock_guard<std::mutex> lock(mVoiceMutex);
     for (size_t i = 0; i + 1 < data.size(); i += 2) {
         const int killPct = std::clamp(data[i], 0, 99);
         const double norm = (killPct >= 99) ? 1.0 : (killPct / 100.0);
@@ -791,11 +889,33 @@ void AudioEngine::queueKills(const std::vector<int>& data) {
     }
 }
 
+bool AudioEngine::isVoicePlaying(int trackIdx) const {
+    if (trackIdx < 0 || trackIdx >= kMaxVoices) {
+        return false;
+    }
+    std::lock_guard<std::mutex> lock(mVoiceMutex);
+    const Voice& v = mVoices[trackIdx];
+    // Voice is playing if it has a MIDI note and is not in Idle stage.
+    return v.midiNote >= 0 && v.envStage != EnvelopeStage::Idle;
+}
+
+int AudioEngine::getVoiceEnvelopeStage(int trackIdx) const {
+    if (trackIdx < 0 || trackIdx >= kMaxVoices) {
+        return 0; // Idle
+    }
+    std::lock_guard<std::mutex> lock(mVoiceMutex);
+    return static_cast<int>(mVoices[trackIdx].envStage);
+}
+
 void AudioEngine::queueSliceCommands(const std::vector<int>& data) {
+    std::lock_guard<std::mutex> lock(mVoiceMutex);
+    queueSliceCommandsLocked(data);
+}
+
+void AudioEngine::queueSliceCommandsLocked(const std::vector<int>& data) {
     // data format: groups of 4 ints — [playMode, trackIdx, startNormScaled, endNormScaled].
     // startNormScaled and endNormScaled are normalized positions (0-10000 = 0.0-1.0).
     // Slice commands fire immediately at row start (sampleTarget = 0).
-    std::lock_guard<std::mutex> lock(mVoiceMutex);
     for (size_t i = 0; i + 3 < data.size(); i += 4) {
         const int playMode = std::clamp(data[i], 0, 1);
         const int trackIdx = data[i + 1];
@@ -806,12 +926,16 @@ void AudioEngine::queueSliceCommands(const std::vector<int>& data) {
 }
 
 void AudioEngine::queueMixerCommands(const std::vector<int>& data) {
+    std::lock_guard<std::mutex> lock(mVoiceMutex);
+    queueMixerCommandsLocked(data);
+}
+
+void AudioEngine::queueMixerCommandsLocked(const std::vector<int>& data) {
     // data format: groups of 4 ints — [channel, controller, value, unused].
     // channel: 0=master, 1-15=mixer channels
     // controller: 1-4 (pan, mute, solo, volume), 5-9 reserved
     // value: 0-99
     // Mixer commands fire immediately at row start (sampleTarget = 0).
-    std::lock_guard<std::mutex> lock(mVoiceMutex);
     for (size_t i = 0; i + 3 < data.size(); i += 4) {
         const int channel = std::clamp(data[i], 0, 15);
         const int controller = std::clamp(data[i + 1], 1, 9);
@@ -821,8 +945,12 @@ void AudioEngine::queueMixerCommands(const std::vector<int>& data) {
 }
 
 void AudioEngine::queueInsertFxCommands(const std::vector<int>& data) {
-    // data format: groups of 4 ints — [trackIdx, slotIdx, function, value].
     std::lock_guard<std::mutex> lock(mVoiceMutex);
+    queueInsertFxCommandsLocked(data);
+}
+
+void AudioEngine::queueInsertFxCommandsLocked(const std::vector<int>& data) {
+    // data format: groups of 4 ints — [trackIdx, slotIdx, function, value].
     for (size_t i = 0; i + 3 < data.size(); i += 4) {
         const int trackIdx = std::clamp(data[i], 0, kMaxVoices - 1);
         const int slotIdx = std::clamp(data[i + 1], 0, kMaxInsertSlots - 1);
@@ -1545,6 +1673,20 @@ oboe::DataCallbackResult AudioEngine::onAudioReady(
     const float panSmoothK = 1.0f - std::exp(-1.0f / (static_cast<float>(sampleRate) * 0.003f));
 
     std::lock_guard<std::mutex> lock(mVoiceMutex);
+
+    if (mPlayheadRunning.load() && mLineSamplesPerRow > 0) {
+        mPlayheadSampleCounter += numFrames;
+        while (mPlayheadSampleCounter >= mLineSamplesPerRow) {
+            mPlayheadSampleCounter -= mLineSamplesPerRow;
+            // Always count the boundary so the Dart poller detects queue
+            // exhaustion even when primeNextQueuedPlaybackRowLocked() fails.
+            mPendingRowAdvances.fetch_add(1);
+            if (!primeNextQueuedPlaybackRowLocked()) {
+                mPlayheadRunning.store(false);
+                break;
+            }
+        }
+    }
 
     // Advance the per-row sample counter and fire due sub-row events.
     // Events queued via queueArp()/queueRetrigs() fire at buffer granularity,

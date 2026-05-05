@@ -396,7 +396,7 @@ class _NumericActions extends StatelessWidget {
       fxHint = 'Slot $slot — ${fxInsertFunctionName(fn)}';
     } else {
       fxHint = switch (fxCmd) {
-        kFxARP => 'XY: X=1st interval, Y=2nd interval (1-9=diatonic degrees)',
+        kFxARP => 'XY: X=1st interval, Y=2nd interval (1-9=semitones above root)',
         kFxCHA => '00=never, 99=always, 50=50% chance to play',
         kFxDEL => '00=line start, 99=line end (delayed note-on)',
         kFxKIL => '00=immediate kill, 99=end of row',

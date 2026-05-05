@@ -201,6 +201,45 @@ class _TypeButton extends StatelessWidget {
   Widget build(BuildContext context) {
     return GestureDetector(
       onTap: () async {
+        if (type != InstrumentType.empty) {
+          // Non-empty: confirm reset before allowing type change.
+          final confirm = await showDialog<bool>(
+            context: context,
+            builder: (ctx) => AlertDialog(
+              backgroundColor: kBgTrackHeader,
+              title: Text(
+                'RESET SLOT?',
+                style: kStyleHeader.copyWith(color: kColAccent),
+              ),
+              content: Text(
+                'Changing the instrument type will clear all data in this slot.',
+                style: kStyleBase.copyWith(color: kColHeader, fontSize: 13),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(ctx).pop(false),
+                  child: Text(
+                    'CANCEL',
+                    style: kStyleBase.copyWith(color: kColInactive),
+                  ),
+                ),
+                TextButton(
+                  onPressed: () => Navigator.of(ctx).pop(true),
+                  child: Text(
+                    'RESET',
+                    style: kStyleBase.copyWith(color: Colors.redAccent),
+                  ),
+                ),
+              ],
+            ),
+          );
+          if (confirm != true || !context.mounted) return;
+          // Pop back to type picker after the slot is cleared.
+          final state = AppStateScope.of(context);
+          await state.clearInstrument(state.currentInstrumentIndex);
+          return;
+        }
+        // Empty slot: show type picker.
         final picked = await showModalBottomSheet<InstrumentType>(
           context: context,
           backgroundColor: kBgTrackHeader,
@@ -216,15 +255,16 @@ class _TypeButton extends StatelessWidget {
                   ),
                 ),
                 const Divider(height: 1, color: Color(0xFF1A1A1A)),
-                for (final t in InstrumentType.values)
+                for (final t in [
+                  InstrumentType.simpleSynth,
+                  InstrumentType.sampler,
+                ])
                   ListTile(
                     dense: true,
                     leading: Icon(
                       t == InstrumentType.simpleSynth
                           ? Icons.graphic_eq
-                          : t == InstrumentType.sampler
-                          ? Icons.audiotrack
-                          : Icons.remove_circle_outline,
+                          : Icons.audiotrack,
                       color: t == type ? kColAccent : kColHeader,
                     ),
                     title: Text(
