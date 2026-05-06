@@ -108,8 +108,10 @@ class AppState extends ChangeNotifier {
   bool _playheadPollInFlight = false;
   bool _songPollInFlight = false;
   Timer? _playheadTimer;
-  Timer? _previewAutoStopTimer;  // Polls C++ voice state at 50ms intervals (vs one-shot estimate)
-  Timer? _synthPreviewStopTimer;  // Sends note-off after hold time, then polls for voice idle
+  Timer?
+  _previewAutoStopTimer; // Polls C++ voice state at 50ms intervals (vs one-shot estimate)
+  Timer?
+  _synthPreviewStopTimer; // Sends note-off after hold time, then polls for voice idle
   DateTime? _previewStartedAt;
   int _previewDurationMs = 1000;
   double? _previewRegionStartNorm;
@@ -141,6 +143,8 @@ class AppState extends ChangeNotifier {
   // Pending insert reset requests from pattern F[S]0 commands.
   // Drained by mixer_screen listener to re-send current slider values to native.
   final List<(int, int)> _pendingInsertResets = [];
+
+  int _songStateVersion = 0;
 
   int _currentPatternIndex = 0;
   int _currentTrackIndex = 0;
@@ -201,17 +205,20 @@ class AppState extends ChangeNotifier {
   bool get isPreviewingCurrentSampler =>
       _previewSamplerSlot == _currentInstrumentIndex;
   String? get defaultSampleFolder => _defaultSampleFolder;
+  int get songStateVersion => _songStateVersion;
   List<List<bool>> get trackInsertOccupied => _trackInsertOccupied;
   List<List<String?>> get trackInsertEffectNames => _trackInsertEffectNames;
 
   /// Resets queued by F[S]0 pattern commands. Mixer screen drains this list
   /// by re-sending its current slider values to native, then calls [clearInsertResets].
-  List<(int, int)> get pendingInsertResets => List.unmodifiable(_pendingInsertResets);
+  List<(int, int)> get pendingInsertResets =>
+      List.unmodifiable(_pendingInsertResets);
 
   void clearInsertResets() {
     _pendingInsertResets.clear();
     // No notifyListeners — clearing is a silent acknowledgement.
   }
+
   double get currentSamplerPreviewStartNorm {
     final slot = _previewSamplerSlot;
     if (slot < 0 || slot >= instruments.length) {
@@ -368,23 +375,22 @@ class AppState extends ChangeNotifier {
       if (_disposed) return;
       if (_previewSamplerSlot != slot) return;
       // After the estimated duration, poll every 50ms until voice goes idle.
-      _previewAutoStopTimer = Timer.periodic(
-        const Duration(milliseconds: 50),
-        (_) async {
-          if (_disposed) return;
-          if (_previewSamplerSlot != slot) {
-            _previewAutoStopTimer?.cancel();
-            _previewAutoStopTimer = null;
-            return;
-          }
-          final isStillPlaying = await AudioEngine.instance.isVoicePlaying(slot);
-          if (!isStillPlaying) {
-            _previewAutoStopTimer?.cancel();
-            _previewAutoStopTimer = null;
-            await stopPreviewCurrentSampler();
-          }
-        },
-      );
+      _previewAutoStopTimer = Timer.periodic(const Duration(milliseconds: 50), (
+        _,
+      ) async {
+        if (_disposed) return;
+        if (_previewSamplerSlot != slot) {
+          _previewAutoStopTimer?.cancel();
+          _previewAutoStopTimer = null;
+          return;
+        }
+        final isStillPlaying = await AudioEngine.instance.isVoicePlaying(slot);
+        if (!isStillPlaying) {
+          _previewAutoStopTimer?.cancel();
+          _previewAutoStopTimer = null;
+          await stopPreviewCurrentSampler();
+        }
+      });
     });
   }
 
@@ -536,7 +542,30 @@ class AppState extends ChangeNotifier {
     }
   }
 
-  bool _isMixerFxCommand(int? cmd) => cmd != null && cmd >= 32 && cmd <= 194;
+  bool _isMixerFxCommand(int? cmd) => isMixerValueCommand(cmd);
+
+  void _resetSongScopedState() {
+    _trackInsertOccupied.clear();
+    _trackInsertEffectNames.clear();
+    _pendingInsertResets.clear();
+    _queuedArrangementSlot = null;
+    _rowSegments = [];
+    _resetInstrumentCarry();
+  }
+
+  Future<void> _clearInsertEffectsInEngine() async {
+    const insertSlots = 6;
+    for (int slot = 0; slot < insertSlots; slot++) {
+      await AudioEngine.instance.setMasterInsertEffect(slot, -1, 0.0);
+    }
+
+    final trackCount = currentPattern.tracks.length;
+    for (int track = 0; track < trackCount; track++) {
+      for (int slot = 0; slot < insertSlots; slot++) {
+        await AudioEngine.instance.setTrackInsertEffect(track, slot, -1, 0.0);
+      }
+    }
+  }
 
   void _appendMasterMixerSnapshot(List<int> queue) {
     final muteValue = song.masterMute ? 1 : 0;
@@ -617,8 +646,15 @@ class AppState extends ChangeNotifier {
   void setTrackMixerVolume(int trackIndex, double value) {
     if (trackIndex < 0 || trackIndex >= currentPattern.tracks.length) return;
     currentPattern.tracks[trackIndex].mixerVolume = value.clamp(0.0, 1.0);
-    final volumeValue = (currentPattern.tracks[trackIndex].mixerVolume * 99).round().clamp(0, 99);
-    AudioEngine.instance.queueMixerCommands([trackIndex + 1, 4, volumeValue, 0]);
+    final volumeValue = (currentPattern.tracks[trackIndex].mixerVolume * 99)
+        .round()
+        .clamp(0, 99);
+    AudioEngine.instance.queueMixerCommands([
+      trackIndex + 1,
+      4,
+      volumeValue,
+      0,
+    ]);
     notifyListeners();
   }
 
@@ -1346,39 +1382,64 @@ class AppState extends ChangeNotifier {
   ///  9=atk, 10=dec, 11=sus, 12=rel, 13=glide, 14=instVol,
   ///  15=lfoRate/start, 16=lfoDepth/end, 17=lfoTgt, 18=drive/loop, 19=reverse
   int _applyInstrumentParamCarry(
-      int t, int slot, List<int> synthParams, int waveCmd) {
+    int t,
+    int slot,
+    List<int> synthParams,
+    int waveCmd,
+  ) {
     if (t >= _carryInstrumentParamsByTrack.length) return waveCmd;
     final carry = _carryInstrumentParamsByTrack[t];
     if (carry.isEmpty) return waveCmd;
-    final isSampler = instruments[slot.clamp(0, instruments.length - 1)].type !=
+    final isSampler =
+        instruments[slot.clamp(0, instruments.length - 1)].type !=
         InstrumentType.simpleSynth;
     int overriddenWave = waveCmd;
     carry.forEach((paramIdx, rawVal) {
       if (isSampler) {
         switch (paramIdx) {
-          case 1: synthParams[15] = _ui99ToAudio255(rawVal); // start
-          case 2: synthParams[16] = _ui99ToAudio255(rawVal); // end
-          case 3: synthParams[0]  = _ui99ToAudio255(rawVal); // pitch/detune
-          case 4: synthParams[14] = _ui99ToAudio255(rawVal); // volume
-          case 5: synthParams[9]  = _ui99ToAudio255(rawVal); // attack
-          case 6: synthParams[12] = _ui99ToAudio255(rawVal); // release
-          case 7: synthParams[18] = rawVal.clamp(0, 2);      // loop mode (direct)
+          case 1:
+            synthParams[15] = _ui99ToAudio255(rawVal); // start
+          case 2:
+            synthParams[16] = _ui99ToAudio255(rawVal); // end
+          case 3:
+            synthParams[0] = _ui99ToAudio255(rawVal); // pitch/detune
+          case 4:
+            synthParams[14] = _ui99ToAudio255(rawVal); // volume
+          case 5:
+            synthParams[9] = _ui99ToAudio255(rawVal); // attack
+          case 6:
+            synthParams[12] = _ui99ToAudio255(rawVal); // release
+          case 7:
+            synthParams[18] = rawVal.clamp(0, 2); // loop mode (direct)
         }
       } else {
         switch (paramIdx) {
-          case 1:  synthParams[14] = _ui99ToAudio255(rawVal); // volume
-          case 2:  synthParams[9]  = _ui99ToAudio255(rawVal); // attack
-          case 3:  synthParams[10] = _ui99ToAudio255(rawVal); // decay
-          case 4:  synthParams[11] = _ui99ToAudio255(rawVal); // sustain
-          case 5:  synthParams[12] = _ui99ToAudio255(rawVal); // release
-          case 6:  synthParams[1]  = _ui99ToAudio255(rawVal); // cutoff
-          case 7:  synthParams[2]  = _ui99ToAudio255(rawVal); // resonance
-          case 8:  synthParams[18] = _ui99ToAudio255(rawVal); // drive
-          case 9:  synthParams[0]  = _ui99ToAudio255(rawVal); // detune
-          case 10: synthParams[13] = _ui99ToAudio255(rawVal); // glide
-          case 11: synthParams[15] = _ui99ToAudio255(rawVal); // lfoRate
-          case 12: synthParams[16] = _ui99ToAudio255(rawVal); // lfoDepth
-          case 13: overriddenWave  = rawVal.clamp(0, 5);      // waveform (direct)
+          case 1:
+            synthParams[14] = _ui99ToAudio255(rawVal); // volume
+          case 2:
+            synthParams[9] = _ui99ToAudio255(rawVal); // attack
+          case 3:
+            synthParams[10] = _ui99ToAudio255(rawVal); // decay
+          case 4:
+            synthParams[11] = _ui99ToAudio255(rawVal); // sustain
+          case 5:
+            synthParams[12] = _ui99ToAudio255(rawVal); // release
+          case 6:
+            synthParams[1] = _ui99ToAudio255(rawVal); // cutoff
+          case 7:
+            synthParams[2] = _ui99ToAudio255(rawVal); // resonance
+          case 8:
+            synthParams[18] = _ui99ToAudio255(rawVal); // drive
+          case 9:
+            synthParams[0] = _ui99ToAudio255(rawVal); // detune
+          case 10:
+            synthParams[13] = _ui99ToAudio255(rawVal); // glide
+          case 11:
+            synthParams[15] = _ui99ToAudio255(rawVal); // lfoRate
+          case 12:
+            synthParams[16] = _ui99ToAudio255(rawVal); // lfoDepth
+          case 13:
+            overriddenWave = rawVal.clamp(0, 5); // waveform (direct)
         }
       }
     });
@@ -1409,8 +1470,8 @@ class AppState extends ChangeNotifier {
       }
     }
 
-    final targetBase = voiceIdx.clamp(0, _audioVoiceCount - 1) *
-        _audioRowStride;
+    final targetBase =
+        voiceIdx.clamp(0, _audioVoiceCount - 1) * _audioRowStride;
     rowData[targetBase] = note;
     rowData[targetBase + 1] = 255;
     rowData[targetBase + 2] = 128;
@@ -1566,16 +1627,15 @@ class AppState extends ChangeNotifier {
   Duration _lineDurationForPatternRow(PatternModel pattern, int row) {
     final beat = pattern.beatForRow(row);
     final lpbForBeat = pattern.linesForBeat(beat);
-    final microsPerLine =
-        (60000000 / ((pattern.bpm ?? 120.0) * lpbForBeat)).round().clamp(
-          1000,
-          60000000,
-        );
+    final microsPerLine = (60000000 / ((pattern.bpm ?? 120.0) * lpbForBeat))
+        .round()
+        .clamp(1000, 60000000);
     return Duration(microseconds: microsPerLine);
   }
 
   /// Duration of the current playhead row (used by FX schedulers).
-  Duration _lineDuration() => _lineDurationForPatternRow(currentPattern, playheadRow);
+  Duration _lineDuration() =>
+      _lineDurationForPatternRow(currentPattern, playheadRow);
 
   Future<void> _loadNativePatternPlaybackQueue({required int startRow}) async {
     final originalSong = song;
@@ -1594,9 +1654,7 @@ class AppState extends ChangeNotifier {
     for (int offset = 0; offset < pattern.rowCount; offset++) {
       final row = (safeStartRow + offset) % pattern.rowCount;
       playheadRow = row;
-      scheduledRows.add(
-        _triggerCurrentRow(),
-      );
+      scheduledRows.add(_triggerCurrentRow());
     }
 
     song = originalSong;
@@ -1665,7 +1723,11 @@ class AppState extends ChangeNotifier {
     _resetInstrumentCarry();
 
     // Build carry state by simulating rows before the start position.
-    for (int slotIdx = 0; slotIdx < startSlot && slotIdx < clonedSong.patterns.length; slotIdx++) {
+    for (
+      int slotIdx = 0;
+      slotIdx < startSlot && slotIdx < clonedSong.patterns.length;
+      slotIdx++
+    ) {
       final pat = clonedSong.patterns[slotIdx];
       if (pat.isEmpty) break;
       for (int row = 0; row < pat.rowCount; row++) {
@@ -1685,17 +1747,21 @@ class AppState extends ChangeNotifier {
     }
 
     // Enqueue rows from (startSlot, startRow) to end of song.
-    for (int slotIdx = startSlot; slotIdx < clonedSong.patterns.length; slotIdx++) {
+    for (
+      int slotIdx = startSlot;
+      slotIdx < clonedSong.patterns.length;
+      slotIdx++
+    ) {
       final pat = clonedSong.patterns[slotIdx];
       if (slotIdx > startSlot && pat.isEmpty) break; // stop marker
-      final firstRow = (slotIdx == startSlot) ? startRow.clamp(0, pat.rowCount - 1) : 0;
+      final firstRow = (slotIdx == startSlot)
+          ? startRow.clamp(0, pat.rowCount - 1)
+          : 0;
       for (int row = firstRow; row < pat.rowCount; row++) {
         _playheadArrangementSlot = slotIdx;
         playheadRow = row;
         rowMap.add((arrangementSlot: slotIdx, rowWithinSlot: row));
-        scheduledRows.add(
-          _triggerCurrentRow(),
-        );
+        scheduledRows.add(_triggerCurrentRow());
       }
       if (slotIdx + 1 >= clonedSong.patterns.length ||
           clonedSong.patterns[slotIdx + 1].isEmpty) {
@@ -1805,11 +1871,13 @@ class AppState extends ChangeNotifier {
       );
       return;
     }
-    unawaited(_loadNativePatternPlaybackQueue(startRow: playheadRow).then((_) {
-      if (isPlaying) {
-        return AudioEngine.instance.start();
-      }
-    }));
+    unawaited(
+      _loadNativePatternPlaybackQueue(startRow: playheadRow).then((_) {
+        if (isPlaying) {
+          return AudioEngine.instance.start();
+        }
+      }),
+    );
   }
 
   void _clampSelectionToPattern() {
@@ -1872,8 +1940,10 @@ class AppState extends ChangeNotifier {
             pattern.tracks.length,
             null,
           );
-      _carryInstrumentParamsByTrack =
-          List<Map<int, int>>.generate(pattern.tracks.length, (_) => {});
+      _carryInstrumentParamsByTrack = List<Map<int, int>>.generate(
+        pattern.tracks.length,
+        (_) => {},
+      );
     }
 
     _rowSegments = [];
@@ -2075,16 +2145,16 @@ class AppState extends ChangeNotifier {
             insertFxCommandQueue.addAll([t, slotIdx, fn, value]);
           }
           // Pxx: instrument parameter automation.
-          if (isPParamCommand(fx.command) && fx.value != null) {
+          if (isPParamCommand(fx.command)) {
             final idx = pParamIndex(fx.command!);
-            final val = fx.value!.clamp(0, 99);
             while (_carryInstrumentParamsByTrack.length <= t) {
               _carryInstrumentParamsByTrack.add({});
             }
             if (idx == 0) {
               // P00: reset — clear all overrides for this track.
               _carryInstrumentParamsByTrack[t].clear();
-            } else {
+            } else if (fx.value != null) {
+              final val = fx.value!.clamp(0, 99);
               _carryInstrumentParamsByTrack[t][idx] = val;
             }
           }
@@ -2120,7 +2190,12 @@ class AppState extends ChangeNotifier {
       }
 
       // Pxx carry: patch synthParams (and waveCmd) with any active overrides.
-      waveCmd = _applyInstrumentParamCarry(t, currentSlot, synthParams, waveCmd);
+      waveCmd = _applyInstrumentParamCarry(
+        t,
+        currentSlot,
+        synthParams,
+        waveCmd,
+      );
 
       final isMixerMuted = _isTrackMutedByMixer(
         pattern,
@@ -2231,7 +2306,10 @@ class AppState extends ChangeNotifier {
         if (instr.type == InstrumentType.sampler) {
           final sp = instr.sampler;
           final startNorm = sp.sliceStartNorm(slcSliceNum) ?? 0.0;
-          final endNorm = sp.sliceEndNorm(slcSliceNum, playThrough: slcPlayMode == 1);
+          final endNorm = sp.sliceEndNorm(
+            slcSliceNum,
+            playThrough: slcPlayMode == 1,
+          );
           // Scale normalized values to integers (0-10000 range for 0.0-1.0).
           final startScaled = (startNorm * 10000).round().clamp(0, 10000);
           final endScaled = (endNorm * 10000).round().clamp(0, 10000);
@@ -2970,7 +3048,9 @@ class AppState extends ChangeNotifier {
     );
     await AudioEngine.instance.setRowData(noteOff);
     // Hard-stop any lingering release/reverb tails from preview.
-    await AudioEngine.instance.killVoices(List<int>.filled(_audioVoiceCount, 1));
+    await AudioEngine.instance.killVoices(
+      List<int>.filled(_audioVoiceCount, 1),
+    );
     await _setPreviewDryBypass(previewVoice, false);
     // Do NOT stop the output stream here — stopping it causes an Android
     // hardware route change that produces a transient burst in the next
@@ -3156,15 +3236,18 @@ class AppState extends ChangeNotifier {
   /// Save current song then reset to a blank new song.
   Future<bool> newSong() async {
     final saved = await saveSong();
+    await _clearInsertEffectsInEngine();
     song = SongModel.initial();
     for (var i = 0; i < instruments.length; i++) {
       instruments[i] = InstrumentModel.empty(i + 1);
     }
+    _resetSongScopedState();
     _currentPatternIndex = 0;
     _currentTrackIndex = 0;
     _currentArrangementSlotIndex = 0;
     selectedCell = null;
     _selectedRow = null;
+    _songStateVersion++;
     _notifyListenersSafe();
     return saved;
   }
@@ -3213,6 +3296,7 @@ class AppState extends ChangeNotifier {
     try {
       final file = await _songFile(name);
       if (!file.existsSync()) return false;
+      await _clearInsertEffectsInEngine();
       final raw = await file.readAsString();
       final j = jsonDecode(raw) as Map<String, dynamic>;
       final loadedSong = SongModel.fromJson(j['song'] as Map<String, dynamic>);
@@ -3236,10 +3320,13 @@ class AppState extends ChangeNotifier {
           );
         }
       }
+      _resetSongScopedState();
       _currentPatternIndex = 0;
       _currentTrackIndex = 0;
       _currentArrangementSlotIndex = 0;
       selectedCell = null;
+      _selectedRow = null;
+      _songStateVersion++;
       _notifyListenersSafe();
       return true;
     } catch (_) {

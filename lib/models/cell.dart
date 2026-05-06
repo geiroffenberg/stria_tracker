@@ -353,8 +353,8 @@ const int kFxVIB = 8;
 const int kFxVOL = 9;
 const int kFxSL0 = 22;
 const int kFxSL9 = 31;
-const int kFxARC = 178;
-const int kFxSLC = 179;
+const int kFxARC = 203;
+const int kFxSLC = 204;
 const int kFxInsertStart = 340;
 const int kFxInsertEnd = 399; // 6 slots × 10 functions (0–9) = 60 commands
 
@@ -365,7 +365,7 @@ const int kFxInsertEnd = 399; // 6 slots × 10 functions (0–9) = 60 commands
 //           P06=cutoff, P07=resonance, P08=drive, P09=detune, P10=glide,
 //           P11=lfoRate, P12=lfoDepth, P13=waveform
 const int kFxPParamStart = 240; // P00
-const int kFxPParamEnd   = 339; // P99
+const int kFxPParamEnd = 339; // P99
 
 bool isPParamCommand(int? cmd) =>
     cmd != null && cmd >= kFxPParamStart && cmd <= kFxPParamEnd;
@@ -780,7 +780,9 @@ String fxCommandDescription(int? cmd) {
   }
   if (isPParamCommand(cmd)) {
     final idx = pParamIndex(cmd);
-    if (idx == 0) return 'P00 — reset instrument params to original slider values';
+    if (idx == 0) {
+      return 'P00 — reset instrument params to original slider values';
+    }
     return 'P${idx.toString().padLeft(2, '0')} — instrument param (meaning set by instrument type in IN cell)';
   }
   if (cmd >= 0 && cmd < kFxCommandDescriptions.length) {

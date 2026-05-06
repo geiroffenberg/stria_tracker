@@ -72,168 +72,168 @@ class TrackerPalette {
 const TrackerPalette kPaletteBlue = TrackerPalette(
   name: 'Blue',
   previewColor: Color(0xFF66FFFF),
-  bgColor:       Color(0xFF010810),
-  bgBeat:        Color(0xFF0A1220),
-  bgBar:         Color(0xFF111D30),
-  bgSelected:    Color(0xFF001840),
-  bgPlayhead:    Color(0xFF002E7A),
-  bgHeader:      Color(0xFF0A1220),
+  bgColor: Color(0xFF010810),
+  bgBeat: Color(0xFF0A1220),
+  bgBar: Color(0xFF111D30),
+  bgSelected: Color(0xFF001840),
+  bgPlayhead: Color(0xFF002E7A),
+  bgHeader: Color(0xFF0A1220),
   bgTrackHeader: Color(0xFF0D1828),
-  bgTopNav:      Color(0xFF0C1628),
-  colNote:       Color(0xFF55CCFF),
-  colInst:       Color(0xFF44AAFF),
-  colVol:        Color(0xFF33BBDD),
-  colPan:        Color(0xFF33BBDD),
-  colFxCmd:      Color(0xFF8899FF),
-  colFxVal:      Color(0xFFAABBFF),
-  colEmpty:      Color(0xFF4A6585),
-  colRowNum:     Color(0xFF7090B0),
-  colHeader:     Color(0xFF9BBBD8),
-  colAccent:     Color(0xFF66FFFF),
-  colActive:     Color(0xFF66B2FF),
-  colInactive:   Color(0xFF587090),
-  colSelection:  Color(0xFF44DD88),
-  colPlayBtn:    Color(0xFF4DA6FF),
+  bgTopNav: Color(0xFF0C1628),
+  colNote: Color(0xFF55CCFF),
+  colInst: Color(0xFF44AAFF),
+  colVol: Color(0xFF33BBDD),
+  colPan: Color(0xFF33BBDD),
+  colFxCmd: Color(0xFF8899FF),
+  colFxVal: Color(0xFFAABBFF),
+  colEmpty: Color(0xFF4A6585),
+  colRowNum: Color(0xFF7090B0),
+  colHeader: Color(0xFF9BBBD8),
+  colAccent: Color(0xFF66FFFF),
+  colActive: Color(0xFF66B2FF),
+  colInactive: Color(0xFF587090),
+  colSelection: Color(0xFF44DD88),
+  colPlayBtn: Color(0xFF4DA6FF),
   colComplement: Color(0xFFFFAA33),
 );
 
 const TrackerPalette kPaletteGreen = TrackerPalette(
   name: 'Green',
   previewColor: Color(0xFF55FF99),
-  bgColor:       Color(0xFF010101),
-  bgBeat:        Color(0xFF0A0A0A),
-  bgBar:         Color(0xFF141414),
-  bgSelected:    Color(0xFF002010),
-  bgPlayhead:    Color(0xFF003A1C),
-  bgHeader:      Color(0xFF0A0A0A),
+  bgColor: Color(0xFF010101),
+  bgBeat: Color(0xFF0A0A0A),
+  bgBar: Color(0xFF141414),
+  bgSelected: Color(0xFF002010),
+  bgPlayhead: Color(0xFF003A1C),
+  bgHeader: Color(0xFF0A0A0A),
   bgTrackHeader: Color(0xFF0D0D0D),
-  bgTopNav:      Color(0xFF0C0C0C),
-  colNote:       Color(0xFF55FF99),
-  colInst:       Color(0xFF44DD77),
-  colVol:        Color(0xFF33BB66),
-  colPan:        Color(0xFF33BB66),
-  colFxCmd:      Color(0xFF88FF99),
-  colFxVal:      Color(0xFFAAFFBB),
-  colEmpty:      Color(0xFF3D6050),
-  colRowNum:     Color(0xFF5A8A6A),
-  colHeader:     Color(0xFF90C8A8),
-  colAccent:     Color(0xFF55FF99),
-  colActive:     Color(0xFF44CC77),
-  colInactive:   Color(0xFF446858),
-  colSelection:  Color(0xFFFFDD44),
-  colPlayBtn:    Color(0xFF44DD77),
+  bgTopNav: Color(0xFF0C0C0C),
+  colNote: Color(0xFF55FF99),
+  colInst: Color(0xFF44DD77),
+  colVol: Color(0xFF33BB66),
+  colPan: Color(0xFF33BB66),
+  colFxCmd: Color(0xFF88FF99),
+  colFxVal: Color(0xFFAAFFBB),
+  colEmpty: Color(0xFF3D6050),
+  colRowNum: Color(0xFF5A8A6A),
+  colHeader: Color(0xFF90C8A8),
+  colAccent: Color(0xFF55FF99),
+  colActive: Color(0xFF44CC77),
+  colInactive: Color(0xFF446858),
+  colSelection: Color(0xFFFFDD44),
+  colPlayBtn: Color(0xFF44DD77),
   colComplement: Color(0xFFFF44AA),
 );
 
 const TrackerPalette kPaletteRed = TrackerPalette(
   name: 'Red',
   previewColor: Color(0xFFFF6688),
-  bgColor:       Color(0xFF010101),
-  bgBeat:        Color(0xFF0A0A0A),
-  bgBar:         Color(0xFF141414),
-  bgSelected:    Color(0xFF300008),
-  bgPlayhead:    Color(0xFF500012),
-  bgHeader:      Color(0xFF0A0A0A),
+  bgColor: Color(0xFF010101),
+  bgBeat: Color(0xFF0A0A0A),
+  bgBar: Color(0xFF141414),
+  bgSelected: Color(0xFF300008),
+  bgPlayhead: Color(0xFF500012),
+  bgHeader: Color(0xFF0A0A0A),
   bgTrackHeader: Color(0xFF0D0D0D),
-  bgTopNav:      Color(0xFF0C0C0C),
-  colNote:       Color(0xFFFF6688),
-  colInst:       Color(0xFFFF4466),
-  colVol:        Color(0xFFDD3355),
-  colPan:        Color(0xFFDD3355),
-  colFxCmd:      Color(0xFFFF8899),
-  colFxVal:      Color(0xFFFFAABB),
-  colEmpty:      Color(0xFF6A3040),
-  colRowNum:     Color(0xFF9A5864),
-  colHeader:     Color(0xFFCC9098),
-  colAccent:     Color(0xFFFF6688),
-  colActive:     Color(0xFFFF4466),
-  colInactive:   Color(0xFF7A3A4A),
-  colSelection:  Color(0xFF44FFDD),
-  colPlayBtn:    Color(0xFFFF5577),
+  bgTopNav: Color(0xFF0C0C0C),
+  colNote: Color(0xFFFF6688),
+  colInst: Color(0xFFFF4466),
+  colVol: Color(0xFFDD3355),
+  colPan: Color(0xFFDD3355),
+  colFxCmd: Color(0xFFFF8899),
+  colFxVal: Color(0xFFFFAABB),
+  colEmpty: Color(0xFF6A3040),
+  colRowNum: Color(0xFF9A5864),
+  colHeader: Color(0xFFCC9098),
+  colAccent: Color(0xFFFF6688),
+  colActive: Color(0xFFFF4466),
+  colInactive: Color(0xFF7A3A4A),
+  colSelection: Color(0xFF44FFDD),
+  colPlayBtn: Color(0xFFFF5577),
   colComplement: Color(0xFF44FFDD),
 );
 
 const TrackerPalette kPalettePurple = TrackerPalette(
   name: 'Purple',
   previewColor: Color(0xFFBB66FF),
-  bgColor:       Color(0xFF010101),
-  bgBeat:        Color(0xFF0A0A0A),
-  bgBar:         Color(0xFF141414),
-  bgSelected:    Color(0xFF1A0038),
-  bgPlayhead:    Color(0xFF2E0060),
-  bgHeader:      Color(0xFF0A0A0A),
+  bgColor: Color(0xFF010101),
+  bgBeat: Color(0xFF0A0A0A),
+  bgBar: Color(0xFF141414),
+  bgSelected: Color(0xFF1A0038),
+  bgPlayhead: Color(0xFF2E0060),
+  bgHeader: Color(0xFF0A0A0A),
   bgTrackHeader: Color(0xFF0D0D0D),
-  bgTopNav:      Color(0xFF0C0C0C),
-  colNote:       Color(0xFFBB66FF),
-  colInst:       Color(0xFF9944EE),
-  colVol:        Color(0xFF8833CC),
-  colPan:        Color(0xFF8833CC),
-  colFxCmd:      Color(0xFFCC99FF),
-  colFxVal:      Color(0xFFDDBBFF),
-  colEmpty:      Color(0xFF524075),
-  colRowNum:     Color(0xFF8860A8),
-  colHeader:     Color(0xFFBB99D8),
-  colAccent:     Color(0xFFBB66FF),
-  colActive:     Color(0xFF9944EE),
-  colInactive:   Color(0xFF5A4075),
-  colSelection:  Color(0xFF88FF44),
-  colPlayBtn:    Color(0xFFAA55EE),
+  bgTopNav: Color(0xFF0C0C0C),
+  colNote: Color(0xFFBB66FF),
+  colInst: Color(0xFF9944EE),
+  colVol: Color(0xFF8833CC),
+  colPan: Color(0xFF8833CC),
+  colFxCmd: Color(0xFFCC99FF),
+  colFxVal: Color(0xFFDDBBFF),
+  colEmpty: Color(0xFF524075),
+  colRowNum: Color(0xFF8860A8),
+  colHeader: Color(0xFFBB99D8),
+  colAccent: Color(0xFFBB66FF),
+  colActive: Color(0xFF9944EE),
+  colInactive: Color(0xFF5A4075),
+  colSelection: Color(0xFF88FF44),
+  colPlayBtn: Color(0xFFAA55EE),
   colComplement: Color(0xFF88FF44),
 );
 
 const TrackerPalette kPaletteAmber = TrackerPalette(
   name: 'Amber',
   previewColor: Color(0xFFFFCC44),
-  bgColor:       Color(0xFF010101),
-  bgBeat:        Color(0xFF0A0A0A),
-  bgBar:         Color(0xFF141414),
-  bgSelected:    Color(0xFF2A1400),
-  bgPlayhead:    Color(0xFF452200),
-  bgHeader:      Color(0xFF0A0A0A),
+  bgColor: Color(0xFF010101),
+  bgBeat: Color(0xFF0A0A0A),
+  bgBar: Color(0xFF141414),
+  bgSelected: Color(0xFF2A1400),
+  bgPlayhead: Color(0xFF452200),
+  bgHeader: Color(0xFF0A0A0A),
   bgTrackHeader: Color(0xFF0D0D0D),
-  bgTopNav:      Color(0xFF0C0C0C),
-  colNote:       Color(0xFFFFCC44),
-  colInst:       Color(0xFFFFAA22),
-  colVol:        Color(0xFFDD9911),
-  colPan:        Color(0xFFDD9911),
-  colFxCmd:      Color(0xFFFFDD88),
-  colFxVal:      Color(0xFFFFEEAA),
-  colEmpty:      Color(0xFF6A5028),
-  colRowNum:     Color(0xFF9A7540),
-  colHeader:     Color(0xFFCC9A58),
-  colAccent:     Color(0xFFFFCC44),
-  colActive:     Color(0xFFFFAA22),
-  colInactive:   Color(0xFF756030),
-  colSelection:  Color(0xFF44AAFF),
-  colPlayBtn:    Color(0xFFFFBB33),
+  bgTopNav: Color(0xFF0C0C0C),
+  colNote: Color(0xFFFFCC44),
+  colInst: Color(0xFFFFAA22),
+  colVol: Color(0xFFDD9911),
+  colPan: Color(0xFFDD9911),
+  colFxCmd: Color(0xFFFFDD88),
+  colFxVal: Color(0xFFFFEEAA),
+  colEmpty: Color(0xFF6A5028),
+  colRowNum: Color(0xFF9A7540),
+  colHeader: Color(0xFFCC9A58),
+  colAccent: Color(0xFFFFCC44),
+  colActive: Color(0xFFFFAA22),
+  colInactive: Color(0xFF756030),
+  colSelection: Color(0xFF44AAFF),
+  colPlayBtn: Color(0xFFFFBB33),
   colComplement: Color(0xFF6644FF),
 );
 
 const TrackerPalette kPaletteMono = TrackerPalette(
   name: 'Mono',
   previewColor: Color(0xFFDDDDDD),
-  bgColor:       Color(0xFF010101),
-  bgBeat:        Color(0xFF0A0A0A),
-  bgBar:         Color(0xFF141414),
-  bgSelected:    Color(0xFF252525),
-  bgPlayhead:    Color(0xFF383838),
-  bgHeader:      Color(0xFF0A0A0A),
+  bgColor: Color(0xFF010101),
+  bgBeat: Color(0xFF0A0A0A),
+  bgBar: Color(0xFF141414),
+  bgSelected: Color(0xFF252525),
+  bgPlayhead: Color(0xFF383838),
+  bgHeader: Color(0xFF0A0A0A),
   bgTrackHeader: Color(0xFF0D0D0D),
-  bgTopNav:      Color(0xFF0C0C0C),
-  colNote:       Color(0xFFDDDDDD),
-  colInst:       Color(0xFFBBBBBB),
-  colVol:        Color(0xFF999999),
-  colPan:        Color(0xFF999999),
-  colFxCmd:      Color(0xFFCCCCCC),
-  colFxVal:      Color(0xFFE0E0E0),
-  colEmpty:      Color(0xFF525252),
-  colRowNum:     Color(0xFF787878),
-  colHeader:     Color(0xFFAAAAAA),
-  colAccent:     Color(0xFFEEEEEE),
-  colActive:     Color(0xFFCCCCCC),
-  colInactive:   Color(0xFF585858),
-  colSelection:  Color(0xFFFFFFFF),
-  colPlayBtn:    Color(0xFFCCCCCC),
+  bgTopNav: Color(0xFF0C0C0C),
+  colNote: Color(0xFFDDDDDD),
+  colInst: Color(0xFFBBBBBB),
+  colVol: Color(0xFF999999),
+  colPan: Color(0xFF999999),
+  colFxCmd: Color(0xFFCCCCCC),
+  colFxVal: Color(0xFFE0E0E0),
+  colEmpty: Color(0xFF525252),
+  colRowNum: Color(0xFF787878),
+  colHeader: Color(0xFFAAAAAA),
+  colAccent: Color(0xFFEEEEEE),
+  colActive: Color(0xFFCCCCCC),
+  colInactive: Color(0xFF585858),
+  colSelection: Color(0xFFFFFFFF),
+  colPlayBtn: Color(0xFFCCCCCC),
   colComplement: Color(0xFFAAAAAA),
 );
 
@@ -260,40 +260,40 @@ void applyPalette(TrackerPalette p) {
 
 // ── Colour getters — same names as before, zero widget changes needed ─────────
 
-Color get kBgColor       => _palette.bgColor;
-Color get kBgBeat        => _palette.bgBeat;
-Color get kBgBar         => _palette.bgBar;
-Color get kBgSelected    => _palette.bgSelected;
-Color get kBgPlayhead    => _palette.bgPlayhead;
-Color get kBgHeader      => _palette.bgHeader;
+Color get kBgColor => _palette.bgColor;
+Color get kBgBeat => _palette.bgBeat;
+Color get kBgBar => _palette.bgBar;
+Color get kBgSelected => _palette.bgSelected;
+Color get kBgPlayhead => _palette.bgPlayhead;
+Color get kBgHeader => _palette.bgHeader;
 Color get kBgTrackHeader => _palette.bgTrackHeader;
-Color get kBgTopNav      => _palette.bgTopNav;
+Color get kBgTopNav => _palette.bgTopNav;
 
-Color get kColNote       => _palette.colNote;
-Color get kColInst       => _palette.colInst;
-Color get kColVol        => _palette.colVol;
-Color get kColPan        => _palette.colPan;
-Color get kColFxCmd      => _palette.colFxCmd;
-Color get kColFxVal      => _palette.colFxVal;
-Color get kColEmpty      => _palette.colEmpty;
-Color get kColRowNum     => _palette.colRowNum;
-Color get kColHeader     => _palette.colHeader;
+Color get kColNote => _palette.colNote;
+Color get kColInst => _palette.colInst;
+Color get kColVol => _palette.colVol;
+Color get kColPan => _palette.colPan;
+Color get kColFxCmd => _palette.colFxCmd;
+Color get kColFxVal => _palette.colFxVal;
+Color get kColEmpty => _palette.colEmpty;
+Color get kColRowNum => _palette.colRowNum;
+Color get kColHeader => _palette.colHeader;
 
-Color get kColAccent     => _palette.colAccent;
-Color get kColActive     => _palette.colActive;
-Color get kColInactive   => _palette.colInactive;
-Color get kColSelection  => _palette.colSelection;
-Color get kColPlayBtn    => _palette.colPlayBtn;
+Color get kColAccent => _palette.colAccent;
+Color get kColActive => _palette.colActive;
+Color get kColInactive => _palette.colInactive;
+Color get kColSelection => _palette.colSelection;
+Color get kColPlayBtn => _palette.colPlayBtn;
 Color get kColComplement => _palette.colComplement;
 
 // These stay fixed — red for stop/rec is a universal convention.
 const Color kColStopBtn = Color(0xFFFF6666);
-const Color kColRecBtn  = Color(0xFFFF4444);
+const Color kColRecBtn = Color(0xFFFF4444);
 
 // ── Typography ────────────────────────────────────────────────────────────────
 
-const String kFontMono  = 'monospace';
-const double kFontSize  = 17.0;
+const String kFontMono = 'monospace';
+const double kFontSize = 17.0;
 const double kRowHeight = 32.0;
 
 const TextStyle kStyleBase = TextStyle(
@@ -304,27 +304,34 @@ const TextStyle kStyleBase = TextStyle(
 );
 
 // Styles are now getters so they always reflect the active palette.
-TextStyle get kStyleNote   => kStyleBase.copyWith(color: kColNote, fontWeight: FontWeight.w700);
-TextStyle get kStyleInst   => kStyleBase.copyWith(color: kColInst);
-TextStyle get kStyleVol    => kStyleBase.copyWith(color: kColVol);
-TextStyle get kStylePan    => kStyleBase.copyWith(color: kColPan);
-TextStyle get kStyleFxCmd  => kStyleBase.copyWith(color: kColFxCmd);
-TextStyle get kStyleFxVal  => kStyleBase.copyWith(color: kColFxVal);
-TextStyle get kStyleEmpty  => kStyleBase.copyWith(color: kColEmpty);
-TextStyle get kStyleRowNum => kStyleBase.copyWith(color: kColRowNum, fontSize: 14);
-TextStyle get kStyleHeader => kStyleBase.copyWith(color: kColHeader, fontSize: 12);
-TextStyle get kStyleLabel  => kStyleBase.copyWith(color: kColAccent, fontSize: 15, fontWeight: FontWeight.w600);
+TextStyle get kStyleNote =>
+    kStyleBase.copyWith(color: kColNote, fontWeight: FontWeight.w700);
+TextStyle get kStyleInst => kStyleBase.copyWith(color: kColInst);
+TextStyle get kStyleVol => kStyleBase.copyWith(color: kColVol);
+TextStyle get kStylePan => kStyleBase.copyWith(color: kColPan);
+TextStyle get kStyleFxCmd => kStyleBase.copyWith(color: kColFxCmd);
+TextStyle get kStyleFxVal => kStyleBase.copyWith(color: kColFxVal);
+TextStyle get kStyleEmpty => kStyleBase.copyWith(color: kColEmpty);
+TextStyle get kStyleRowNum =>
+    kStyleBase.copyWith(color: kColRowNum, fontSize: 14);
+TextStyle get kStyleHeader =>
+    kStyleBase.copyWith(color: kColHeader, fontSize: 12);
+TextStyle get kStyleLabel => kStyleBase.copyWith(
+  color: kColAccent,
+  fontSize: 15,
+  fontWeight: FontWeight.w600,
+);
 
 // ── Column pixel widths ───────────────────────────────────────────────────────
 
-const double kWRow  = 36.0;
+const double kWRow = 36.0;
 const double kWNote = 46.0;
 const double kWInst = 30.0;
-const double kWVol  = 30.0;
-const double kWPan  = 30.0;
+const double kWVol = 30.0;
+const double kWPan = 30.0;
 const double kWFxCmd = 48.0;
 const double kWFxVal = 31.0;
-const double kWGap  = 4.0;
+const double kWGap = 4.0;
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 

@@ -41,20 +41,20 @@ class _ReverbUiState {
 }
 
 class _DelayUiState {
-  final double timeMs;    // 1–2000 ms
-  final double feedback;  // 0.0–0.95
-  final double hpCutoff;  // 0.0–1.0 (0 = off)
+  final double timeMs; // 1–2000 ms
+  final double feedback; // 0.0–0.95
+  final double hpCutoff; // 0.0–1.0 (0 = off)
   final double dry;
   final double wet;
   final bool sync;
 
   const _DelayUiState({
-    this.timeMs   = 375.0,
+    this.timeMs = 375.0,
     this.feedback = 0.4,
     this.hpCutoff = 0.0,
-    this.dry      = 1.0,
-    this.wet      = 0.35,
-    this.sync     = false,
+    this.dry = 1.0,
+    this.wet = 0.35,
+    this.sync = false,
   });
 
   _DelayUiState copyWith({
@@ -66,86 +66,100 @@ class _DelayUiState {
     bool? sync,
   }) {
     return _DelayUiState(
-      timeMs:   timeMs   ?? this.timeMs,
+      timeMs: timeMs ?? this.timeMs,
       feedback: feedback ?? this.feedback,
       hpCutoff: hpCutoff ?? this.hpCutoff,
-      dry:      dry      ?? this.dry,
-      wet:      wet      ?? this.wet,
-      sync:     sync     ?? this.sync,
+      dry: dry ?? this.dry,
+      wet: wet ?? this.wet,
+      sync: sync ?? this.sync,
     );
   }
 }
 
 class _FilterUiState {
-  final double cutoff;     // 0..1
-  final double resonance;  // 0..1
-  final int mode;          // 0=LP 1=HP 2=BP
+  final double cutoff; // 0..1
+  final double resonance; // 0..1
+  final int mode; // 0=LP 1=HP 2=BP
   final double dry;
   final double wet;
 
   const _FilterUiState({
-    this.cutoff    = 0.5,
+    this.cutoff = 0.5,
     this.resonance = 0.2,
-    this.mode      = 0,
-    this.dry       = 1.0,
-    this.wet       = 1.0,
+    this.mode = 0,
+    this.dry = 1.0,
+    this.wet = 1.0,
   });
 
-  _FilterUiState copyWith({double? cutoff, double? resonance, int? mode, double? dry, double? wet}) =>
-      _FilterUiState(
-        cutoff:    cutoff    ?? this.cutoff,
-        resonance: resonance ?? this.resonance,
-        mode:      mode      ?? this.mode,
-        dry:       dry       ?? this.dry,
-        wet:       wet       ?? this.wet,
-      );
+  _FilterUiState copyWith({
+    double? cutoff,
+    double? resonance,
+    int? mode,
+    double? dry,
+    double? wet,
+  }) => _FilterUiState(
+    cutoff: cutoff ?? this.cutoff,
+    resonance: resonance ?? this.resonance,
+    mode: mode ?? this.mode,
+    dry: dry ?? this.dry,
+    wet: wet ?? this.wet,
+  );
 }
 
 class _DistortionUiState {
-  final double drive;   // 0..1
-  final double tone;    // 0..1
-  final int distType;   // 0=soft-clip 1=fold
+  final double drive; // 0..1
+  final double tone; // 0..1
+  final int distType; // 0=soft-clip 1=fold
   final double dry;
   final double wet;
 
   const _DistortionUiState({
-    this.drive    = 0.5,
-    this.tone     = 0.5,
+    this.drive = 0.5,
+    this.tone = 0.5,
     this.distType = 0,
-    this.dry      = 1.0,
-    this.wet      = 1.0,
+    this.dry = 1.0,
+    this.wet = 1.0,
   });
 
-  _DistortionUiState copyWith({double? drive, double? tone, int? distType, double? dry, double? wet}) =>
-      _DistortionUiState(
-        drive:    drive    ?? this.drive,
-        tone:     tone     ?? this.tone,
-        distType: distType ?? this.distType,
-        dry:      dry      ?? this.dry,
-        wet:      wet      ?? this.wet,
-      );
+  _DistortionUiState copyWith({
+    double? drive,
+    double? tone,
+    int? distType,
+    double? dry,
+    double? wet,
+  }) => _DistortionUiState(
+    drive: drive ?? this.drive,
+    tone: tone ?? this.tone,
+    distType: distType ?? this.distType,
+    dry: dry ?? this.dry,
+    wet: wet ?? this.wet,
+  );
 }
 
 class _BitcrusherUiState {
-  final double bits;  // 0..1  (1.0 = 16-bit, 0.0 = 1-bit)
-  final double rate;  // 0..1  (1.0 = no downsampling)
+  final double bits; // 0..1  (1.0 = 16-bit, 0.0 = 1-bit)
+  final double rate; // 0..1  (1.0 = no downsampling)
   final double dry;
   final double wet;
 
   const _BitcrusherUiState({
     this.bits = 1.0,
     this.rate = 1.0,
-    this.dry  = 1.0,
-    this.wet  = 1.0,
+    this.dry = 1.0,
+    this.wet = 1.0,
   });
 
-  _BitcrusherUiState copyWith({double? bits, double? rate, double? dry, double? wet}) =>
-      _BitcrusherUiState(
-        bits: bits ?? this.bits,
-        rate: rate ?? this.rate,
-        dry:  dry  ?? this.dry,
-        wet:  wet  ?? this.wet,
-      );
+  _BitcrusherUiState copyWith({
+    double? bits,
+    double? rate,
+    double? dry,
+    double? wet,
+  }) => _BitcrusherUiState(
+    bits: bits ?? this.bits,
+    rate: rate ?? this.rate,
+    dry: dry ?? this.dry,
+    wet: wet ?? this.wet,
+  );
 }
 
 class _LimiterUiState {
@@ -155,115 +169,138 @@ class _LimiterUiState {
 
   const _LimiterUiState({
     this.gain = 0.0,
-    this.dry  = 0.0,   // default: fully wet (limiter in-line)
-    this.wet  = 1.0,
+    this.dry = 0.0, // default: fully wet (limiter in-line)
+    this.wet = 1.0,
   });
 
   _LimiterUiState copyWith({double? gain, double? dry, double? wet}) =>
       _LimiterUiState(
         gain: gain ?? this.gain,
-        dry:  dry  ?? this.dry,
-        wet:  wet  ?? this.wet,
+        dry: dry ?? this.dry,
+        wet: wet ?? this.wet,
       );
 }
 
 class _ChorusUiState {
-  final double rate;    // 0..1 → 0.1..8 Hz
-  final double depth;   // 0..1 → 0..15 ms
-  final double delay;   // 0..1 → 1..30 ms base
-  final int    stereo;  // 0=mono, 1=stereo
+  final double rate; // 0..1 → 0.1..8 Hz
+  final double depth; // 0..1 → 0..15 ms
+  final double delay; // 0..1 → 1..30 ms base
+  final int stereo; // 0=mono, 1=stereo
   final double dry;
   final double wet;
 
   const _ChorusUiState({
-    this.rate   = 0.3,
-    this.depth  = 0.5,
-    this.delay  = 0.3,
+    this.rate = 0.3,
+    this.depth = 0.5,
+    this.delay = 0.3,
     this.stereo = 0,
-    this.dry    = 0.0,
-    this.wet    = 1.0,
+    this.dry = 0.0,
+    this.wet = 1.0,
   });
 
-  _ChorusUiState copyWith({double? rate, double? depth, double? delay, int? stereo, double? dry, double? wet}) =>
-      _ChorusUiState(
-        rate:   rate   ?? this.rate,
-        depth:  depth  ?? this.depth,
-        delay:  delay  ?? this.delay,
-        stereo: stereo ?? this.stereo,
-        dry:    dry    ?? this.dry,
-        wet:    wet    ?? this.wet,
-      );
+  _ChorusUiState copyWith({
+    double? rate,
+    double? depth,
+    double? delay,
+    int? stereo,
+    double? dry,
+    double? wet,
+  }) => _ChorusUiState(
+    rate: rate ?? this.rate,
+    depth: depth ?? this.depth,
+    delay: delay ?? this.delay,
+    stereo: stereo ?? this.stereo,
+    dry: dry ?? this.dry,
+    wet: wet ?? this.wet,
+  );
 }
 
 class _EqUiState {
-  final double lowGain;   // −1..+1 → −12..+12 dB
-  final double lowFreq;   // 0..1 → 40..500 Hz
-  final double midGain;   // −1..+1 → −12..+12 dB
-  final double midFreq;   // 0..1 → 200..8000 Hz
-  final double midQ;      // 0..1 → 0.3..8.0
-  final double highGain;  // −1..+1 → −12..+12 dB
-  final double highFreq;  // 0..1 → 2000..16000 Hz
+  final double lowGain; // −1..+1 → −12..+12 dB
+  final double lowFreq; // 0..1 → 40..500 Hz
+  final double midGain; // −1..+1 → −12..+12 dB
+  final double midFreq; // 0..1 → 200..8000 Hz
+  final double midQ; // 0..1 → 0.3..8.0
+  final double highGain; // −1..+1 → −12..+12 dB
+  final double highFreq; // 0..1 → 2000..16000 Hz
   final double dry;
   final double wet;
 
   const _EqUiState({
-    this.lowGain  = 0.0,
-    this.lowFreq  = 0.2,
-    this.midGain  = 0.0,
-    this.midFreq  = 0.3,
-    this.midQ     = 0.3,
+    this.lowGain = 0.0,
+    this.lowFreq = 0.2,
+    this.midGain = 0.0,
+    this.midFreq = 0.3,
+    this.midQ = 0.3,
     this.highGain = 0.0,
     this.highFreq = 0.5,
-    this.dry      = 0.0,
-    this.wet      = 1.0,
+    this.dry = 0.0,
+    this.wet = 1.0,
   });
 
-  _EqUiState copyWith({double? lowGain, double? lowFreq, double? midGain, double? midFreq, double? midQ, double? highGain, double? highFreq, double? dry, double? wet}) =>
-      _EqUiState(
-        lowGain:  lowGain  ?? this.lowGain,
-        lowFreq:  lowFreq  ?? this.lowFreq,
-        midGain:  midGain  ?? this.midGain,
-        midFreq:  midFreq  ?? this.midFreq,
-        midQ:     midQ     ?? this.midQ,
-        highGain: highGain ?? this.highGain,
-        highFreq: highFreq ?? this.highFreq,
-        dry:      dry      ?? this.dry,
-        wet:      wet      ?? this.wet,
-      );
+  _EqUiState copyWith({
+    double? lowGain,
+    double? lowFreq,
+    double? midGain,
+    double? midFreq,
+    double? midQ,
+    double? highGain,
+    double? highFreq,
+    double? dry,
+    double? wet,
+  }) => _EqUiState(
+    lowGain: lowGain ?? this.lowGain,
+    lowFreq: lowFreq ?? this.lowFreq,
+    midGain: midGain ?? this.midGain,
+    midFreq: midFreq ?? this.midFreq,
+    midQ: midQ ?? this.midQ,
+    highGain: highGain ?? this.highGain,
+    highFreq: highFreq ?? this.highFreq,
+    dry: dry ?? this.dry,
+    wet: wet ?? this.wet,
+  );
 }
 
 class _CompressorUiState {
-  final double threshold;  // 0..1 → −60..0 dBFS
-  final double ratio;      // 0..1 → 1:1..20:1
-  final double attack;     // 0..1 → 0.1..200 ms
-  final double release;    // 0..1 → 10..2000 ms
-  final double makeup;     // 0..1 → 0..+24 dB
-  final int    knee;       // 0=hard, 1=soft
+  final double threshold; // 0..1 → −60..0 dBFS
+  final double ratio; // 0..1 → 1:1..20:1
+  final double attack; // 0..1 → 0.1..200 ms
+  final double release; // 0..1 → 10..2000 ms
+  final double makeup; // 0..1 → 0..+24 dB
+  final int knee; // 0=hard, 1=soft
   final double dry;
   final double wet;
 
   const _CompressorUiState({
     this.threshold = 0.7,
-    this.ratio     = 0.2,
-    this.attack    = 0.1,
-    this.release   = 0.2,
-    this.makeup    = 0.0,
-    this.knee      = 0,
-    this.dry       = 0.0,
-    this.wet       = 1.0,
+    this.ratio = 0.2,
+    this.attack = 0.1,
+    this.release = 0.2,
+    this.makeup = 0.0,
+    this.knee = 0,
+    this.dry = 0.0,
+    this.wet = 1.0,
   });
 
-  _CompressorUiState copyWith({double? threshold, double? ratio, double? attack, double? release, double? makeup, int? knee, double? dry, double? wet}) =>
-      _CompressorUiState(
-        threshold: threshold ?? this.threshold,
-        ratio:     ratio     ?? this.ratio,
-        attack:    attack    ?? this.attack,
-        release:   release   ?? this.release,
-        makeup:    makeup    ?? this.makeup,
-        knee:      knee      ?? this.knee,
-        dry:       dry       ?? this.dry,
-        wet:       wet       ?? this.wet,
-      );
+  _CompressorUiState copyWith({
+    double? threshold,
+    double? ratio,
+    double? attack,
+    double? release,
+    double? makeup,
+    int? knee,
+    double? dry,
+    double? wet,
+  }) => _CompressorUiState(
+    threshold: threshold ?? this.threshold,
+    ratio: ratio ?? this.ratio,
+    attack: attack ?? this.attack,
+    release: release ?? this.release,
+    makeup: makeup ?? this.makeup,
+    knee: knee ?? this.knee,
+    dry: dry ?? this.dry,
+    wet: wet ?? this.wet,
+  );
 }
 
 /// Mixer screen — one channel strip per track.
@@ -282,7 +319,7 @@ class _MixerScreenState extends State<MixerScreen> {
   late List<List<String?>> _inserts; // [track][slot] => fx name or null
   late List<List<bool>> _trackBypassed; // [track][slot]
   late List<List<_ReverbUiState>> _trackReverbStates; // [track][slot]
-  late List<List<_DelayUiState>> _trackDelayStates;   // [track][slot]
+  late List<List<_DelayUiState>> _trackDelayStates; // [track][slot]
   late List<List<_FilterUiState>> _trackFilterStates;
   late List<List<_DistortionUiState>> _trackDistortionStates;
   late List<List<_BitcrusherUiState>> _trackBitcrusherStates;
@@ -329,6 +366,7 @@ class _MixerScreenState extends State<MixerScreen> {
     (_) => const _CompressorUiState(),
   );
   bool _insertsInitialized = false;
+  int _seenSongStateVersion = -1;
 
   static const int kInsertSlots = 6;
 
@@ -367,7 +405,12 @@ class _MixerScreenState extends State<MixerScreen> {
         final r = _trackReverbStates[trackIdx][slotIdx];
         AudioEngine.instance.setTrackInsertMix(trackIdx, slotIdx, r.dry, r.wet);
         AudioEngine.instance.setTrackReverbParams(
-          trackIdx, slotIdx, r.roomSize, r.damp, r.width, r.freeze,
+          trackIdx,
+          slotIdx,
+          r.roomSize,
+          r.damp,
+          r.width,
+          r.freeze,
         );
         if (_trackBypassed[trackIdx][slotIdx]) {
           AudioEngine.instance.setTrackInsertBypass(trackIdx, slotIdx, false);
@@ -376,7 +419,14 @@ class _MixerScreenState extends State<MixerScreen> {
       } else if (effectName == 'DELAY') {
         final d = _trackDelayStates[trackIdx][slotIdx];
         AudioEngine.instance.setTrackInsertMix(trackIdx, slotIdx, d.dry, d.wet);
-        AudioEngine.instance.setTrackDelayParams(trackIdx, slotIdx, d.timeMs, d.feedback, d.hpCutoff, d.sync);
+        AudioEngine.instance.setTrackDelayParams(
+          trackIdx,
+          slotIdx,
+          d.timeMs,
+          d.feedback,
+          d.hpCutoff,
+          d.sync,
+        );
         if (_trackBypassed[trackIdx][slotIdx]) {
           AudioEngine.instance.setTrackInsertBypass(trackIdx, slotIdx, false);
           setState(() => _trackBypassed[trackIdx][slotIdx] = false);
@@ -384,7 +434,13 @@ class _MixerScreenState extends State<MixerScreen> {
       } else if (effectName == 'FILTER') {
         final f = _trackFilterStates[trackIdx][slotIdx];
         AudioEngine.instance.setTrackInsertMix(trackIdx, slotIdx, f.dry, f.wet);
-        AudioEngine.instance.setTrackFilterParams(trackIdx, slotIdx, f.cutoff, f.resonance, f.mode);
+        AudioEngine.instance.setTrackFilterParams(
+          trackIdx,
+          slotIdx,
+          f.cutoff,
+          f.resonance,
+          f.mode,
+        );
         if (_trackBypassed[trackIdx][slotIdx]) {
           AudioEngine.instance.setTrackInsertBypass(trackIdx, slotIdx, false);
           setState(() => _trackBypassed[trackIdx][slotIdx] = false);
@@ -392,7 +448,13 @@ class _MixerScreenState extends State<MixerScreen> {
       } else if (effectName == 'DISTORTION') {
         final d = _trackDistortionStates[trackIdx][slotIdx];
         AudioEngine.instance.setTrackInsertMix(trackIdx, slotIdx, d.dry, d.wet);
-        AudioEngine.instance.setTrackDistortionParams(trackIdx, slotIdx, d.drive, d.tone, d.distType);
+        AudioEngine.instance.setTrackDistortionParams(
+          trackIdx,
+          slotIdx,
+          d.drive,
+          d.tone,
+          d.distType,
+        );
         if (_trackBypassed[trackIdx][slotIdx]) {
           AudioEngine.instance.setTrackInsertBypass(trackIdx, slotIdx, false);
           setState(() => _trackBypassed[trackIdx][slotIdx] = false);
@@ -400,7 +462,12 @@ class _MixerScreenState extends State<MixerScreen> {
       } else if (effectName == 'BITCRUSHER') {
         final b = _trackBitcrusherStates[trackIdx][slotIdx];
         AudioEngine.instance.setTrackInsertMix(trackIdx, slotIdx, b.dry, b.wet);
-        AudioEngine.instance.setTrackBitcrusherParams(trackIdx, slotIdx, b.bits, b.rate);
+        AudioEngine.instance.setTrackBitcrusherParams(
+          trackIdx,
+          slotIdx,
+          b.bits,
+          b.rate,
+        );
         if (_trackBypassed[trackIdx][slotIdx]) {
           AudioEngine.instance.setTrackInsertBypass(trackIdx, slotIdx, false);
           setState(() => _trackBypassed[trackIdx][slotIdx] = false);
@@ -416,7 +483,14 @@ class _MixerScreenState extends State<MixerScreen> {
       } else if (effectName == 'CHORUS') {
         final c = _trackChorusStates[trackIdx][slotIdx];
         AudioEngine.instance.setTrackInsertMix(trackIdx, slotIdx, c.dry, c.wet);
-        AudioEngine.instance.setTrackChorusParams(trackIdx, slotIdx, c.rate, c.depth, c.delay, c.stereo);
+        AudioEngine.instance.setTrackChorusParams(
+          trackIdx,
+          slotIdx,
+          c.rate,
+          c.depth,
+          c.delay,
+          c.stereo,
+        );
         if (_trackBypassed[trackIdx][slotIdx]) {
           AudioEngine.instance.setTrackInsertBypass(trackIdx, slotIdx, false);
           setState(() => _trackBypassed[trackIdx][slotIdx] = false);
@@ -424,7 +498,17 @@ class _MixerScreenState extends State<MixerScreen> {
       } else if (effectName == 'EQ') {
         final e = _trackEqStates[trackIdx][slotIdx];
         AudioEngine.instance.setTrackInsertMix(trackIdx, slotIdx, e.dry, e.wet);
-        AudioEngine.instance.setTrackEqParams(trackIdx, slotIdx, e.lowGain, e.lowFreq, e.midGain, e.midFreq, e.midQ, e.highGain, e.highFreq);
+        AudioEngine.instance.setTrackEqParams(
+          trackIdx,
+          slotIdx,
+          e.lowGain,
+          e.lowFreq,
+          e.midGain,
+          e.midFreq,
+          e.midQ,
+          e.highGain,
+          e.highFreq,
+        );
         if (_trackBypassed[trackIdx][slotIdx]) {
           AudioEngine.instance.setTrackInsertBypass(trackIdx, slotIdx, false);
           setState(() => _trackBypassed[trackIdx][slotIdx] = false);
@@ -432,7 +516,16 @@ class _MixerScreenState extends State<MixerScreen> {
       } else if (effectName == 'COMPRESSOR') {
         final c = _trackCompressorStates[trackIdx][slotIdx];
         AudioEngine.instance.setTrackInsertMix(trackIdx, slotIdx, c.dry, c.wet);
-        AudioEngine.instance.setTrackCompressorParams(trackIdx, slotIdx, c.threshold, c.ratio, c.attack, c.release, c.makeup, c.knee);
+        AudioEngine.instance.setTrackCompressorParams(
+          trackIdx,
+          slotIdx,
+          c.threshold,
+          c.ratio,
+          c.attack,
+          c.release,
+          c.makeup,
+          c.knee,
+        );
         if (_trackBypassed[trackIdx][slotIdx]) {
           AudioEngine.instance.setTrackInsertBypass(trackIdx, slotIdx, false);
           setState(() => _trackBypassed[trackIdx][slotIdx] = false);
@@ -533,8 +626,12 @@ class _MixerScreenState extends State<MixerScreen> {
     int? trackIdx,
     required int slotIdx,
   }) async {
-    final initialBypass = onMaster ? _masterBypassed[slotIdx] : _trackBypassed[trackIdx!][slotIdx];
-    final initialState  = onMaster ? _masterFilterStates[slotIdx] : _trackFilterStates[trackIdx!][slotIdx];
+    final initialBypass = onMaster
+        ? _masterBypassed[slotIdx]
+        : _trackBypassed[trackIdx!][slotIdx];
+    final initialState = onMaster
+        ? _masterFilterStates[slotIdx]
+        : _trackFilterStates[trackIdx!][slotIdx];
     await showModalBottomSheet<void>(
       context: context,
       backgroundColor: kBgTrackHeader,
@@ -568,8 +665,12 @@ class _MixerScreenState extends State<MixerScreen> {
     int? trackIdx,
     required int slotIdx,
   }) async {
-    final initialBypass = onMaster ? _masterBypassed[slotIdx] : _trackBypassed[trackIdx!][slotIdx];
-    final initialState  = onMaster ? _masterDistortionStates[slotIdx] : _trackDistortionStates[trackIdx!][slotIdx];
+    final initialBypass = onMaster
+        ? _masterBypassed[slotIdx]
+        : _trackBypassed[trackIdx!][slotIdx];
+    final initialState = onMaster
+        ? _masterDistortionStates[slotIdx]
+        : _trackDistortionStates[trackIdx!][slotIdx];
     await showModalBottomSheet<void>(
       context: context,
       backgroundColor: kBgTrackHeader,
@@ -603,8 +704,12 @@ class _MixerScreenState extends State<MixerScreen> {
     int? trackIdx,
     required int slotIdx,
   }) async {
-    final initialBypass = onMaster ? _masterBypassed[slotIdx] : _trackBypassed[trackIdx!][slotIdx];
-    final initialState  = onMaster ? _masterBitcrusherStates[slotIdx] : _trackBitcrusherStates[trackIdx!][slotIdx];
+    final initialBypass = onMaster
+        ? _masterBypassed[slotIdx]
+        : _trackBypassed[trackIdx!][slotIdx];
+    final initialState = onMaster
+        ? _masterBitcrusherStates[slotIdx]
+        : _trackBitcrusherStates[trackIdx!][slotIdx];
     await showModalBottomSheet<void>(
       context: context,
       backgroundColor: kBgTrackHeader,
@@ -638,8 +743,12 @@ class _MixerScreenState extends State<MixerScreen> {
     int? trackIdx,
     required int slotIdx,
   }) async {
-    final initialBypass = onMaster ? _masterBypassed[slotIdx] : _trackBypassed[trackIdx!][slotIdx];
-    final initialState  = onMaster ? _masterLimiterStates[slotIdx] : _trackLimiterStates[trackIdx!][slotIdx];
+    final initialBypass = onMaster
+        ? _masterBypassed[slotIdx]
+        : _trackBypassed[trackIdx!][slotIdx];
+    final initialState = onMaster
+        ? _masterLimiterStates[slotIdx]
+        : _trackLimiterStates[trackIdx!][slotIdx];
     await showModalBottomSheet<void>(
       context: context,
       backgroundColor: kBgTrackHeader,
@@ -673,8 +782,12 @@ class _MixerScreenState extends State<MixerScreen> {
     int? trackIdx,
     required int slotIdx,
   }) async {
-    final initialBypass = onMaster ? _masterBypassed[slotIdx] : _trackBypassed[trackIdx!][slotIdx];
-    final initialState  = onMaster ? _masterChorusStates[slotIdx] : _trackChorusStates[trackIdx!][slotIdx];
+    final initialBypass = onMaster
+        ? _masterBypassed[slotIdx]
+        : _trackBypassed[trackIdx!][slotIdx];
+    final initialState = onMaster
+        ? _masterChorusStates[slotIdx]
+        : _trackChorusStates[trackIdx!][slotIdx];
     await showModalBottomSheet<void>(
       context: context,
       backgroundColor: kBgTrackHeader,
@@ -708,8 +821,12 @@ class _MixerScreenState extends State<MixerScreen> {
     int? trackIdx,
     required int slotIdx,
   }) async {
-    final initialBypass = onMaster ? _masterBypassed[slotIdx] : _trackBypassed[trackIdx!][slotIdx];
-    final initialState  = onMaster ? _masterEqStates[slotIdx] : _trackEqStates[trackIdx!][slotIdx];
+    final initialBypass = onMaster
+        ? _masterBypassed[slotIdx]
+        : _trackBypassed[trackIdx!][slotIdx];
+    final initialState = onMaster
+        ? _masterEqStates[slotIdx]
+        : _trackEqStates[trackIdx!][slotIdx];
     await showModalBottomSheet<void>(
       context: context,
       backgroundColor: kBgTrackHeader,
@@ -743,8 +860,12 @@ class _MixerScreenState extends State<MixerScreen> {
     int? trackIdx,
     required int slotIdx,
   }) async {
-    final initialBypass = onMaster ? _masterBypassed[slotIdx] : _trackBypassed[trackIdx!][slotIdx];
-    final initialState  = onMaster ? _masterCompressorStates[slotIdx] : _trackCompressorStates[trackIdx!][slotIdx];
+    final initialBypass = onMaster
+        ? _masterBypassed[slotIdx]
+        : _trackBypassed[trackIdx!][slotIdx];
+    final initialState = onMaster
+        ? _masterCompressorStates[slotIdx]
+        : _trackCompressorStates[trackIdx!][slotIdx];
     await showModalBottomSheet<void>(
       context: context,
       backgroundColor: kBgTrackHeader,
@@ -775,34 +896,136 @@ class _MixerScreenState extends State<MixerScreen> {
 
   void _ensureSized(int n) {
     if (_insertsInitialized && _inserts.length == n) return;
-    _inserts = List.generate(n, (_) => List<String?>.filled(kInsertSlots, null));
-    _trackBypassed = List.generate(n, (_) => List<bool>.filled(kInsertSlots, false));
+    _inserts = List.generate(
+      n,
+      (_) => List<String?>.filled(kInsertSlots, null),
+    );
+    _trackBypassed = List.generate(
+      n,
+      (_) => List<bool>.filled(kInsertSlots, false),
+    );
     _trackReverbStates = List.generate(
-      n, (_) => List<_ReverbUiState>.generate(kInsertSlots, (_) => const _ReverbUiState()));
+      n,
+      (_) => List<_ReverbUiState>.generate(
+        kInsertSlots,
+        (_) => const _ReverbUiState(),
+      ),
+    );
     _trackDelayStates = List.generate(
-      n, (_) => List<_DelayUiState>.generate(kInsertSlots, (_) => const _DelayUiState()));
+      n,
+      (_) => List<_DelayUiState>.generate(
+        kInsertSlots,
+        (_) => const _DelayUiState(),
+      ),
+    );
     _trackFilterStates = List.generate(
-      n, (_) => List<_FilterUiState>.generate(kInsertSlots, (_) => const _FilterUiState()));
+      n,
+      (_) => List<_FilterUiState>.generate(
+        kInsertSlots,
+        (_) => const _FilterUiState(),
+      ),
+    );
     _trackDistortionStates = List.generate(
-      n, (_) => List<_DistortionUiState>.generate(kInsertSlots, (_) => const _DistortionUiState()));
+      n,
+      (_) => List<_DistortionUiState>.generate(
+        kInsertSlots,
+        (_) => const _DistortionUiState(),
+      ),
+    );
     _trackBitcrusherStates = List.generate(
-      n, (_) => List<_BitcrusherUiState>.generate(kInsertSlots, (_) => const _BitcrusherUiState()));
+      n,
+      (_) => List<_BitcrusherUiState>.generate(
+        kInsertSlots,
+        (_) => const _BitcrusherUiState(),
+      ),
+    );
     _trackLimiterStates = List.generate(
-      n, (_) => List<_LimiterUiState>.generate(kInsertSlots, (_) => const _LimiterUiState()));
+      n,
+      (_) => List<_LimiterUiState>.generate(
+        kInsertSlots,
+        (_) => const _LimiterUiState(),
+      ),
+    );
     _trackChorusStates = List.generate(
-      n, (_) => List<_ChorusUiState>.generate(kInsertSlots, (_) => const _ChorusUiState()));
+      n,
+      (_) => List<_ChorusUiState>.generate(
+        kInsertSlots,
+        (_) => const _ChorusUiState(),
+      ),
+    );
     _trackEqStates = List.generate(
-      n, (_) => List<_EqUiState>.generate(kInsertSlots, (_) => const _EqUiState()));
+      n,
+      (_) => List<_EqUiState>.generate(kInsertSlots, (_) => const _EqUiState()),
+    );
     _trackCompressorStates = List.generate(
-      n, (_) => List<_CompressorUiState>.generate(kInsertSlots, (_) => const _CompressorUiState()));
+      n,
+      (_) => List<_CompressorUiState>.generate(
+        kInsertSlots,
+        (_) => const _CompressorUiState(),
+      ),
+    );
     _insertsInitialized = true;
+  }
+
+  void _resetTrackInsertSlotState(int trackIdx, int slotIdx) {
+    _trackBypassed[trackIdx][slotIdx] = false;
+    _trackReverbStates[trackIdx][slotIdx] = const _ReverbUiState();
+    _trackDelayStates[trackIdx][slotIdx] = const _DelayUiState();
+    _trackFilterStates[trackIdx][slotIdx] = const _FilterUiState();
+    _trackDistortionStates[trackIdx][slotIdx] = const _DistortionUiState();
+    _trackBitcrusherStates[trackIdx][slotIdx] = const _BitcrusherUiState();
+    _trackLimiterStates[trackIdx][slotIdx] = const _LimiterUiState();
+    _trackChorusStates[trackIdx][slotIdx] = const _ChorusUiState();
+    _trackEqStates[trackIdx][slotIdx] = const _EqUiState();
+    _trackCompressorStates[trackIdx][slotIdx] = const _CompressorUiState();
+  }
+
+  void _resetMasterInsertState() {
+    for (int slot = 0; slot < kInsertSlots; slot++) {
+      _masterInserts[slot] = null;
+      _masterBypassed[slot] = false;
+      _masterReverbStates[slot] = const _ReverbUiState();
+      _masterDelayStates[slot] = const _DelayUiState();
+      _masterFilterStates[slot] = const _FilterUiState();
+      _masterDistortionStates[slot] = const _DistortionUiState();
+      _masterBitcrusherStates[slot] = const _BitcrusherUiState();
+      _masterLimiterStates[slot] = const _LimiterUiState();
+      _masterChorusStates[slot] = const _ChorusUiState();
+      _masterEqStates[slot] = const _EqUiState();
+      _masterCompressorStates[slot] = const _CompressorUiState();
+    }
+  }
+
+  void _syncInsertStateFromAppState(AppState state) {
+    final trackCount = state.currentPattern.tracks.length;
+    _ensureSized(trackCount);
+
+    if (_seenSongStateVersion != state.songStateVersion) {
+      _resetMasterInsertState();
+      for (int trackIdx = 0; trackIdx < trackCount; trackIdx++) {
+        for (int slotIdx = 0; slotIdx < kInsertSlots; slotIdx++) {
+          _inserts[trackIdx][slotIdx] = null;
+          _resetTrackInsertSlotState(trackIdx, slotIdx);
+        }
+      }
+      _seenSongStateVersion = state.songStateVersion;
+    }
+
+    for (int trackIdx = 0; trackIdx < trackCount; trackIdx++) {
+      for (int slotIdx = 0; slotIdx < kInsertSlots; slotIdx++) {
+        final effectName = state.trackInsertEffectName(trackIdx, slotIdx);
+        if (_inserts[trackIdx][slotIdx] == effectName) continue;
+        _inserts[trackIdx][slotIdx] = effectName;
+        _resetTrackInsertSlotState(trackIdx, slotIdx);
+      }
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     final state = AppStateScope.of(context);
     final tracks = state.currentPattern.tracks;
-    _ensureSized(tracks.length);
+    _syncInsertStateFromAppState(state);
 
     return Container(
       color: kBgColor,
@@ -858,16 +1081,7 @@ class _MixerScreenState extends State<MixerScreen> {
                 onInsertClear: (slot) {
                   setState(() {
                     _inserts[i][slot] = null;
-                    _trackBypassed[i][slot] = false;
-                    _trackReverbStates[i][slot] = const _ReverbUiState();
-                    _trackDelayStates[i][slot] = const _DelayUiState();
-                    _trackFilterStates[i][slot] = const _FilterUiState();
-                    _trackDistortionStates[i][slot] = const _DistortionUiState();
-                    _trackBitcrusherStates[i][slot] = const _BitcrusherUiState();
-                    _trackLimiterStates[i][slot] = const _LimiterUiState();
-                    _trackChorusStates[i][slot] = const _ChorusUiState();
-                    _trackEqStates[i][slot] = const _EqUiState();
-                    _trackCompressorStates[i][slot] = const _CompressorUiState();
+                    _resetTrackInsertSlotState(i, slot);
                   });
                   state.setTrackInsertEffectName(i, slot, null);
                   AudioEngine.instance.setTrackInsertEffect(i, slot, -1, 0.0);
@@ -883,39 +1097,75 @@ class _MixerScreenState extends State<MixerScreen> {
     final state = AppStateScope.of(context);
     final currentFx = _inserts[trackIdx][slotIdx];
     if (currentFx == 'REVERB') {
-      await _openReverbEditor(onMaster: false, trackIdx: trackIdx, slotIdx: slotIdx);
+      await _openReverbEditor(
+        onMaster: false,
+        trackIdx: trackIdx,
+        slotIdx: slotIdx,
+      );
       return;
     }
     if (currentFx == 'DELAY') {
-      await _openDelayEditor(onMaster: false, trackIdx: trackIdx, slotIdx: slotIdx);
+      await _openDelayEditor(
+        onMaster: false,
+        trackIdx: trackIdx,
+        slotIdx: slotIdx,
+      );
       return;
     }
     if (currentFx == 'FILTER') {
-      await _openFilterEditor(onMaster: false, trackIdx: trackIdx, slotIdx: slotIdx);
+      await _openFilterEditor(
+        onMaster: false,
+        trackIdx: trackIdx,
+        slotIdx: slotIdx,
+      );
       return;
     }
     if (currentFx == 'DISTORTION') {
-      await _openDistortionEditor(onMaster: false, trackIdx: trackIdx, slotIdx: slotIdx);
+      await _openDistortionEditor(
+        onMaster: false,
+        trackIdx: trackIdx,
+        slotIdx: slotIdx,
+      );
       return;
     }
     if (currentFx == 'BITCRUSHER') {
-      await _openBitcrusherEditor(onMaster: false, trackIdx: trackIdx, slotIdx: slotIdx);
+      await _openBitcrusherEditor(
+        onMaster: false,
+        trackIdx: trackIdx,
+        slotIdx: slotIdx,
+      );
       return;
     }
     if (currentFx == 'LIMITER') {
-      await _openLimiterEditor(onMaster: false, trackIdx: trackIdx, slotIdx: slotIdx);
+      await _openLimiterEditor(
+        onMaster: false,
+        trackIdx: trackIdx,
+        slotIdx: slotIdx,
+      );
       return;
     }
     if (currentFx == 'CHORUS') {
-      await _openChorusEditor(onMaster: false, trackIdx: trackIdx, slotIdx: slotIdx);
+      await _openChorusEditor(
+        onMaster: false,
+        trackIdx: trackIdx,
+        slotIdx: slotIdx,
+      );
       return;
     }
     if (currentFx == 'EQ') {
-      await _openEqEditor(onMaster: false, trackIdx: trackIdx, slotIdx: slotIdx);
+      await _openEqEditor(
+        onMaster: false,
+        trackIdx: trackIdx,
+        slotIdx: slotIdx,
+      );
       return;
     }
     if (currentFx == 'COMPRESSOR') {
-      await _openCompressorEditor(onMaster: false, trackIdx: trackIdx, slotIdx: slotIdx);
+      await _openCompressorEditor(
+        onMaster: false,
+        trackIdx: trackIdx,
+        slotIdx: slotIdx,
+      );
       return;
     }
 
@@ -931,76 +1181,295 @@ class _MixerScreenState extends State<MixerScreen> {
 
       if (picked == 'REVERB') {
         final rs = _trackReverbStates[trackIdx][slotIdx];
-        await AudioEngine.instance.setTrackInsertEffect(trackIdx, slotIdx, 0, rs.wet);
-        await AudioEngine.instance.setTrackInsertMix(trackIdx, slotIdx, rs.dry, rs.wet);
-        await AudioEngine.instance.setTrackReverbParams(trackIdx, slotIdx, rs.roomSize, rs.damp, rs.width, rs.freeze);
-        await _openReverbEditor(onMaster: false, trackIdx: trackIdx, slotIdx: slotIdx);
+        await AudioEngine.instance.setTrackInsertEffect(
+          trackIdx,
+          slotIdx,
+          0,
+          rs.wet,
+        );
+        await AudioEngine.instance.setTrackInsertMix(
+          trackIdx,
+          slotIdx,
+          rs.dry,
+          rs.wet,
+        );
+        await AudioEngine.instance.setTrackReverbParams(
+          trackIdx,
+          slotIdx,
+          rs.roomSize,
+          rs.damp,
+          rs.width,
+          rs.freeze,
+        );
+        await _openReverbEditor(
+          onMaster: false,
+          trackIdx: trackIdx,
+          slotIdx: slotIdx,
+        );
       } else if (picked == 'DELAY') {
         final ds = _trackDelayStates[trackIdx][slotIdx];
-        await AudioEngine.instance.setTrackInsertEffect(trackIdx, slotIdx, 1, ds.wet);
-        await AudioEngine.instance.setTrackInsertMix(trackIdx, slotIdx, ds.dry, ds.wet);
-        await AudioEngine.instance.setTrackDelayParams(trackIdx, slotIdx, ds.timeMs, ds.feedback, ds.hpCutoff, ds.sync);
-        await _openDelayEditor(onMaster: false, trackIdx: trackIdx, slotIdx: slotIdx);
+        await AudioEngine.instance.setTrackInsertEffect(
+          trackIdx,
+          slotIdx,
+          1,
+          ds.wet,
+        );
+        await AudioEngine.instance.setTrackInsertMix(
+          trackIdx,
+          slotIdx,
+          ds.dry,
+          ds.wet,
+        );
+        await AudioEngine.instance.setTrackDelayParams(
+          trackIdx,
+          slotIdx,
+          ds.timeMs,
+          ds.feedback,
+          ds.hpCutoff,
+          ds.sync,
+        );
+        await _openDelayEditor(
+          onMaster: false,
+          trackIdx: trackIdx,
+          slotIdx: slotIdx,
+        );
       } else if (picked == 'FILTER') {
         final fs = _trackFilterStates[trackIdx][slotIdx];
-        await AudioEngine.instance.setTrackInsertEffect(trackIdx, slotIdx, 2, fs.wet);
-        await AudioEngine.instance.setTrackInsertMix(trackIdx, slotIdx, fs.dry, fs.wet);
-        await AudioEngine.instance.setTrackFilterParams(trackIdx, slotIdx, fs.cutoff, fs.resonance, fs.mode);
-        await _openFilterEditor(onMaster: false, trackIdx: trackIdx, slotIdx: slotIdx);
+        await AudioEngine.instance.setTrackInsertEffect(
+          trackIdx,
+          slotIdx,
+          2,
+          fs.wet,
+        );
+        await AudioEngine.instance.setTrackInsertMix(
+          trackIdx,
+          slotIdx,
+          fs.dry,
+          fs.wet,
+        );
+        await AudioEngine.instance.setTrackFilterParams(
+          trackIdx,
+          slotIdx,
+          fs.cutoff,
+          fs.resonance,
+          fs.mode,
+        );
+        await _openFilterEditor(
+          onMaster: false,
+          trackIdx: trackIdx,
+          slotIdx: slotIdx,
+        );
       } else if (picked == 'DISTORTION') {
         final ds = _trackDistortionStates[trackIdx][slotIdx];
-        await AudioEngine.instance.setTrackInsertEffect(trackIdx, slotIdx, 3, ds.wet);
-        await AudioEngine.instance.setTrackInsertMix(trackIdx, slotIdx, ds.dry, ds.wet);
-        await AudioEngine.instance.setTrackDistortionParams(trackIdx, slotIdx, ds.drive, ds.tone, ds.distType);
-        await _openDistortionEditor(onMaster: false, trackIdx: trackIdx, slotIdx: slotIdx);
+        await AudioEngine.instance.setTrackInsertEffect(
+          trackIdx,
+          slotIdx,
+          3,
+          ds.wet,
+        );
+        await AudioEngine.instance.setTrackInsertMix(
+          trackIdx,
+          slotIdx,
+          ds.dry,
+          ds.wet,
+        );
+        await AudioEngine.instance.setTrackDistortionParams(
+          trackIdx,
+          slotIdx,
+          ds.drive,
+          ds.tone,
+          ds.distType,
+        );
+        await _openDistortionEditor(
+          onMaster: false,
+          trackIdx: trackIdx,
+          slotIdx: slotIdx,
+        );
       } else if (picked == 'BITCRUSHER') {
         final bs = _trackBitcrusherStates[trackIdx][slotIdx];
-        await AudioEngine.instance.setTrackInsertEffect(trackIdx, slotIdx, 4, bs.wet);
-        await AudioEngine.instance.setTrackInsertMix(trackIdx, slotIdx, bs.dry, bs.wet);
-        await AudioEngine.instance.setTrackBitcrusherParams(trackIdx, slotIdx, bs.bits, bs.rate);
-        await _openBitcrusherEditor(onMaster: false, trackIdx: trackIdx, slotIdx: slotIdx);
+        await AudioEngine.instance.setTrackInsertEffect(
+          trackIdx,
+          slotIdx,
+          4,
+          bs.wet,
+        );
+        await AudioEngine.instance.setTrackInsertMix(
+          trackIdx,
+          slotIdx,
+          bs.dry,
+          bs.wet,
+        );
+        await AudioEngine.instance.setTrackBitcrusherParams(
+          trackIdx,
+          slotIdx,
+          bs.bits,
+          bs.rate,
+        );
+        await _openBitcrusherEditor(
+          onMaster: false,
+          trackIdx: trackIdx,
+          slotIdx: slotIdx,
+        );
       } else if (picked == 'LIMITER') {
         final ls = _trackLimiterStates[trackIdx][slotIdx];
-        await AudioEngine.instance.setTrackInsertEffect(trackIdx, slotIdx, 5, ls.wet);
-        await AudioEngine.instance.setTrackInsertMix(trackIdx, slotIdx, ls.dry, ls.wet);
-        await AudioEngine.instance.setTrackLimiterParams(trackIdx, slotIdx, ls.gain);
-        await _openLimiterEditor(onMaster: false, trackIdx: trackIdx, slotIdx: slotIdx);
+        await AudioEngine.instance.setTrackInsertEffect(
+          trackIdx,
+          slotIdx,
+          5,
+          ls.wet,
+        );
+        await AudioEngine.instance.setTrackInsertMix(
+          trackIdx,
+          slotIdx,
+          ls.dry,
+          ls.wet,
+        );
+        await AudioEngine.instance.setTrackLimiterParams(
+          trackIdx,
+          slotIdx,
+          ls.gain,
+        );
+        await _openLimiterEditor(
+          onMaster: false,
+          trackIdx: trackIdx,
+          slotIdx: slotIdx,
+        );
       } else if (picked == 'CHORUS') {
         final cs = _trackChorusStates[trackIdx][slotIdx];
-        await AudioEngine.instance.setTrackInsertEffect(trackIdx, slotIdx, 6, cs.wet);
-        await AudioEngine.instance.setTrackInsertMix(trackIdx, slotIdx, cs.dry, cs.wet);
-        await AudioEngine.instance.setTrackChorusParams(trackIdx, slotIdx, cs.rate, cs.depth, cs.delay, cs.stereo);
-        await _openChorusEditor(onMaster: false, trackIdx: trackIdx, slotIdx: slotIdx);
+        await AudioEngine.instance.setTrackInsertEffect(
+          trackIdx,
+          slotIdx,
+          6,
+          cs.wet,
+        );
+        await AudioEngine.instance.setTrackInsertMix(
+          trackIdx,
+          slotIdx,
+          cs.dry,
+          cs.wet,
+        );
+        await AudioEngine.instance.setTrackChorusParams(
+          trackIdx,
+          slotIdx,
+          cs.rate,
+          cs.depth,
+          cs.delay,
+          cs.stereo,
+        );
+        await _openChorusEditor(
+          onMaster: false,
+          trackIdx: trackIdx,
+          slotIdx: slotIdx,
+        );
       } else if (picked == 'EQ') {
         final es = _trackEqStates[trackIdx][slotIdx];
-        await AudioEngine.instance.setTrackInsertEffect(trackIdx, slotIdx, 7, es.wet);
-        await AudioEngine.instance.setTrackInsertMix(trackIdx, slotIdx, es.dry, es.wet);
-        await AudioEngine.instance.setTrackEqParams(trackIdx, slotIdx, es.lowGain, es.lowFreq, es.midGain, es.midFreq, es.midQ, es.highGain, es.highFreq);
-        await _openEqEditor(onMaster: false, trackIdx: trackIdx, slotIdx: slotIdx);
+        await AudioEngine.instance.setTrackInsertEffect(
+          trackIdx,
+          slotIdx,
+          7,
+          es.wet,
+        );
+        await AudioEngine.instance.setTrackInsertMix(
+          trackIdx,
+          slotIdx,
+          es.dry,
+          es.wet,
+        );
+        await AudioEngine.instance.setTrackEqParams(
+          trackIdx,
+          slotIdx,
+          es.lowGain,
+          es.lowFreq,
+          es.midGain,
+          es.midFreq,
+          es.midQ,
+          es.highGain,
+          es.highFreq,
+        );
+        await _openEqEditor(
+          onMaster: false,
+          trackIdx: trackIdx,
+          slotIdx: slotIdx,
+        );
       } else if (picked == 'COMPRESSOR') {
         final cs = _trackCompressorStates[trackIdx][slotIdx];
-        await AudioEngine.instance.setTrackInsertEffect(trackIdx, slotIdx, 8, cs.wet);
-        await AudioEngine.instance.setTrackInsertMix(trackIdx, slotIdx, cs.dry, cs.wet);
-        await AudioEngine.instance.setTrackCompressorParams(trackIdx, slotIdx, cs.threshold, cs.ratio, cs.attack, cs.release, cs.makeup, cs.knee);
-        await _openCompressorEditor(onMaster: false, trackIdx: trackIdx, slotIdx: slotIdx);
+        await AudioEngine.instance.setTrackInsertEffect(
+          trackIdx,
+          slotIdx,
+          8,
+          cs.wet,
+        );
+        await AudioEngine.instance.setTrackInsertMix(
+          trackIdx,
+          slotIdx,
+          cs.dry,
+          cs.wet,
+        );
+        await AudioEngine.instance.setTrackCompressorParams(
+          trackIdx,
+          slotIdx,
+          cs.threshold,
+          cs.ratio,
+          cs.attack,
+          cs.release,
+          cs.makeup,
+          cs.knee,
+        );
+        await _openCompressorEditor(
+          onMaster: false,
+          trackIdx: trackIdx,
+          slotIdx: slotIdx,
+        );
       } else {
         // Non-implemented inserts are UI-only for now.
-        await AudioEngine.instance.setTrackInsertEffect(trackIdx, slotIdx, -1, 0.0);
+        await AudioEngine.instance.setTrackInsertEffect(
+          trackIdx,
+          slotIdx,
+          -1,
+          0.0,
+        );
       }
     }
   }
 
   void _onMasterInsertTap(int slotIdx) async {
     final currentFx = _masterInserts[slotIdx];
-    if (currentFx == 'REVERB') { await _openReverbEditor(onMaster: true, slotIdx: slotIdx); return; }
-    if (currentFx == 'DELAY')  { await _openDelayEditor(onMaster: true, slotIdx: slotIdx); return; }
-    if (currentFx == 'FILTER') { await _openFilterEditor(onMaster: true, slotIdx: slotIdx); return; }
-    if (currentFx == 'DISTORTION') { await _openDistortionEditor(onMaster: true, slotIdx: slotIdx); return; }
-    if (currentFx == 'BITCRUSHER') { await _openBitcrusherEditor(onMaster: true, slotIdx: slotIdx); return; }
-    if (currentFx == 'LIMITER')    { await _openLimiterEditor(onMaster: true, slotIdx: slotIdx); return; }
-    if (currentFx == 'CHORUS')     { await _openChorusEditor(onMaster: true, slotIdx: slotIdx); return; }
-    if (currentFx == 'EQ')         { await _openEqEditor(onMaster: true, slotIdx: slotIdx); return; }
-    if (currentFx == 'COMPRESSOR') { await _openCompressorEditor(onMaster: true, slotIdx: slotIdx); return; }
+    if (currentFx == 'REVERB') {
+      await _openReverbEditor(onMaster: true, slotIdx: slotIdx);
+      return;
+    }
+    if (currentFx == 'DELAY') {
+      await _openDelayEditor(onMaster: true, slotIdx: slotIdx);
+      return;
+    }
+    if (currentFx == 'FILTER') {
+      await _openFilterEditor(onMaster: true, slotIdx: slotIdx);
+      return;
+    }
+    if (currentFx == 'DISTORTION') {
+      await _openDistortionEditor(onMaster: true, slotIdx: slotIdx);
+      return;
+    }
+    if (currentFx == 'BITCRUSHER') {
+      await _openBitcrusherEditor(onMaster: true, slotIdx: slotIdx);
+      return;
+    }
+    if (currentFx == 'LIMITER') {
+      await _openLimiterEditor(onMaster: true, slotIdx: slotIdx);
+      return;
+    }
+    if (currentFx == 'CHORUS') {
+      await _openChorusEditor(onMaster: true, slotIdx: slotIdx);
+      return;
+    }
+    if (currentFx == 'EQ') {
+      await _openEqEditor(onMaster: true, slotIdx: slotIdx);
+      return;
+    }
+    if (currentFx == 'COMPRESSOR') {
+      await _openCompressorEditor(onMaster: true, slotIdx: slotIdx);
+      return;
+    }
 
     final picked = await showModalBottomSheet<String>(
       context: context,
@@ -1015,31 +1484,57 @@ class _MixerScreenState extends State<MixerScreen> {
         final rs = _masterReverbStates[slotIdx];
         await AudioEngine.instance.setMasterInsertEffect(slotIdx, 0, rs.wet);
         await AudioEngine.instance.setMasterInsertMix(slotIdx, rs.dry, rs.wet);
-        await AudioEngine.instance.setMasterReverbParams(slotIdx, rs.roomSize, rs.damp, rs.width, rs.freeze);
+        await AudioEngine.instance.setMasterReverbParams(
+          slotIdx,
+          rs.roomSize,
+          rs.damp,
+          rs.width,
+          rs.freeze,
+        );
         await _openReverbEditor(onMaster: true, slotIdx: slotIdx);
       } else if (picked == 'DELAY') {
         final ds = _masterDelayStates[slotIdx];
         await AudioEngine.instance.setMasterInsertEffect(slotIdx, 1, ds.wet);
         await AudioEngine.instance.setMasterInsertMix(slotIdx, ds.dry, ds.wet);
-        await AudioEngine.instance.setMasterDelayParams(slotIdx, ds.timeMs, ds.feedback, ds.hpCutoff, ds.sync);
+        await AudioEngine.instance.setMasterDelayParams(
+          slotIdx,
+          ds.timeMs,
+          ds.feedback,
+          ds.hpCutoff,
+          ds.sync,
+        );
         await _openDelayEditor(onMaster: true, slotIdx: slotIdx);
       } else if (picked == 'FILTER') {
         final fs = _masterFilterStates[slotIdx];
         await AudioEngine.instance.setMasterInsertEffect(slotIdx, 2, fs.wet);
         await AudioEngine.instance.setMasterInsertMix(slotIdx, fs.dry, fs.wet);
-        await AudioEngine.instance.setMasterFilterParams(slotIdx, fs.cutoff, fs.resonance, fs.mode);
+        await AudioEngine.instance.setMasterFilterParams(
+          slotIdx,
+          fs.cutoff,
+          fs.resonance,
+          fs.mode,
+        );
         await _openFilterEditor(onMaster: true, slotIdx: slotIdx);
       } else if (picked == 'DISTORTION') {
         final ds = _masterDistortionStates[slotIdx];
         await AudioEngine.instance.setMasterInsertEffect(slotIdx, 3, ds.wet);
         await AudioEngine.instance.setMasterInsertMix(slotIdx, ds.dry, ds.wet);
-        await AudioEngine.instance.setMasterDistortionParams(slotIdx, ds.drive, ds.tone, ds.distType);
+        await AudioEngine.instance.setMasterDistortionParams(
+          slotIdx,
+          ds.drive,
+          ds.tone,
+          ds.distType,
+        );
         await _openDistortionEditor(onMaster: true, slotIdx: slotIdx);
       } else if (picked == 'BITCRUSHER') {
         final bs = _masterBitcrusherStates[slotIdx];
         await AudioEngine.instance.setMasterInsertEffect(slotIdx, 4, bs.wet);
         await AudioEngine.instance.setMasterInsertMix(slotIdx, bs.dry, bs.wet);
-        await AudioEngine.instance.setMasterBitcrusherParams(slotIdx, bs.bits, bs.rate);
+        await AudioEngine.instance.setMasterBitcrusherParams(
+          slotIdx,
+          bs.bits,
+          bs.rate,
+        );
         await _openBitcrusherEditor(onMaster: true, slotIdx: slotIdx);
       } else if (picked == 'LIMITER') {
         final ls = _masterLimiterStates[slotIdx];
@@ -1051,19 +1546,42 @@ class _MixerScreenState extends State<MixerScreen> {
         final cs = _masterChorusStates[slotIdx];
         await AudioEngine.instance.setMasterInsertEffect(slotIdx, 6, cs.wet);
         await AudioEngine.instance.setMasterInsertMix(slotIdx, cs.dry, cs.wet);
-        await AudioEngine.instance.setMasterChorusParams(slotIdx, cs.rate, cs.depth, cs.delay, cs.stereo);
+        await AudioEngine.instance.setMasterChorusParams(
+          slotIdx,
+          cs.rate,
+          cs.depth,
+          cs.delay,
+          cs.stereo,
+        );
         await _openChorusEditor(onMaster: true, slotIdx: slotIdx);
       } else if (picked == 'EQ') {
         final es = _masterEqStates[slotIdx];
         await AudioEngine.instance.setMasterInsertEffect(slotIdx, 7, es.wet);
         await AudioEngine.instance.setMasterInsertMix(slotIdx, es.dry, es.wet);
-        await AudioEngine.instance.setMasterEqParams(slotIdx, es.lowGain, es.lowFreq, es.midGain, es.midFreq, es.midQ, es.highGain, es.highFreq);
+        await AudioEngine.instance.setMasterEqParams(
+          slotIdx,
+          es.lowGain,
+          es.lowFreq,
+          es.midGain,
+          es.midFreq,
+          es.midQ,
+          es.highGain,
+          es.highFreq,
+        );
         await _openEqEditor(onMaster: true, slotIdx: slotIdx);
       } else if (picked == 'COMPRESSOR') {
         final cs = _masterCompressorStates[slotIdx];
         await AudioEngine.instance.setMasterInsertEffect(slotIdx, 8, cs.wet);
         await AudioEngine.instance.setMasterInsertMix(slotIdx, cs.dry, cs.wet);
-        await AudioEngine.instance.setMasterCompressorParams(slotIdx, cs.threshold, cs.ratio, cs.attack, cs.release, cs.makeup, cs.knee);
+        await AudioEngine.instance.setMasterCompressorParams(
+          slotIdx,
+          cs.threshold,
+          cs.ratio,
+          cs.attack,
+          cs.release,
+          cs.makeup,
+          cs.knee,
+        );
         await _openCompressorEditor(onMaster: true, slotIdx: slotIdx);
       } else {
         await AudioEngine.instance.setMasterInsertEffect(slotIdx, -1, 0.0);
@@ -1449,8 +1967,8 @@ class _StripInsertSlot extends StatelessWidget {
             color: active
                 ? kColAccent
                 : filled
-                    ? kColInactive.withAlpha(80)
-                    : kColInactive.withAlpha(120),
+                ? kColInactive.withAlpha(80)
+                : kColInactive.withAlpha(120),
           ),
           borderRadius: BorderRadius.circular(2),
         ),
@@ -1465,8 +1983,8 @@ class _StripInsertSlot extends StatelessWidget {
             color: active
                 ? kColAccent
                 : filled
-                    ? kColInactive
-                    : kColInactive,
+                ? kColInactive
+                : kColInactive,
             fontWeight: filled ? FontWeight.w700 : FontWeight.normal,
             decoration: bypassed && filled ? TextDecoration.lineThrough : null,
             decorationColor: kColInactive,
@@ -1635,7 +2153,11 @@ class _ReverbEffectEditorState extends State<_ReverbEffectEditor> {
     if (widget.onMaster) {
       audioEngine.setMasterInsertBypass(widget.slotIdx, _bypass);
     } else {
-      audioEngine.setTrackInsertBypass(widget.trackIdx ?? 0, widget.slotIdx, _bypass);
+      audioEngine.setTrackInsertBypass(
+        widget.trackIdx ?? 0,
+        widget.slotIdx,
+        _bypass,
+      );
     }
   }
 
@@ -1663,11 +2185,7 @@ class _ReverbEffectEditorState extends State<_ReverbEffectEditor> {
         _width,
         _freeze,
       );
-      audioEngine.setMasterInsertMix(
-        widget.slotIdx,
-        _dry,
-        _wet,
-      );
+      audioEngine.setMasterInsertMix(widget.slotIdx, _dry, _wet);
     } else {
       audioEngine.setTrackReverbParams(
         widget.trackIdx ?? 0,
@@ -1728,7 +2246,10 @@ class _ReverbEffectEditorState extends State<_ReverbEffectEditor> {
                           _updateParams();
                         },
                         child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 5,
+                          ),
                           decoration: BoxDecoration(
                             color: _freeze
                                 ? kColAccent.withAlpha(40)
@@ -1751,7 +2272,10 @@ class _ReverbEffectEditorState extends State<_ReverbEffectEditor> {
                       GestureDetector(
                         onTap: _toggleBypass,
                         child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 5,
+                          ),
                           decoration: BoxDecoration(
                             color: _bypass
                                 ? kColInactive.withAlpha(40)
@@ -1868,13 +2392,13 @@ class _DelayEffectEditorState extends State<_DelayEffectEditor> {
   @override
   void initState() {
     super.initState();
-    _timeMs   = widget.initialState.timeMs;
+    _timeMs = widget.initialState.timeMs;
     _feedback = widget.initialState.feedback;
     _hpCutoff = widget.initialState.hpCutoff;
-    _dry      = widget.initialState.dry;
-    _wet      = widget.initialState.wet;
-    _sync     = widget.initialState.sync;
-    _bypass   = widget.initialBypass;
+    _dry = widget.initialState.dry;
+    _wet = widget.initialState.wet;
+    _sync = widget.initialState.sync;
+    _bypass = widget.initialBypass;
   }
 
   void _toggleBypass() {
@@ -1889,20 +2413,39 @@ class _DelayEffectEditorState extends State<_DelayEffectEditor> {
   }
 
   void _emitState() {
-    widget.onParamsChanged(_DelayUiState(
-      timeMs: _timeMs, feedback: _feedback, hpCutoff: _hpCutoff,
-      dry: _dry, wet: _wet, sync: _sync,
-    ));
+    widget.onParamsChanged(
+      _DelayUiState(
+        timeMs: _timeMs,
+        feedback: _feedback,
+        hpCutoff: _hpCutoff,
+        dry: _dry,
+        wet: _wet,
+        sync: _sync,
+      ),
+    );
   }
 
   void _updateParams() {
     _emitState();
     final ae = AudioEngine.instance;
     if (widget.onMaster) {
-      ae.setMasterDelayParams(widget.slotIdx, _timeMs, _feedback, _hpCutoff, _sync);
+      ae.setMasterDelayParams(
+        widget.slotIdx,
+        _timeMs,
+        _feedback,
+        _hpCutoff,
+        _sync,
+      );
       ae.setMasterInsertMix(widget.slotIdx, _dry, _wet);
     } else {
-      ae.setTrackDelayParams(widget.trackIdx ?? 0, widget.slotIdx, _timeMs, _feedback, _hpCutoff, _sync);
+      ae.setTrackDelayParams(
+        widget.trackIdx ?? 0,
+        widget.slotIdx,
+        _timeMs,
+        _feedback,
+        _hpCutoff,
+        _sync,
+      );
       ae.setTrackInsertMix(widget.trackIdx ?? 0, widget.slotIdx, _dry, _wet);
     }
   }
@@ -1947,7 +2490,10 @@ class _DelayEffectEditorState extends State<_DelayEffectEditor> {
                       GestureDetector(
                         onTap: _toggleBypass,
                         child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 5,
+                          ),
                           decoration: BoxDecoration(
                             color: _bypass
                                 ? kColInactive.withAlpha(40)
@@ -2069,12 +2615,12 @@ class _FilterEffectEditorState extends State<_FilterEffectEditor> {
   @override
   void initState() {
     super.initState();
-    _cutoff    = widget.initialState.cutoff;
+    _cutoff = widget.initialState.cutoff;
     _resonance = widget.initialState.resonance;
-    _mode      = widget.initialState.mode;
-    _dry       = widget.initialState.dry;
-    _wet       = widget.initialState.wet;
-    _bypass    = widget.initialBypass;
+    _mode = widget.initialState.mode;
+    _dry = widget.initialState.dry;
+    _wet = widget.initialState.wet;
+    _bypass = widget.initialBypass;
   }
 
   void _toggleBypass() {
@@ -2083,18 +2629,46 @@ class _FilterEffectEditorState extends State<_FilterEffectEditor> {
     if (widget.onMaster) {
       AudioEngine.instance.setMasterInsertBypass(widget.slotIdx, _bypass);
     } else {
-      AudioEngine.instance.setTrackInsertBypass(widget.trackIdx ?? 0, widget.slotIdx, _bypass);
+      AudioEngine.instance.setTrackInsertBypass(
+        widget.trackIdx ?? 0,
+        widget.slotIdx,
+        _bypass,
+      );
     }
   }
 
   void _updateParams() {
-    widget.onParamsChanged(_FilterUiState(cutoff: _cutoff, resonance: _resonance, mode: _mode, dry: _dry, wet: _wet));
+    widget.onParamsChanged(
+      _FilterUiState(
+        cutoff: _cutoff,
+        resonance: _resonance,
+        mode: _mode,
+        dry: _dry,
+        wet: _wet,
+      ),
+    );
     if (widget.onMaster) {
-      AudioEngine.instance.setMasterFilterParams(widget.slotIdx, _cutoff, _resonance, _mode);
+      AudioEngine.instance.setMasterFilterParams(
+        widget.slotIdx,
+        _cutoff,
+        _resonance,
+        _mode,
+      );
       AudioEngine.instance.setMasterInsertMix(widget.slotIdx, _dry, _wet);
     } else {
-      AudioEngine.instance.setTrackFilterParams(widget.trackIdx ?? 0, widget.slotIdx, _cutoff, _resonance, _mode);
-      AudioEngine.instance.setTrackInsertMix(widget.trackIdx ?? 0, widget.slotIdx, _dry, _wet);
+      AudioEngine.instance.setTrackFilterParams(
+        widget.trackIdx ?? 0,
+        widget.slotIdx,
+        _cutoff,
+        _resonance,
+        _mode,
+      );
+      AudioEngine.instance.setTrackInsertMix(
+        widget.trackIdx ?? 0,
+        widget.slotIdx,
+        _dry,
+        _wet,
+      );
     }
   }
 
@@ -2122,13 +2696,38 @@ class _FilterEffectEditorState extends State<_FilterEffectEditor> {
                   padding: const EdgeInsets.only(bottom: 16),
                   child: Row(
                     children: [
-                      Expanded(child: Text('FILTER', style: kStyleHeader.copyWith(fontSize: 18, color: _bypass ? kColInactive : kColAccent, letterSpacing: 1.8))),
+                      Expanded(
+                        child: Text(
+                          'FILTER',
+                          style: kStyleHeader.copyWith(
+                            fontSize: 18,
+                            color: _bypass ? kColInactive : kColAccent,
+                            letterSpacing: 1.8,
+                          ),
+                        ),
+                      ),
                       GestureDetector(
                         onTap: _toggleBypass,
                         child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                          decoration: BoxDecoration(color: (_bypass ? kColInactive : kColAccent).withAlpha(40), border: Border.all(color: _bypass ? kColInactive : kColAccent), borderRadius: BorderRadius.circular(2)),
-                          child: Text(_bypass ? 'BYP' : 'ON', style: kStyleHeader.copyWith(fontSize: 10, color: _bypass ? kColInactive : kColAccent)),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 5,
+                          ),
+                          decoration: BoxDecoration(
+                            color: (_bypass ? kColInactive : kColAccent)
+                                .withAlpha(40),
+                            border: Border.all(
+                              color: _bypass ? kColInactive : kColAccent,
+                            ),
+                            borderRadius: BorderRadius.circular(2),
+                          ),
+                          child: Text(
+                            _bypass ? 'BYP' : 'ON',
+                            style: kStyleHeader.copyWith(
+                              fontSize: 10,
+                              color: _bypass ? kColInactive : kColAccent,
+                            ),
+                          ),
                         ),
                       ),
                     ],
@@ -2139,30 +2738,94 @@ class _FilterEffectEditorState extends State<_FilterEffectEditor> {
                   padding: const EdgeInsets.only(bottom: 20),
                   child: Row(
                     children: [
-                      SizedBox(width: 58, child: Text('MODE', style: kStyleBase.copyWith(fontSize: 12, color: kColInactive))),
+                      SizedBox(
+                        width: 58,
+                        child: Text(
+                          'MODE',
+                          style: kStyleBase.copyWith(
+                            fontSize: 12,
+                            color: kColInactive,
+                          ),
+                        ),
+                      ),
                       for (int i = 0; i < 3; i++)
                         Padding(
                           padding: const EdgeInsets.only(right: 8),
                           child: GestureDetector(
-                            onTap: () { setState(() => _mode = i); _updateParams(); },
+                            onTap: () {
+                              setState(() => _mode = i);
+                              _updateParams();
+                            },
                             child: Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 12,
+                                vertical: 6,
+                              ),
                               decoration: BoxDecoration(
-                                color: _mode == i ? kColAccent.withAlpha(40) : Colors.transparent,
-                                border: Border.all(color: _mode == i ? kColAccent : kColInactive.withAlpha(80)),
+                                color: _mode == i
+                                    ? kColAccent.withAlpha(40)
+                                    : Colors.transparent,
+                                border: Border.all(
+                                  color: _mode == i
+                                      ? kColAccent
+                                      : kColInactive.withAlpha(80),
+                                ),
                                 borderRadius: BorderRadius.circular(2),
                               ),
-                              child: Text(_modeLabels[i], style: kStyleHeader.copyWith(fontSize: 11, color: _mode == i ? kColAccent : kColInactive)),
+                              child: Text(
+                                _modeLabels[i],
+                                style: kStyleHeader.copyWith(
+                                  fontSize: 11,
+                                  color: _mode == i ? kColAccent : kColInactive,
+                                ),
+                              ),
                             ),
                           ),
                         ),
                     ],
                   ),
                 ),
-                Padding(padding: const EdgeInsets.only(bottom: 28), child: _ReverbSlider(label: 'CUTOFF', value: _cutoff, onChanged: (v) { setState(() => _cutoff = v); _updateParams(); })),
-                Padding(padding: const EdgeInsets.only(bottom: 28), child: _ReverbSlider(label: 'RESO', value: _resonance, onChanged: (v) { setState(() => _resonance = v); _updateParams(); })),
-                Padding(padding: const EdgeInsets.only(bottom: 28), child: _ReverbSlider(label: 'DRY', value: _dry, onChanged: (v) { setState(() => _dry = v); _updateParams(); })),
-                _ReverbSlider(label: 'WET', value: _wet, onChanged: (v) { setState(() => _wet = v); _updateParams(); }),
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 28),
+                  child: _ReverbSlider(
+                    label: 'CUTOFF',
+                    value: _cutoff,
+                    onChanged: (v) {
+                      setState(() => _cutoff = v);
+                      _updateParams();
+                    },
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 28),
+                  child: _ReverbSlider(
+                    label: 'RESO',
+                    value: _resonance,
+                    onChanged: (v) {
+                      setState(() => _resonance = v);
+                      _updateParams();
+                    },
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 28),
+                  child: _ReverbSlider(
+                    label: 'DRY',
+                    value: _dry,
+                    onChanged: (v) {
+                      setState(() => _dry = v);
+                      _updateParams();
+                    },
+                  ),
+                ),
+                _ReverbSlider(
+                  label: 'WET',
+                  value: _wet,
+                  onChanged: (v) {
+                    setState(() => _wet = v);
+                    _updateParams();
+                  },
+                ),
               ],
             ),
           ),
@@ -2194,7 +2857,8 @@ class _DistortionEffectEditor extends StatefulWidget {
   });
 
   @override
-  State<_DistortionEffectEditor> createState() => _DistortionEffectEditorState();
+  State<_DistortionEffectEditor> createState() =>
+      _DistortionEffectEditorState();
 }
 
 class _DistortionEffectEditorState extends State<_DistortionEffectEditor> {
@@ -2208,12 +2872,12 @@ class _DistortionEffectEditorState extends State<_DistortionEffectEditor> {
   @override
   void initState() {
     super.initState();
-    _drive    = widget.initialState.drive;
-    _tone     = widget.initialState.tone;
+    _drive = widget.initialState.drive;
+    _tone = widget.initialState.tone;
     _distType = widget.initialState.distType;
-    _dry      = widget.initialState.dry;
-    _wet      = widget.initialState.wet;
-    _bypass   = widget.initialBypass;
+    _dry = widget.initialState.dry;
+    _wet = widget.initialState.wet;
+    _bypass = widget.initialBypass;
   }
 
   void _toggleBypass() {
@@ -2222,18 +2886,46 @@ class _DistortionEffectEditorState extends State<_DistortionEffectEditor> {
     if (widget.onMaster) {
       AudioEngine.instance.setMasterInsertBypass(widget.slotIdx, _bypass);
     } else {
-      AudioEngine.instance.setTrackInsertBypass(widget.trackIdx ?? 0, widget.slotIdx, _bypass);
+      AudioEngine.instance.setTrackInsertBypass(
+        widget.trackIdx ?? 0,
+        widget.slotIdx,
+        _bypass,
+      );
     }
   }
 
   void _updateParams() {
-    widget.onParamsChanged(_DistortionUiState(drive: _drive, tone: _tone, distType: _distType, dry: _dry, wet: _wet));
+    widget.onParamsChanged(
+      _DistortionUiState(
+        drive: _drive,
+        tone: _tone,
+        distType: _distType,
+        dry: _dry,
+        wet: _wet,
+      ),
+    );
     if (widget.onMaster) {
-      AudioEngine.instance.setMasterDistortionParams(widget.slotIdx, _drive, _tone, _distType);
+      AudioEngine.instance.setMasterDistortionParams(
+        widget.slotIdx,
+        _drive,
+        _tone,
+        _distType,
+      );
       AudioEngine.instance.setMasterInsertMix(widget.slotIdx, _dry, _wet);
     } else {
-      AudioEngine.instance.setTrackDistortionParams(widget.trackIdx ?? 0, widget.slotIdx, _drive, _tone, _distType);
-      AudioEngine.instance.setTrackInsertMix(widget.trackIdx ?? 0, widget.slotIdx, _dry, _wet);
+      AudioEngine.instance.setTrackDistortionParams(
+        widget.trackIdx ?? 0,
+        widget.slotIdx,
+        _drive,
+        _tone,
+        _distType,
+      );
+      AudioEngine.instance.setTrackInsertMix(
+        widget.trackIdx ?? 0,
+        widget.slotIdx,
+        _dry,
+        _wet,
+      );
     }
   }
 
@@ -2261,13 +2953,38 @@ class _DistortionEffectEditorState extends State<_DistortionEffectEditor> {
                   padding: const EdgeInsets.only(bottom: 16),
                   child: Row(
                     children: [
-                      Expanded(child: Text('DISTORTION', style: kStyleHeader.copyWith(fontSize: 18, color: _bypass ? kColInactive : kColAccent, letterSpacing: 1.8))),
+                      Expanded(
+                        child: Text(
+                          'DISTORTION',
+                          style: kStyleHeader.copyWith(
+                            fontSize: 18,
+                            color: _bypass ? kColInactive : kColAccent,
+                            letterSpacing: 1.8,
+                          ),
+                        ),
+                      ),
                       GestureDetector(
                         onTap: _toggleBypass,
                         child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                          decoration: BoxDecoration(color: (_bypass ? kColInactive : kColAccent).withAlpha(40), border: Border.all(color: _bypass ? kColInactive : kColAccent), borderRadius: BorderRadius.circular(2)),
-                          child: Text(_bypass ? 'BYP' : 'ON', style: kStyleHeader.copyWith(fontSize: 10, color: _bypass ? kColInactive : kColAccent)),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 5,
+                          ),
+                          decoration: BoxDecoration(
+                            color: (_bypass ? kColInactive : kColAccent)
+                                .withAlpha(40),
+                            border: Border.all(
+                              color: _bypass ? kColInactive : kColAccent,
+                            ),
+                            borderRadius: BorderRadius.circular(2),
+                          ),
+                          child: Text(
+                            _bypass ? 'BYP' : 'ON',
+                            style: kStyleHeader.copyWith(
+                              fontSize: 10,
+                              color: _bypass ? kColInactive : kColAccent,
+                            ),
+                          ),
                         ),
                       ),
                     ],
@@ -2278,30 +2995,99 @@ class _DistortionEffectEditorState extends State<_DistortionEffectEditor> {
                   padding: const EdgeInsets.only(bottom: 20),
                   child: Row(
                     children: [
-                      SizedBox(width: 58, child: Text('TYPE', style: kStyleBase.copyWith(fontSize: 12, color: kColInactive))),
-                      for (final (i, label) in [const (0, 'CLIP'), const (1, 'FOLD')])
+                      SizedBox(
+                        width: 58,
+                        child: Text(
+                          'TYPE',
+                          style: kStyleBase.copyWith(
+                            fontSize: 12,
+                            color: kColInactive,
+                          ),
+                        ),
+                      ),
+                      for (final (i, label) in [
+                        const (0, 'CLIP'),
+                        const (1, 'FOLD'),
+                      ])
                         Padding(
                           padding: const EdgeInsets.only(right: 8),
                           child: GestureDetector(
-                            onTap: () { setState(() => _distType = i); _updateParams(); },
+                            onTap: () {
+                              setState(() => _distType = i);
+                              _updateParams();
+                            },
                             child: Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 12,
+                                vertical: 6,
+                              ),
                               decoration: BoxDecoration(
-                                color: _distType == i ? kColAccent.withAlpha(40) : Colors.transparent,
-                                border: Border.all(color: _distType == i ? kColAccent : kColInactive.withAlpha(80)),
+                                color: _distType == i
+                                    ? kColAccent.withAlpha(40)
+                                    : Colors.transparent,
+                                border: Border.all(
+                                  color: _distType == i
+                                      ? kColAccent
+                                      : kColInactive.withAlpha(80),
+                                ),
                                 borderRadius: BorderRadius.circular(2),
                               ),
-                              child: Text(label, style: kStyleHeader.copyWith(fontSize: 11, color: _distType == i ? kColAccent : kColInactive)),
+                              child: Text(
+                                label,
+                                style: kStyleHeader.copyWith(
+                                  fontSize: 11,
+                                  color: _distType == i
+                                      ? kColAccent
+                                      : kColInactive,
+                                ),
+                              ),
                             ),
                           ),
                         ),
                     ],
                   ),
                 ),
-                Padding(padding: const EdgeInsets.only(bottom: 28), child: _ReverbSlider(label: 'DRIVE', value: _drive, onChanged: (v) { setState(() => _drive = v); _updateParams(); })),
-                Padding(padding: const EdgeInsets.only(bottom: 28), child: _ReverbSlider(label: 'TONE', value: _tone, onChanged: (v) { setState(() => _tone = v); _updateParams(); })),
-                Padding(padding: const EdgeInsets.only(bottom: 28), child: _ReverbSlider(label: 'DRY', value: _dry, onChanged: (v) { setState(() => _dry = v); _updateParams(); })),
-                _ReverbSlider(label: 'WET', value: _wet, onChanged: (v) { setState(() => _wet = v); _updateParams(); }),
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 28),
+                  child: _ReverbSlider(
+                    label: 'DRIVE',
+                    value: _drive,
+                    onChanged: (v) {
+                      setState(() => _drive = v);
+                      _updateParams();
+                    },
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 28),
+                  child: _ReverbSlider(
+                    label: 'TONE',
+                    value: _tone,
+                    onChanged: (v) {
+                      setState(() => _tone = v);
+                      _updateParams();
+                    },
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 28),
+                  child: _ReverbSlider(
+                    label: 'DRY',
+                    value: _dry,
+                    onChanged: (v) {
+                      setState(() => _dry = v);
+                      _updateParams();
+                    },
+                  ),
+                ),
+                _ReverbSlider(
+                  label: 'WET',
+                  value: _wet,
+                  onChanged: (v) {
+                    setState(() => _wet = v);
+                    _updateParams();
+                  },
+                ),
               ],
             ),
           ),
@@ -2333,7 +3119,8 @@ class _BitcrusherEffectEditor extends StatefulWidget {
   });
 
   @override
-  State<_BitcrusherEffectEditor> createState() => _BitcrusherEffectEditorState();
+  State<_BitcrusherEffectEditor> createState() =>
+      _BitcrusherEffectEditorState();
 }
 
 class _BitcrusherEffectEditorState extends State<_BitcrusherEffectEditor> {
@@ -2346,10 +3133,10 @@ class _BitcrusherEffectEditorState extends State<_BitcrusherEffectEditor> {
   @override
   void initState() {
     super.initState();
-    _bits   = widget.initialState.bits;
-    _rate   = widget.initialState.rate;
-    _dry    = widget.initialState.dry;
-    _wet    = widget.initialState.wet;
+    _bits = widget.initialState.bits;
+    _rate = widget.initialState.rate;
+    _dry = widget.initialState.dry;
+    _wet = widget.initialState.wet;
     _bypass = widget.initialBypass;
   }
 
@@ -2359,18 +3146,38 @@ class _BitcrusherEffectEditorState extends State<_BitcrusherEffectEditor> {
     if (widget.onMaster) {
       AudioEngine.instance.setMasterInsertBypass(widget.slotIdx, _bypass);
     } else {
-      AudioEngine.instance.setTrackInsertBypass(widget.trackIdx ?? 0, widget.slotIdx, _bypass);
+      AudioEngine.instance.setTrackInsertBypass(
+        widget.trackIdx ?? 0,
+        widget.slotIdx,
+        _bypass,
+      );
     }
   }
 
   void _updateParams() {
-    widget.onParamsChanged(_BitcrusherUiState(bits: _bits, rate: _rate, dry: _dry, wet: _wet));
+    widget.onParamsChanged(
+      _BitcrusherUiState(bits: _bits, rate: _rate, dry: _dry, wet: _wet),
+    );
     if (widget.onMaster) {
-      AudioEngine.instance.setMasterBitcrusherParams(widget.slotIdx, _bits, _rate);
+      AudioEngine.instance.setMasterBitcrusherParams(
+        widget.slotIdx,
+        _bits,
+        _rate,
+      );
       AudioEngine.instance.setMasterInsertMix(widget.slotIdx, _dry, _wet);
     } else {
-      AudioEngine.instance.setTrackBitcrusherParams(widget.trackIdx ?? 0, widget.slotIdx, _bits, _rate);
-      AudioEngine.instance.setTrackInsertMix(widget.trackIdx ?? 0, widget.slotIdx, _dry, _wet);
+      AudioEngine.instance.setTrackBitcrusherParams(
+        widget.trackIdx ?? 0,
+        widget.slotIdx,
+        _bits,
+        _rate,
+      );
+      AudioEngine.instance.setTrackInsertMix(
+        widget.trackIdx ?? 0,
+        widget.slotIdx,
+        _dry,
+        _wet,
+      );
     }
   }
 
@@ -2408,22 +3215,86 @@ class _BitcrusherEffectEditorState extends State<_BitcrusherEffectEditor> {
                   padding: const EdgeInsets.only(bottom: 22),
                   child: Row(
                     children: [
-                      Expanded(child: Text('BITCRUSHER', style: kStyleHeader.copyWith(fontSize: 18, color: _bypass ? kColInactive : kColAccent, letterSpacing: 1.8))),
+                      Expanded(
+                        child: Text(
+                          'BITCRUSHER',
+                          style: kStyleHeader.copyWith(
+                            fontSize: 18,
+                            color: _bypass ? kColInactive : kColAccent,
+                            letterSpacing: 1.8,
+                          ),
+                        ),
+                      ),
                       GestureDetector(
                         onTap: _toggleBypass,
                         child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                          decoration: BoxDecoration(color: (_bypass ? kColInactive : kColAccent).withAlpha(40), border: Border.all(color: _bypass ? kColInactive : kColAccent), borderRadius: BorderRadius.circular(2)),
-                          child: Text(_bypass ? 'BYP' : 'ON', style: kStyleHeader.copyWith(fontSize: 10, color: _bypass ? kColInactive : kColAccent)),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 5,
+                          ),
+                          decoration: BoxDecoration(
+                            color: (_bypass ? kColInactive : kColAccent)
+                                .withAlpha(40),
+                            border: Border.all(
+                              color: _bypass ? kColInactive : kColAccent,
+                            ),
+                            borderRadius: BorderRadius.circular(2),
+                          ),
+                          child: Text(
+                            _bypass ? 'BYP' : 'ON',
+                            style: kStyleHeader.copyWith(
+                              fontSize: 10,
+                              color: _bypass ? kColInactive : kColAccent,
+                            ),
+                          ),
                         ),
                       ),
                     ],
                   ),
                 ),
-                Padding(padding: const EdgeInsets.only(bottom: 28), child: _ReverbSlider(label: 'BITS', value: _bits, displayText: _bitsLabel(), onChanged: (v) { setState(() => _bits = v); _updateParams(); })),
-                Padding(padding: const EdgeInsets.only(bottom: 28), child: _ReverbSlider(label: 'RATE', value: _rate, displayText: _rateLabel(), onChanged: (v) { setState(() => _rate = v); _updateParams(); })),
-                Padding(padding: const EdgeInsets.only(bottom: 28), child: _ReverbSlider(label: 'DRY', value: _dry, onChanged: (v) { setState(() => _dry = v); _updateParams(); })),
-                _ReverbSlider(label: 'WET', value: _wet, onChanged: (v) { setState(() => _wet = v); _updateParams(); }),
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 28),
+                  child: _ReverbSlider(
+                    label: 'BITS',
+                    value: _bits,
+                    displayText: _bitsLabel(),
+                    onChanged: (v) {
+                      setState(() => _bits = v);
+                      _updateParams();
+                    },
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 28),
+                  child: _ReverbSlider(
+                    label: 'RATE',
+                    value: _rate,
+                    displayText: _rateLabel(),
+                    onChanged: (v) {
+                      setState(() => _rate = v);
+                      _updateParams();
+                    },
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 28),
+                  child: _ReverbSlider(
+                    label: 'DRY',
+                    value: _dry,
+                    onChanged: (v) {
+                      setState(() => _dry = v);
+                      _updateParams();
+                    },
+                  ),
+                ),
+                _ReverbSlider(
+                  label: 'WET',
+                  value: _wet,
+                  onChanged: (v) {
+                    setState(() => _wet = v);
+                    _updateParams();
+                  },
+                ),
               ],
             ),
           ),
@@ -2470,9 +3341,9 @@ class _LimiterEffectEditorState extends State<_LimiterEffectEditor> {
   @override
   void initState() {
     super.initState();
-    _gain   = widget.initialState.gain;
-    _dry    = widget.initialState.dry;
-    _wet    = widget.initialState.wet;
+    _gain = widget.initialState.gain;
+    _dry = widget.initialState.dry;
+    _wet = widget.initialState.wet;
     _bypass = widget.initialBypass;
   }
 
@@ -2482,7 +3353,11 @@ class _LimiterEffectEditorState extends State<_LimiterEffectEditor> {
     if (widget.onMaster) {
       AudioEngine.instance.setMasterInsertBypass(widget.slotIdx, _bypass);
     } else {
-      AudioEngine.instance.setTrackInsertBypass(widget.trackIdx ?? 0, widget.slotIdx, _bypass);
+      AudioEngine.instance.setTrackInsertBypass(
+        widget.trackIdx ?? 0,
+        widget.slotIdx,
+        _bypass,
+      );
     }
   }
 
@@ -2492,8 +3367,17 @@ class _LimiterEffectEditorState extends State<_LimiterEffectEditor> {
       AudioEngine.instance.setMasterLimiterParams(widget.slotIdx, _gain);
       AudioEngine.instance.setMasterInsertMix(widget.slotIdx, _dry, _wet);
     } else {
-      AudioEngine.instance.setTrackLimiterParams(widget.trackIdx ?? 0, widget.slotIdx, _gain);
-      AudioEngine.instance.setTrackInsertMix(widget.trackIdx ?? 0, widget.slotIdx, _dry, _wet);
+      AudioEngine.instance.setTrackLimiterParams(
+        widget.trackIdx ?? 0,
+        widget.slotIdx,
+        _gain,
+      );
+      AudioEngine.instance.setTrackInsertMix(
+        widget.trackIdx ?? 0,
+        widget.slotIdx,
+        _dry,
+        _wet,
+      );
     }
   }
 
@@ -2527,13 +3411,38 @@ class _LimiterEffectEditorState extends State<_LimiterEffectEditor> {
                   padding: const EdgeInsets.only(bottom: 8),
                   child: Row(
                     children: [
-                      Expanded(child: Text('LIMITER', style: kStyleHeader.copyWith(fontSize: 18, color: _bypass ? kColInactive : kColAccent, letterSpacing: 1.8))),
+                      Expanded(
+                        child: Text(
+                          'LIMITER',
+                          style: kStyleHeader.copyWith(
+                            fontSize: 18,
+                            color: _bypass ? kColInactive : kColAccent,
+                            letterSpacing: 1.8,
+                          ),
+                        ),
+                      ),
                       GestureDetector(
                         onTap: _toggleBypass,
                         child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                          decoration: BoxDecoration(color: (_bypass ? kColInactive : kColAccent).withAlpha(40), border: Border.all(color: _bypass ? kColInactive : kColAccent), borderRadius: BorderRadius.circular(2)),
-                          child: Text(_bypass ? 'BYP' : 'ON', style: kStyleHeader.copyWith(fontSize: 10, color: _bypass ? kColInactive : kColAccent)),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 5,
+                          ),
+                          decoration: BoxDecoration(
+                            color: (_bypass ? kColInactive : kColAccent)
+                                .withAlpha(40),
+                            border: Border.all(
+                              color: _bypass ? kColInactive : kColAccent,
+                            ),
+                            borderRadius: BorderRadius.circular(2),
+                          ),
+                          child: Text(
+                            _bypass ? 'BYP' : 'ON',
+                            style: kStyleHeader.copyWith(
+                              fontSize: 10,
+                              color: _bypass ? kColInactive : kColAccent,
+                            ),
+                          ),
                         ),
                       ),
                     ],
@@ -2541,11 +3450,45 @@ class _LimiterEffectEditorState extends State<_LimiterEffectEditor> {
                 ),
                 Padding(
                   padding: const EdgeInsets.only(bottom: 22),
-                  child: Text('Ceiling $kCeilingLabel', style: kStyleBase.copyWith(fontSize: 11, color: kColInactive)),
+                  child: Text(
+                    'Ceiling $kCeilingLabel',
+                    style: kStyleBase.copyWith(
+                      fontSize: 11,
+                      color: kColInactive,
+                    ),
+                  ),
                 ),
-                Padding(padding: const EdgeInsets.only(bottom: 28), child: _ReverbSlider(label: 'PUSH', value: _gain, displayText: _gainLabel(), onChanged: (v) { setState(() => _gain = v); _updateParams(); })),
-                Padding(padding: const EdgeInsets.only(bottom: 28), child: _ReverbSlider(label: 'DRY', value: _dry, onChanged: (v) { setState(() => _dry = v); _updateParams(); })),
-                _ReverbSlider(label: 'WET', value: _wet, onChanged: (v) { setState(() => _wet = v); _updateParams(); }),
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 28),
+                  child: _ReverbSlider(
+                    label: 'PUSH',
+                    value: _gain,
+                    displayText: _gainLabel(),
+                    onChanged: (v) {
+                      setState(() => _gain = v);
+                      _updateParams();
+                    },
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 28),
+                  child: _ReverbSlider(
+                    label: 'DRY',
+                    value: _dry,
+                    onChanged: (v) {
+                      setState(() => _dry = v);
+                      _updateParams();
+                    },
+                  ),
+                ),
+                _ReverbSlider(
+                  label: 'WET',
+                  value: _wet,
+                  onChanged: (v) {
+                    setState(() => _wet = v);
+                    _updateParams();
+                  },
+                ),
               ],
             ),
           ),
@@ -2582,20 +3525,20 @@ class _ChorusEffectEditorState extends State<_ChorusEffectEditor> {
   late double _rate;
   late double _depth;
   late double _delay;
-  late int    _stereo;
+  late int _stereo;
   late double _dry;
   late double _wet;
-  late bool   _bypass;
+  late bool _bypass;
 
   @override
   void initState() {
     super.initState();
-    _rate   = widget.initialState.rate;
-    _depth  = widget.initialState.depth;
-    _delay  = widget.initialState.delay;
+    _rate = widget.initialState.rate;
+    _depth = widget.initialState.depth;
+    _delay = widget.initialState.delay;
     _stereo = widget.initialState.stereo;
-    _dry    = widget.initialState.dry;
-    _wet    = widget.initialState.wet;
+    _dry = widget.initialState.dry;
+    _wet = widget.initialState.wet;
     _bypass = widget.initialBypass;
   }
 
@@ -2605,22 +3548,53 @@ class _ChorusEffectEditorState extends State<_ChorusEffectEditor> {
     if (widget.onMaster) {
       AudioEngine.instance.setMasterInsertBypass(widget.slotIdx, _bypass);
     } else {
-      AudioEngine.instance.setTrackInsertBypass(widget.trackIdx ?? 0, widget.slotIdx, _bypass);
+      AudioEngine.instance.setTrackInsertBypass(
+        widget.trackIdx ?? 0,
+        widget.slotIdx,
+        _bypass,
+      );
     }
   }
 
   void _updateParams() {
-    widget.onParamsChanged(_ChorusUiState(rate: _rate, depth: _depth, delay: _delay, stereo: _stereo, dry: _dry, wet: _wet));
+    widget.onParamsChanged(
+      _ChorusUiState(
+        rate: _rate,
+        depth: _depth,
+        delay: _delay,
+        stereo: _stereo,
+        dry: _dry,
+        wet: _wet,
+      ),
+    );
     if (widget.onMaster) {
-      AudioEngine.instance.setMasterChorusParams(widget.slotIdx, _rate, _depth, _delay, _stereo);
+      AudioEngine.instance.setMasterChorusParams(
+        widget.slotIdx,
+        _rate,
+        _depth,
+        _delay,
+        _stereo,
+      );
       AudioEngine.instance.setMasterInsertMix(widget.slotIdx, _dry, _wet);
     } else {
-      AudioEngine.instance.setTrackChorusParams(widget.trackIdx ?? 0, widget.slotIdx, _rate, _depth, _delay, _stereo);
-      AudioEngine.instance.setTrackInsertMix(widget.trackIdx ?? 0, widget.slotIdx, _dry, _wet);
+      AudioEngine.instance.setTrackChorusParams(
+        widget.trackIdx ?? 0,
+        widget.slotIdx,
+        _rate,
+        _depth,
+        _delay,
+        _stereo,
+      );
+      AudioEngine.instance.setTrackInsertMix(
+        widget.trackIdx ?? 0,
+        widget.slotIdx,
+        _dry,
+        _wet,
+      );
     }
   }
 
-  String _rateLabel()  => '${(0.1 + _rate * 7.9).toStringAsFixed(1)} Hz';
+  String _rateLabel() => '${(0.1 + _rate * 7.9).toStringAsFixed(1)} Hz';
   String _depthLabel() => '${(_depth * 15.0).toStringAsFixed(1)} ms';
   String _delayLabel() => '${(1.0 + _delay * 29.0).toStringAsFixed(0)} ms';
 
@@ -2648,13 +3622,38 @@ class _ChorusEffectEditorState extends State<_ChorusEffectEditor> {
                   padding: const EdgeInsets.only(bottom: 8),
                   child: Row(
                     children: [
-                      Expanded(child: Text('CHORUS', style: kStyleHeader.copyWith(fontSize: 18, color: _bypass ? kColInactive : kColAccent, letterSpacing: 1.8))),
+                      Expanded(
+                        child: Text(
+                          'CHORUS',
+                          style: kStyleHeader.copyWith(
+                            fontSize: 18,
+                            color: _bypass ? kColInactive : kColAccent,
+                            letterSpacing: 1.8,
+                          ),
+                        ),
+                      ),
                       GestureDetector(
                         onTap: _toggleBypass,
                         child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                          decoration: BoxDecoration(color: (_bypass ? kColInactive : kColAccent).withAlpha(40), border: Border.all(color: _bypass ? kColInactive : kColAccent), borderRadius: BorderRadius.circular(2)),
-                          child: Text(_bypass ? 'BYP' : 'ON', style: kStyleHeader.copyWith(fontSize: 10, color: _bypass ? kColInactive : kColAccent)),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 5,
+                          ),
+                          decoration: BoxDecoration(
+                            color: (_bypass ? kColInactive : kColAccent)
+                                .withAlpha(40),
+                            border: Border.all(
+                              color: _bypass ? kColInactive : kColAccent,
+                            ),
+                            borderRadius: BorderRadius.circular(2),
+                          ),
+                          child: Text(
+                            _bypass ? 'BYP' : 'ON',
+                            style: kStyleHeader.copyWith(
+                              fontSize: 10,
+                              color: _bypass ? kColInactive : kColAccent,
+                            ),
+                          ),
                         ),
                       ),
                     ],
@@ -2666,23 +3665,98 @@ class _ChorusEffectEditorState extends State<_ChorusEffectEditor> {
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Text('STEREO', style: kStyleBase.copyWith(fontSize: 11, color: kColInactive)),
+                      Text(
+                        'STEREO',
+                        style: kStyleBase.copyWith(
+                          fontSize: 11,
+                          color: kColInactive,
+                        ),
+                      ),
                       GestureDetector(
-                        onTap: () { setState(() => _stereo = _stereo == 0 ? 1 : 0); _updateParams(); },
+                        onTap: () {
+                          setState(() => _stereo = _stereo == 0 ? 1 : 0);
+                          _updateParams();
+                        },
                         child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                          decoration: BoxDecoration(color: (_stereo == 1 ? kColAccent : kColInactive).withAlpha(40), border: Border.all(color: _stereo == 1 ? kColAccent : kColInactive), borderRadius: BorderRadius.circular(2)),
-                          child: Text(_stereo == 1 ? 'STEREO' : 'MONO', style: kStyleHeader.copyWith(fontSize: 10, color: _stereo == 1 ? kColAccent : kColInactive)),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 5,
+                          ),
+                          decoration: BoxDecoration(
+                            color: (_stereo == 1 ? kColAccent : kColInactive)
+                                .withAlpha(40),
+                            border: Border.all(
+                              color: _stereo == 1 ? kColAccent : kColInactive,
+                            ),
+                            borderRadius: BorderRadius.circular(2),
+                          ),
+                          child: Text(
+                            _stereo == 1 ? 'STEREO' : 'MONO',
+                            style: kStyleHeader.copyWith(
+                              fontSize: 10,
+                              color: _stereo == 1 ? kColAccent : kColInactive,
+                            ),
+                          ),
                         ),
                       ),
                     ],
                   ),
                 ),
-                Padding(padding: const EdgeInsets.only(bottom: 28), child: _ReverbSlider(label: 'RATE',  value: _rate,  displayText: _rateLabel(),  onChanged: (v) { setState(() => _rate  = v); _updateParams(); })),
-                Padding(padding: const EdgeInsets.only(bottom: 28), child: _ReverbSlider(label: 'DEPTH', value: _depth, displayText: _depthLabel(), onChanged: (v) { setState(() => _depth = v); _updateParams(); })),
-                Padding(padding: const EdgeInsets.only(bottom: 28), child: _ReverbSlider(label: 'DELAY', value: _delay, displayText: _delayLabel(), onChanged: (v) { setState(() => _delay = v); _updateParams(); })),
-                Padding(padding: const EdgeInsets.only(bottom: 28), child: _ReverbSlider(label: 'DRY',   value: _dry,   onChanged: (v) { setState(() => _dry   = v); _updateParams(); })),
-                _ReverbSlider(label: 'WET', value: _wet, onChanged: (v) { setState(() => _wet = v); _updateParams(); }),
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 28),
+                  child: _ReverbSlider(
+                    label: 'RATE',
+                    value: _rate,
+                    displayText: _rateLabel(),
+                    onChanged: (v) {
+                      setState(() => _rate = v);
+                      _updateParams();
+                    },
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 28),
+                  child: _ReverbSlider(
+                    label: 'DEPTH',
+                    value: _depth,
+                    displayText: _depthLabel(),
+                    onChanged: (v) {
+                      setState(() => _depth = v);
+                      _updateParams();
+                    },
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 28),
+                  child: _ReverbSlider(
+                    label: 'DELAY',
+                    value: _delay,
+                    displayText: _delayLabel(),
+                    onChanged: (v) {
+                      setState(() => _delay = v);
+                      _updateParams();
+                    },
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 28),
+                  child: _ReverbSlider(
+                    label: 'DRY',
+                    value: _dry,
+                    onChanged: (v) {
+                      setState(() => _dry = v);
+                      _updateParams();
+                    },
+                  ),
+                ),
+                _ReverbSlider(
+                  label: 'WET',
+                  value: _wet,
+                  onChanged: (v) {
+                    setState(() => _wet = v);
+                    _updateParams();
+                  },
+                ),
               ],
             ),
           ),
@@ -2720,21 +3794,21 @@ class _EqEffectEditorState extends State<_EqEffectEditor> {
   late double _midGain, _midFreq, _midQ;
   late double _highGain, _highFreq;
   late double _dry, _wet;
-  late bool   _bypass;
+  late bool _bypass;
 
   @override
   void initState() {
     super.initState();
-    _lowGain  = widget.initialState.lowGain;
-    _lowFreq  = widget.initialState.lowFreq;
-    _midGain  = widget.initialState.midGain;
-    _midFreq  = widget.initialState.midFreq;
-    _midQ     = widget.initialState.midQ;
+    _lowGain = widget.initialState.lowGain;
+    _lowFreq = widget.initialState.lowFreq;
+    _midGain = widget.initialState.midGain;
+    _midFreq = widget.initialState.midFreq;
+    _midQ = widget.initialState.midQ;
     _highGain = widget.initialState.highGain;
     _highFreq = widget.initialState.highFreq;
-    _dry      = widget.initialState.dry;
-    _wet      = widget.initialState.wet;
-    _bypass   = widget.initialBypass;
+    _dry = widget.initialState.dry;
+    _wet = widget.initialState.wet;
+    _bypass = widget.initialBypass;
   }
 
   void _toggleBypass() {
@@ -2743,44 +3817,90 @@ class _EqEffectEditorState extends State<_EqEffectEditor> {
     if (widget.onMaster) {
       AudioEngine.instance.setMasterInsertBypass(widget.slotIdx, _bypass);
     } else {
-      AudioEngine.instance.setTrackInsertBypass(widget.trackIdx ?? 0, widget.slotIdx, _bypass);
+      AudioEngine.instance.setTrackInsertBypass(
+        widget.trackIdx ?? 0,
+        widget.slotIdx,
+        _bypass,
+      );
     }
   }
 
   void _updateParams() {
-    final s = _EqUiState(lowGain: _lowGain, lowFreq: _lowFreq, midGain: _midGain, midFreq: _midFreq, midQ: _midQ, highGain: _highGain, highFreq: _highFreq, dry: _dry, wet: _wet);
+    final s = _EqUiState(
+      lowGain: _lowGain,
+      lowFreq: _lowFreq,
+      midGain: _midGain,
+      midFreq: _midFreq,
+      midQ: _midQ,
+      highGain: _highGain,
+      highFreq: _highFreq,
+      dry: _dry,
+      wet: _wet,
+    );
     widget.onParamsChanged(s);
     if (widget.onMaster) {
-      AudioEngine.instance.setMasterEqParams(widget.slotIdx, _lowGain, _lowFreq, _midGain, _midFreq, _midQ, _highGain, _highFreq);
+      AudioEngine.instance.setMasterEqParams(
+        widget.slotIdx,
+        _lowGain,
+        _lowFreq,
+        _midGain,
+        _midFreq,
+        _midQ,
+        _highGain,
+        _highFreq,
+      );
       AudioEngine.instance.setMasterInsertMix(widget.slotIdx, _dry, _wet);
     } else {
-      AudioEngine.instance.setTrackEqParams(widget.trackIdx ?? 0, widget.slotIdx, _lowGain, _lowFreq, _midGain, _midFreq, _midQ, _highGain, _highFreq);
-      AudioEngine.instance.setTrackInsertMix(widget.trackIdx ?? 0, widget.slotIdx, _dry, _wet);
+      AudioEngine.instance.setTrackEqParams(
+        widget.trackIdx ?? 0,
+        widget.slotIdx,
+        _lowGain,
+        _lowFreq,
+        _midGain,
+        _midFreq,
+        _midQ,
+        _highGain,
+        _highFreq,
+      );
+      AudioEngine.instance.setTrackInsertMix(
+        widget.trackIdx ?? 0,
+        widget.slotIdx,
+        _dry,
+        _wet,
+      );
     }
   }
 
   // Gain: −1..+1 → −12..+12 dB, centred slider
   String _gainLabel(double g) {
     final db = g * 12.0;
-    return db >= 0 ? '+${db.toStringAsFixed(1)} dB' : '${db.toStringAsFixed(1)} dB';
+    return db >= 0
+        ? '+${db.toStringAsFixed(1)} dB'
+        : '${db.toStringAsFixed(1)} dB';
   }
 
   // Low freq: 0..1 → 40..500 Hz (log)
   String _lowFreqLabel() {
     final hz = 40.0 * math.pow(500.0 / 40.0, _lowFreq);
-    return hz < 1000 ? '${hz.round()} Hz' : '${(hz / 1000).toStringAsFixed(2)} kHz';
+    return hz < 1000
+        ? '${hz.round()} Hz'
+        : '${(hz / 1000).toStringAsFixed(2)} kHz';
   }
 
   // Mid freq: 0..1 → 200..8000 Hz (log)
   String _midFreqLabel() {
     final hz = 200.0 * math.pow(8000.0 / 200.0, _midFreq);
-    return hz < 1000 ? '${hz.round()} Hz' : '${(hz / 1000).toStringAsFixed(2)} kHz';
+    return hz < 1000
+        ? '${hz.round()} Hz'
+        : '${(hz / 1000).toStringAsFixed(2)} kHz';
   }
 
   // High freq: 0..1 → 2000..16000 Hz (log)
   String _highFreqLabel() {
     final hz = 2000.0 * math.pow(16000.0 / 2000.0, _highFreq);
-    return hz < 1000 ? '${hz.round()} Hz' : '${(hz / 1000).toStringAsFixed(2)} kHz';
+    return hz < 1000
+        ? '${hz.round()} Hz'
+        : '${(hz / 1000).toStringAsFixed(2)} kHz';
   }
 
   // Q: 0..1 → 0.3..8.0
@@ -2811,13 +3931,38 @@ class _EqEffectEditorState extends State<_EqEffectEditor> {
                   padding: const EdgeInsets.only(bottom: 16),
                   child: Row(
                     children: [
-                      Expanded(child: Text('EQ', style: kStyleHeader.copyWith(fontSize: 18, color: _bypass ? kColInactive : kColAccent, letterSpacing: 1.8))),
+                      Expanded(
+                        child: Text(
+                          'EQ',
+                          style: kStyleHeader.copyWith(
+                            fontSize: 18,
+                            color: _bypass ? kColInactive : kColAccent,
+                            letterSpacing: 1.8,
+                          ),
+                        ),
+                      ),
                       GestureDetector(
                         onTap: _toggleBypass,
                         child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                          decoration: BoxDecoration(color: (_bypass ? kColInactive : kColAccent).withAlpha(40), border: Border.all(color: _bypass ? kColInactive : kColAccent), borderRadius: BorderRadius.circular(2)),
-                          child: Text(_bypass ? 'BYP' : 'ON', style: kStyleHeader.copyWith(fontSize: 10, color: _bypass ? kColInactive : kColAccent)),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 5,
+                          ),
+                          decoration: BoxDecoration(
+                            color: (_bypass ? kColInactive : kColAccent)
+                                .withAlpha(40),
+                            border: Border.all(
+                              color: _bypass ? kColInactive : kColAccent,
+                            ),
+                            borderRadius: BorderRadius.circular(2),
+                          ),
+                          child: Text(
+                            _bypass ? 'BYP' : 'ON',
+                            style: kStyleHeader.copyWith(
+                              fontSize: 10,
+                              color: _bypass ? kColInactive : kColAccent,
+                            ),
+                          ),
                         ),
                       ),
                     ],
@@ -2826,28 +3971,143 @@ class _EqEffectEditorState extends State<_EqEffectEditor> {
                 // LOW SHELF
                 Padding(
                   padding: const EdgeInsets.only(bottom: 4),
-                  child: Text('LOW SHELF', style: kStyleBase.copyWith(fontSize: 10, color: kColInactive, letterSpacing: 1.2)),
+                  child: Text(
+                    'LOW SHELF',
+                    style: kStyleBase.copyWith(
+                      fontSize: 10,
+                      color: kColInactive,
+                      letterSpacing: 1.2,
+                    ),
+                  ),
                 ),
-                Padding(padding: const EdgeInsets.only(bottom: 14), child: _EqGainSlider(label: 'GAIN', value: (_lowGain + 1.0) / 2.0, displayText: _gainLabel(_lowGain), onChanged: (v) { setState(() => _lowGain = v * 2.0 - 1.0); _updateParams(); })),
-                Padding(padding: const EdgeInsets.only(bottom: 24), child: _ReverbSlider(label: 'FREQ', value: _lowFreq, displayText: _lowFreqLabel(), onChanged: (v) { setState(() => _lowFreq = v); _updateParams(); })),
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 14),
+                  child: _EqGainSlider(
+                    label: 'GAIN',
+                    value: (_lowGain + 1.0) / 2.0,
+                    displayText: _gainLabel(_lowGain),
+                    onChanged: (v) {
+                      setState(() => _lowGain = v * 2.0 - 1.0);
+                      _updateParams();
+                    },
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 24),
+                  child: _ReverbSlider(
+                    label: 'FREQ',
+                    value: _lowFreq,
+                    displayText: _lowFreqLabel(),
+                    onChanged: (v) {
+                      setState(() => _lowFreq = v);
+                      _updateParams();
+                    },
+                  ),
+                ),
                 // MID PEAK
                 Padding(
                   padding: const EdgeInsets.only(bottom: 4),
-                  child: Text('MID PEAK', style: kStyleBase.copyWith(fontSize: 10, color: kColInactive, letterSpacing: 1.2)),
+                  child: Text(
+                    'MID PEAK',
+                    style: kStyleBase.copyWith(
+                      fontSize: 10,
+                      color: kColInactive,
+                      letterSpacing: 1.2,
+                    ),
+                  ),
                 ),
-                Padding(padding: const EdgeInsets.only(bottom: 14), child: _EqGainSlider(label: 'GAIN', value: (_midGain + 1.0) / 2.0, displayText: _gainLabel(_midGain), onChanged: (v) { setState(() => _midGain = v * 2.0 - 1.0); _updateParams(); })),
-                Padding(padding: const EdgeInsets.only(bottom: 14), child: _ReverbSlider(label: 'FREQ', value: _midFreq, displayText: _midFreqLabel(), onChanged: (v) { setState(() => _midFreq = v); _updateParams(); })),
-                Padding(padding: const EdgeInsets.only(bottom: 24), child: _ReverbSlider(label: 'Q', value: _midQ, displayText: _qLabel(), onChanged: (v) { setState(() => _midQ = v); _updateParams(); })),
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 14),
+                  child: _EqGainSlider(
+                    label: 'GAIN',
+                    value: (_midGain + 1.0) / 2.0,
+                    displayText: _gainLabel(_midGain),
+                    onChanged: (v) {
+                      setState(() => _midGain = v * 2.0 - 1.0);
+                      _updateParams();
+                    },
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 14),
+                  child: _ReverbSlider(
+                    label: 'FREQ',
+                    value: _midFreq,
+                    displayText: _midFreqLabel(),
+                    onChanged: (v) {
+                      setState(() => _midFreq = v);
+                      _updateParams();
+                    },
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 24),
+                  child: _ReverbSlider(
+                    label: 'Q',
+                    value: _midQ,
+                    displayText: _qLabel(),
+                    onChanged: (v) {
+                      setState(() => _midQ = v);
+                      _updateParams();
+                    },
+                  ),
+                ),
                 // HIGH SHELF
                 Padding(
                   padding: const EdgeInsets.only(bottom: 4),
-                  child: Text('HIGH SHELF', style: kStyleBase.copyWith(fontSize: 10, color: kColInactive, letterSpacing: 1.2)),
+                  child: Text(
+                    'HIGH SHELF',
+                    style: kStyleBase.copyWith(
+                      fontSize: 10,
+                      color: kColInactive,
+                      letterSpacing: 1.2,
+                    ),
+                  ),
                 ),
-                Padding(padding: const EdgeInsets.only(bottom: 14), child: _EqGainSlider(label: 'GAIN', value: (_highGain + 1.0) / 2.0, displayText: _gainLabel(_highGain), onChanged: (v) { setState(() => _highGain = v * 2.0 - 1.0); _updateParams(); })),
-                Padding(padding: const EdgeInsets.only(bottom: 24), child: _ReverbSlider(label: 'FREQ', value: _highFreq, displayText: _highFreqLabel(), onChanged: (v) { setState(() => _highFreq = v); _updateParams(); })),
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 14),
+                  child: _EqGainSlider(
+                    label: 'GAIN',
+                    value: (_highGain + 1.0) / 2.0,
+                    displayText: _gainLabel(_highGain),
+                    onChanged: (v) {
+                      setState(() => _highGain = v * 2.0 - 1.0);
+                      _updateParams();
+                    },
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 24),
+                  child: _ReverbSlider(
+                    label: 'FREQ',
+                    value: _highFreq,
+                    displayText: _highFreqLabel(),
+                    onChanged: (v) {
+                      setState(() => _highFreq = v);
+                      _updateParams();
+                    },
+                  ),
+                ),
                 // DRY / WET
-                Padding(padding: const EdgeInsets.only(bottom: 14), child: _ReverbSlider(label: 'DRY', value: _dry, onChanged: (v) { setState(() => _dry = v); _updateParams(); })),
-                _ReverbSlider(label: 'WET', value: _wet, onChanged: (v) { setState(() => _wet = v); _updateParams(); }),
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 14),
+                  child: _ReverbSlider(
+                    label: 'DRY',
+                    value: _dry,
+                    onChanged: (v) {
+                      setState(() => _dry = v);
+                      _updateParams();
+                    },
+                  ),
+                ),
+                _ReverbSlider(
+                  label: 'WET',
+                  value: _wet,
+                  onChanged: (v) {
+                    setState(() => _wet = v);
+                    _updateParams();
+                  },
+                ),
               ],
             ),
           ),
@@ -2877,26 +4137,27 @@ class _CompressorEffectEditor extends StatefulWidget {
   });
 
   @override
-  State<_CompressorEffectEditor> createState() => _CompressorEffectEditorState();
+  State<_CompressorEffectEditor> createState() =>
+      _CompressorEffectEditorState();
 }
 
 class _CompressorEffectEditorState extends State<_CompressorEffectEditor> {
   late double _threshold, _ratio, _attack, _release, _makeup, _dry, _wet;
-  late int    _knee;
-  late bool   _bypass;
+  late int _knee;
+  late bool _bypass;
 
   @override
   void initState() {
     super.initState();
     _threshold = widget.initialState.threshold;
-    _ratio     = widget.initialState.ratio;
-    _attack    = widget.initialState.attack;
-    _release   = widget.initialState.release;
-    _makeup    = widget.initialState.makeup;
-    _knee      = widget.initialState.knee;
-    _dry       = widget.initialState.dry;
-    _wet       = widget.initialState.wet;
-    _bypass    = widget.initialBypass;
+    _ratio = widget.initialState.ratio;
+    _attack = widget.initialState.attack;
+    _release = widget.initialState.release;
+    _makeup = widget.initialState.makeup;
+    _knee = widget.initialState.knee;
+    _dry = widget.initialState.dry;
+    _wet = widget.initialState.wet;
+    _bypass = widget.initialBypass;
   }
 
   void _toggleBypass() {
@@ -2905,19 +4166,54 @@ class _CompressorEffectEditorState extends State<_CompressorEffectEditor> {
     if (widget.onMaster) {
       AudioEngine.instance.setMasterInsertBypass(widget.slotIdx, _bypass);
     } else {
-      AudioEngine.instance.setTrackInsertBypass(widget.trackIdx ?? 0, widget.slotIdx, _bypass);
+      AudioEngine.instance.setTrackInsertBypass(
+        widget.trackIdx ?? 0,
+        widget.slotIdx,
+        _bypass,
+      );
     }
   }
 
   void _updateParams() {
-    final s = _CompressorUiState(threshold: _threshold, ratio: _ratio, attack: _attack, release: _release, makeup: _makeup, knee: _knee, dry: _dry, wet: _wet);
+    final s = _CompressorUiState(
+      threshold: _threshold,
+      ratio: _ratio,
+      attack: _attack,
+      release: _release,
+      makeup: _makeup,
+      knee: _knee,
+      dry: _dry,
+      wet: _wet,
+    );
     widget.onParamsChanged(s);
     if (widget.onMaster) {
-      AudioEngine.instance.setMasterCompressorParams(widget.slotIdx, _threshold, _ratio, _attack, _release, _makeup, _knee);
+      AudioEngine.instance.setMasterCompressorParams(
+        widget.slotIdx,
+        _threshold,
+        _ratio,
+        _attack,
+        _release,
+        _makeup,
+        _knee,
+      );
       AudioEngine.instance.setMasterInsertMix(widget.slotIdx, _dry, _wet);
     } else {
-      AudioEngine.instance.setTrackCompressorParams(widget.trackIdx ?? 0, widget.slotIdx, _threshold, _ratio, _attack, _release, _makeup, _knee);
-      AudioEngine.instance.setTrackInsertMix(widget.trackIdx ?? 0, widget.slotIdx, _dry, _wet);
+      AudioEngine.instance.setTrackCompressorParams(
+        widget.trackIdx ?? 0,
+        widget.slotIdx,
+        _threshold,
+        _ratio,
+        _attack,
+        _release,
+        _makeup,
+        _knee,
+      );
+      AudioEngine.instance.setTrackInsertMix(
+        widget.trackIdx ?? 0,
+        widget.slotIdx,
+        _dry,
+        _wet,
+      );
     }
   }
 
@@ -2968,13 +4264,38 @@ class _CompressorEffectEditorState extends State<_CompressorEffectEditor> {
                   padding: const EdgeInsets.only(bottom: 16),
                   child: Row(
                     children: [
-                      Expanded(child: Text('COMPRESSOR', style: kStyleHeader.copyWith(fontSize: 18, color: _bypass ? kColInactive : kColAccent, letterSpacing: 1.8))),
+                      Expanded(
+                        child: Text(
+                          'COMPRESSOR',
+                          style: kStyleHeader.copyWith(
+                            fontSize: 18,
+                            color: _bypass ? kColInactive : kColAccent,
+                            letterSpacing: 1.8,
+                          ),
+                        ),
+                      ),
                       GestureDetector(
                         onTap: _toggleBypass,
                         child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                          decoration: BoxDecoration(color: (_bypass ? kColInactive : kColAccent).withAlpha(40), border: Border.all(color: _bypass ? kColInactive : kColAccent), borderRadius: BorderRadius.circular(2)),
-                          child: Text(_bypass ? 'BYP' : 'ON', style: kStyleHeader.copyWith(fontSize: 10, color: _bypass ? kColInactive : kColAccent)),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 5,
+                          ),
+                          decoration: BoxDecoration(
+                            color: (_bypass ? kColInactive : kColAccent)
+                                .withAlpha(40),
+                            border: Border.all(
+                              color: _bypass ? kColInactive : kColAccent,
+                            ),
+                            borderRadius: BorderRadius.circular(2),
+                          ),
+                          child: Text(
+                            _bypass ? 'BYP' : 'ON',
+                            style: kStyleHeader.copyWith(
+                              fontSize: 10,
+                              color: _bypass ? kColInactive : kColAccent,
+                            ),
+                          ),
                         ),
                       ),
                     ],
@@ -2985,34 +4306,132 @@ class _CompressorEffectEditorState extends State<_CompressorEffectEditor> {
                   padding: const EdgeInsets.only(bottom: 16),
                   child: Row(
                     children: [
-                      Text('KNEE', style: kStyleHeader.copyWith(fontSize: 12, color: kColHeader)),
+                      Text(
+                        'KNEE',
+                        style: kStyleHeader.copyWith(
+                          fontSize: 12,
+                          color: kColHeader,
+                        ),
+                      ),
                       const SizedBox(width: 12),
                       for (final (idx, label) in [(0, 'HARD'), (1, 'SOFT')])
                         Padding(
                           padding: const EdgeInsets.only(right: 8),
                           child: GestureDetector(
-                            onTap: () { setState(() => _knee = idx); _updateParams(); },
+                            onTap: () {
+                              setState(() => _knee = idx);
+                              _updateParams();
+                            },
                             child: Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 12,
+                                vertical: 5,
+                              ),
                               decoration: BoxDecoration(
-                                color: _knee == idx ? kColAccent.withAlpha(40) : Colors.transparent,
-                                border: Border.all(color: _knee == idx ? kColAccent : kColInactive),
+                                color: _knee == idx
+                                    ? kColAccent.withAlpha(40)
+                                    : Colors.transparent,
+                                border: Border.all(
+                                  color: _knee == idx
+                                      ? kColAccent
+                                      : kColInactive,
+                                ),
                                 borderRadius: BorderRadius.circular(2),
                               ),
-                              child: Text(label, style: kStyleHeader.copyWith(fontSize: 10, color: _knee == idx ? kColAccent : kColInactive)),
+                              child: Text(
+                                label,
+                                style: kStyleHeader.copyWith(
+                                  fontSize: 10,
+                                  color: _knee == idx
+                                      ? kColAccent
+                                      : kColInactive,
+                                ),
+                              ),
                             ),
                           ),
                         ),
                     ],
                   ),
                 ),
-                Padding(padding: const EdgeInsets.only(bottom: 14), child: _ReverbSlider(label: 'THRESH', value: _threshold, displayText: _thresholdLabel(), onChanged: (v) { setState(() => _threshold = v); _updateParams(); })),
-                Padding(padding: const EdgeInsets.only(bottom: 14), child: _ReverbSlider(label: 'RATIO', value: _ratio, displayText: _ratioLabel(), onChanged: (v) { setState(() => _ratio = v); _updateParams(); })),
-                Padding(padding: const EdgeInsets.only(bottom: 14), child: _ReverbSlider(label: 'ATTACK', value: _attack, displayText: _attackLabel(), onChanged: (v) { setState(() => _attack = v); _updateParams(); })),
-                Padding(padding: const EdgeInsets.only(bottom: 14), child: _ReverbSlider(label: 'RELEASE', value: _release, displayText: _releaseLabel(), onChanged: (v) { setState(() => _release = v); _updateParams(); })),
-                Padding(padding: const EdgeInsets.only(bottom: 14), child: _ReverbSlider(label: 'MAKEUP', value: _makeup, displayText: _makeupLabel(), onChanged: (v) { setState(() => _makeup = v); _updateParams(); })),
-                Padding(padding: const EdgeInsets.only(bottom: 14), child: _ReverbSlider(label: 'DRY', value: _dry, onChanged: (v) { setState(() => _dry = v); _updateParams(); })),
-                _ReverbSlider(label: 'WET', value: _wet, onChanged: (v) { setState(() => _wet = v); _updateParams(); }),
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 14),
+                  child: _ReverbSlider(
+                    label: 'THRESH',
+                    value: _threshold,
+                    displayText: _thresholdLabel(),
+                    onChanged: (v) {
+                      setState(() => _threshold = v);
+                      _updateParams();
+                    },
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 14),
+                  child: _ReverbSlider(
+                    label: 'RATIO',
+                    value: _ratio,
+                    displayText: _ratioLabel(),
+                    onChanged: (v) {
+                      setState(() => _ratio = v);
+                      _updateParams();
+                    },
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 14),
+                  child: _ReverbSlider(
+                    label: 'ATTACK',
+                    value: _attack,
+                    displayText: _attackLabel(),
+                    onChanged: (v) {
+                      setState(() => _attack = v);
+                      _updateParams();
+                    },
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 14),
+                  child: _ReverbSlider(
+                    label: 'RELEASE',
+                    value: _release,
+                    displayText: _releaseLabel(),
+                    onChanged: (v) {
+                      setState(() => _release = v);
+                      _updateParams();
+                    },
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 14),
+                  child: _ReverbSlider(
+                    label: 'MAKEUP',
+                    value: _makeup,
+                    displayText: _makeupLabel(),
+                    onChanged: (v) {
+                      setState(() => _makeup = v);
+                      _updateParams();
+                    },
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 14),
+                  child: _ReverbSlider(
+                    label: 'DRY',
+                    value: _dry,
+                    onChanged: (v) {
+                      setState(() => _dry = v);
+                      _updateParams();
+                    },
+                  ),
+                ),
+                _ReverbSlider(
+                  label: 'WET',
+                  value: _wet,
+                  onChanged: (v) {
+                    setState(() => _wet = v);
+                    _updateParams();
+                  },
+                ),
               ],
             ),
           ),
@@ -3039,7 +4458,12 @@ class _EqGainSlider extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return _ReverbSlider(label: label, value: value, displayText: displayText, onChanged: onChanged);
+    return _ReverbSlider(
+      label: label,
+      value: value,
+      displayText: displayText,
+      onChanged: onChanged,
+    );
   }
 }
 
@@ -3058,7 +4482,11 @@ class _ReverbSlider extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final percent = (value * 99).round().clamp(0, 99).toString().padLeft(2, '0');
+    final percent = (value * 99)
+        .round()
+        .clamp(0, 99)
+        .toString()
+        .padLeft(2, '0');
     final rightLabel = displayText ?? percent;
 
     return Row(
