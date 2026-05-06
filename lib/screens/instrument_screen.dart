@@ -1374,7 +1374,8 @@ class _SamplerEditorState extends State<_SamplerEditor>
         rawSamples.length > 1 ? rawSamples.length - 1 : 0,
       );
       final searchLimit = maxSearchFrames.clamp(0, rawSamples.length);
-      const hotThreshold = 0.08; // average |sample| above this is likely transient
+      const hotThreshold =
+          0.08; // average |sample| above this is likely transient
       while (startupTrim + windowFrames < searchLimit) {
         double sumAbs = 0.0;
         for (int i = startupTrim; i < startupTrim + windowFrames; i++) {
@@ -1469,7 +1470,7 @@ class _SamplerEditorState extends State<_SamplerEditor>
     int sampleRate,
   ) async {
     try {
-      final lib = await state.samplerLibraryDir();
+      final lib = await state.currentProjectSamplesDir();
 
       // Generate filename with timestamp
       final now = DateTime.now();
@@ -1807,7 +1808,10 @@ class _SamplerEditorState extends State<_SamplerEditor>
                   state.instrumentParamsChanged();
                 },
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 4,
+                  ),
                   decoration: BoxDecoration(
                     color: kBgColor.withAlpha(60),
                     border: Border.all(color: kColInactive.withAlpha(90)),
@@ -1815,7 +1819,10 @@ class _SamplerEditorState extends State<_SamplerEditor>
                   ),
                   child: Text(
                     'RESET ALL',
-                    style: kStyleHeader.copyWith(fontSize: 11, color: kColAccent),
+                    style: kStyleHeader.copyWith(
+                      fontSize: 11,
+                      color: kColAccent,
+                    ),
                   ),
                 ),
               ),
@@ -2271,10 +2278,9 @@ class _SampleWaveformPainter extends CustomPainter {
         textDirection: TextDirection.ltr,
       )..layout();
 
-      final dx = (x + 3.0).clamp(
-        1.0,
-        math.max(1.0, size.width - labelPainter.width - 1),
-      ).toDouble();
+      final dx = (x + 3.0)
+          .clamp(1.0, math.max(1.0, size.width - labelPainter.width - 1))
+          .toDouble();
       final dy = size.height - labelPainter.height - 1;
       labelPainter.paint(canvas, Offset(dx, dy));
     }

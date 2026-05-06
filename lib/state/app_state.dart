@@ -6,6 +6,7 @@ import 'dart:typed_data';
 
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/widgets.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import '../audio/audio_engine.dart';
 import '../models/cell.dart';
@@ -152,6 +153,9 @@ class AppState extends ChangeNotifier {
   int _previewSamplerSlot = -1;
   int _previewBypassVoice = -1;
   String? _defaultSampleFolder;
+  String? _projectRootFolder;
+
+  static const String kDefaultProjectsFolderName = 'STRIA_PROJECTS';
 
   CellPosition? selectedCell;
   int? _selectedRow;
@@ -205,6 +209,9 @@ class AppState extends ChangeNotifier {
   bool get isPreviewingCurrentSampler =>
       _previewSamplerSlot == _currentInstrumentIndex;
   String? get defaultSampleFolder => _defaultSampleFolder;
+  String? get projectRootFolder => _projectRootFolder;
+  bool get hasProjectRootFolder =>
+      _projectRootFolder != null && _projectRootFolder!.isNotEmpty;
   int get songStateVersion => _songStateVersion;
   List<List<bool>> get trackInsertOccupied => _trackInsertOccupied;
   List<List<String?>> get trackInsertEffectNames => _trackInsertEffectNames;
@@ -3117,6 +3124,16 @@ class AppState extends ChangeNotifier {
     return d;
   }
 
+  Future<Directory> _projectRootDir() async {
+    final configured = _projectRootFolder;
+    if (configured != null && configured.isNotEmpty) {
+      final d = Directory(configured);
+      if (!d.existsSync()) d.createSync(recursive: true);
+      return d;
+    }
+    return _songsDir();
+  }
+
   Future<File> _appSettingsFile() async {
     final base = await getApplicationDocumentsDirectory();
     return File('${base.path}/app_settings.json');
@@ -3128,6 +3145,13 @@ class AppState extends ChangeNotifier {
       if (!file.existsSync()) return;
       final raw = await file.readAsString();
       final j = jsonDecode(raw) as Map<String, dynamic>;
+      final projectRoot = j['projectRootFolder'] as String?;
+      if (projectRoot != null && projectRoot.isNotEmpty) {
+        final dir = Directory(projectRoot);
+        if (dir.existsSync()) {
+          _projectRootFolder = dir.path;
+        }
+      }
       final folder = j['defaultSampleFolder'] as String?;
       if (folder == null || folder.isEmpty) return;
       if (!Directory(folder).existsSync()) return;
@@ -3141,11 +3165,55 @@ class AppState extends ChangeNotifier {
   Future<void> _saveAppSettings() async {
     try {
       final file = await _appSettingsFile();
-      final payload = jsonEncode({'defaultSampleFolder': _defaultSampleFolder});
+      final payload = jsonEncode({
+        'defaultSampleFolder': _defaultSampleFolder,
+        'projectRootFolder': _projectRootFolder,
+      });
       await file.writeAsString(payload, flush: true);
     } catch (_) {
       // Non-fatal: app continues with in-memory setting.
     }
+  }
+
+  Future<Directory> _projectDirForName(String name) async {
+    final root = await _projectRootDir();
+    final slug = _slugify(name);
+    final safe = slug.isEmpty ? 'untitled' : slug;
+    final d = Directory('${root.path}/$safe');
+    if (!d.existsSync()) d.createSync(recursive: true);
+    return d;
+  }
+
+  String _trimTrailingSeparators(String path) {
+    var result = path.trim();
+    while (result.length > 1 && result.endsWith(Platform.pathSeparator)) {
+      result = result.substring(0, result.length - 1);
+    }
+    return result;
+  }
+
+  Future<bool?> chooseProjectRootFolder() async {
+    final picked = await FilePicker.platform.getDirectoryPath(
+      dialogTitle: 'Choose where to create STRIA_PROJECTS',
+    );
+    if (picked == null || picked.trim().isEmpty) {
+      return null;
+    }
+
+    final selectedPath = _trimTrailingSeparators(picked);
+    final selectedName = selectedPath.split(Platform.pathSeparator).last;
+    final rootPath = selectedName.toUpperCase() == kDefaultProjectsFolderName
+        ? selectedPath
+        : '$selectedPath${Platform.pathSeparator}$kDefaultProjectsFolderName';
+
+    final dir = Directory(rootPath);
+    if (!dir.existsSync()) {
+      dir.createSync(recursive: true);
+    }
+    _projectRootFolder = dir.path;
+    await _saveAppSettings();
+    _notifyListenersSafe();
+    return true;
   }
 
   Future<void> setDefaultSampleFolder(String? folderPath) async {
@@ -3163,19 +3231,19 @@ class AppState extends ChangeNotifier {
   }
 
   Future<File> _songFile(String name) async {
-    final dir = await _songsDir();
-    return File('${dir.path}/${_slugify(name)}.json');
+    final dir = await _projectDirForName(name);
+    return File('${dir.path}/project.json');
   }
 
   Future<Directory> _songSamplesDir([String? songName]) async {
-    final dir = await _songsDir();
     final raw = songName ?? song.name;
-    final slug = _slugify(raw);
-    final safe = slug.isEmpty ? 'untitled' : slug;
-    final d = Directory('${dir.path}/${safe}_samples');
+    final dir = await _projectDirForName(raw);
+    final d = Directory('${dir.path}/samples');
     if (!d.existsSync()) d.createSync(recursive: true);
     return d;
   }
+
+  Future<Directory> currentProjectSamplesDir() async => _songSamplesDir();
 
   String _sanitizeFileStem(String stem) {
     final cleaned = stem
@@ -3185,12 +3253,15 @@ class AppState extends ChangeNotifier {
     return cleaned.isEmpty ? 'sample' : cleaned;
   }
 
-  Future<void> _persistSamplerAssetsForSong() async {
-    final projectDir = await _songSamplesDir();
+  Future<void> _persistSamplerAssetsForInstruments(
+    List<InstrumentModel> sourceInstruments,
+    Directory projectDir, {
+    bool syncEngine = false,
+  }) async {
     final projectRoot = '${projectDir.path}${Platform.pathSeparator}';
 
-    for (var i = 0; i < instruments.length; i++) {
-      final ins = instruments[i];
+    for (var i = 0; i < sourceInstruments.length; i++) {
+      final ins = sourceInstruments[i];
       if (ins.type != InstrumentType.sampler) continue;
 
       final srcPath = ins.sampler.samplePath;
@@ -3224,8 +3295,19 @@ class AppState extends ChangeNotifier {
       await src.copy(dstPath);
       ins.sampler.samplePath = dstPath;
       ins.sampler.sampleName = candidate;
-      await AudioEngine.instance.setSamplerSample(i, dstPath);
+      if (syncEngine) {
+        await AudioEngine.instance.setSamplerSample(i, dstPath);
+      }
     }
+  }
+
+  Future<void> _persistSamplerAssetsForSong() async {
+    final projectDir = await _songSamplesDir();
+    await _persistSamplerAssetsForInstruments(
+      instruments,
+      projectDir,
+      syncEngine: true,
+    );
   }
 
   void renameSong(String name) {
@@ -3271,11 +3353,12 @@ class AppState extends ChangeNotifier {
   /// Returns the display names of all saved songs, sorted alphabetically.
   Future<List<String>> listSavedSongs() async {
     try {
-      final dir = await _songsDir();
+      final dir = await _projectRootDir();
       final files = dir
           .listSync()
-          .whereType<File>()
-          .where((f) => f.path.endsWith('.json'))
+          .whereType<Directory>()
+          .map((d) => File('${d.path}/project.json'))
+          .where((f) => f.existsSync())
           .toList();
       final names = <String>[];
       for (final f in files) {

@@ -15,6 +15,7 @@ enum _SongMenuAction {
   newSong,
   saveSong,
   loadSong,
+  chooseProjectFolder,
   changePalette,
 }
 
@@ -37,7 +38,7 @@ class SongScreen extends StatefulWidget {
 class _SongScreenState extends State<SongScreen> {
   // Vertical scroll for both columns kept in sync so the slot square next
   // to the timeline always lines up.
-  final _slotsCtrl    = ScrollController();
+  final _slotsCtrl = ScrollController();
   final _timelineCtrl = ScrollController();
   final _nameCtrl = TextEditingController();
   final _nameFocus = FocusNode();
@@ -45,11 +46,12 @@ class _SongScreenState extends State<SongScreen> {
   bool _editingName = false;
   bool _showLoadMenu = false;
   bool _loadingSongNames = false;
+  bool _saveAfterRename = false;
   int? _selectedPatternIndex;
   List<String> _savedSongNames = const [];
 
-  static const double kSlotSize   = 64.0;
-  static const double kSlotGap    = 6.0;
+  static const double kSlotSize = 64.0;
+  static const double kSlotGap = 6.0;
 
   void _handleSlotTap(AppState state, int patternIndex) {
     if (_selectedPatternIndex != null) {
@@ -73,25 +75,39 @@ class _SongScreenState extends State<SongScreen> {
 
   void _moveSelectedPatternUp(AppState state, int patternIndex) {
     state.movePatternUp(patternIndex);
-    setState(() => _selectedPatternIndex = patternIndex > 0 ? patternIndex - 1 : 0);
+    setState(
+      () => _selectedPatternIndex = patternIndex > 0 ? patternIndex - 1 : 0,
+    );
   }
 
   void _moveSelectedPatternDown(AppState state, int patternIndex) {
     state.movePatternDown(patternIndex);
-    setState(() => _selectedPatternIndex =
-        (patternIndex + 1).clamp(0, state.song.patterns.length - 1));
+    setState(
+      () => _selectedPatternIndex = (patternIndex + 1).clamp(
+        0,
+        state.song.patterns.length - 1,
+      ),
+    );
   }
 
   void _copySelectedPattern(AppState state, int patternIndex) {
     state.duplicatePattern(patternIndex);
-    setState(() => _selectedPatternIndex =
-        (patternIndex + 1).clamp(0, state.song.patterns.length - 1));
+    setState(
+      () => _selectedPatternIndex = (patternIndex + 1).clamp(
+        0,
+        state.song.patterns.length - 1,
+      ),
+    );
   }
 
   void _newAfterSelectedPattern(AppState state, int patternIndex) {
     state.insertNewPatternAt(patternIndex + 1);
-    setState(() => _selectedPatternIndex =
-        (patternIndex + 1).clamp(0, state.song.patterns.length - 1));
+    setState(
+      () => _selectedPatternIndex = (patternIndex + 1).clamp(
+        0,
+        state.song.patterns.length - 1,
+      ),
+    );
   }
 
   void _deleteSelectedPattern(AppState state, int patternIndex) {
@@ -106,18 +122,20 @@ class _SongScreenState extends State<SongScreen> {
   @override
   void initState() {
     super.initState();
-    _slotsCtrl.addListener(()    => _sync(_slotsCtrl,    _timelineCtrl));
+    _slotsCtrl.addListener(() => _sync(_slotsCtrl, _timelineCtrl));
     _timelineCtrl.addListener(() => _sync(_timelineCtrl, _slotsCtrl));
   }
 
   void _sync(ScrollController src, ScrollController dst) {
     if (_syncing || !dst.hasClients) return;
-    if (dst.offset == src.offset)    return;
+    if (dst.offset == src.offset) return;
     _syncing = true;
-    dst.jumpTo(src.offset.clamp(
-      dst.position.minScrollExtent,
-      dst.position.maxScrollExtent,
-    ));
+    dst.jumpTo(
+      src.offset.clamp(
+        dst.position.minScrollExtent,
+        dst.position.maxScrollExtent,
+      ),
+    );
     _syncing = false;
   }
 
@@ -133,13 +151,15 @@ class _SongScreenState extends State<SongScreen> {
   @override
   Widget build(BuildContext context) {
     final state = AppStateScope.of(context);
-    final slotPitch  = kSlotSize + kSlotGap;
-    final selectedPatternIndex = _selectedPatternIndex != null &&
+    final slotPitch = kSlotSize + kSlotGap;
+    final selectedPatternIndex =
+        _selectedPatternIndex != null &&
             _selectedPatternIndex! < state.song.patterns.length
         ? _selectedPatternIndex
         : null;
     final pendingSlot = state.queuedArrangementSlot;
-    final shouldBlink = state.isPlaying &&
+    final shouldBlink =
+        state.isPlaying &&
         pendingSlot != null &&
         pendingSlot != state.playheadArrangementSlot;
     final pendingBlinkOn = state.playheadRow.isEven;
@@ -165,15 +185,18 @@ class _SongScreenState extends State<SongScreen> {
                         child: ListView.builder(
                           controller: _slotsCtrl,
                           padding: const EdgeInsets.symmetric(
-                            horizontal: 8, vertical: 4,
+                            horizontal: 8,
+                            vertical: 4,
                           ),
                           itemExtent: slotPitch,
                           itemCount: kMaxSongPatterns,
                           itemBuilder: (_, i) {
                             final isReal = i < state.song.patterns.length;
                             if (!isReal) {
-                              final isFirstVirtual = i == state.song.patterns.length;
-                              final canAdd = state.song.patterns.length < kMaxSongPatterns;
+                              final isFirstVirtual =
+                                  i == state.song.patterns.length;
+                              final canAdd =
+                                  state.song.patterns.length < kMaxSongPatterns;
                               return _EmptySlot(
                                 slotNumber: i + 1,
                                 active: canAdd,
@@ -187,9 +210,12 @@ class _SongScreenState extends State<SongScreen> {
                             }
                             return _PatternSlot(
                               patternIndex: i,
-                              isCurrent: selectedPatternIndex == null && i == (state.isPlaying
-                                  ? state.playheadArrangementSlot
-                                  : state.currentArrangementSlotIndex),
+                              isCurrent:
+                                  selectedPatternIndex == null &&
+                                  i ==
+                                      (state.isPlaying
+                                          ? state.playheadArrangementSlot
+                                          : state.currentArrangementSlotIndex),
                               isPending: shouldBlink && i == pendingSlot,
                               pendingBlinkOn: pendingBlinkOn,
                               isMenuSelected: selectedPatternIndex == i,
@@ -226,23 +252,21 @@ class _SongScreenState extends State<SongScreen> {
             ),
           ),
           if (selectedPatternIndex != null) ...[
-            const Divider(
-              height: 1,
-              thickness: 1,
-              color: Color(0xFF226666),
-            ),
+            const Divider(height: 1, thickness: 1, color: Color(0xFF226666)),
             _SongPatternActionBar(
               canMoveUp: selectedPatternIndex > 0,
-              canMoveDown: selectedPatternIndex < state.song.patterns.length - 1,
+              canMoveDown:
+                  selectedPatternIndex < state.song.patterns.length - 1,
               canDelete: state.song.patterns.length > 1,
-              onMoveUp: () => _moveSelectedPatternUp(state, selectedPatternIndex),
+              onMoveUp: () =>
+                  _moveSelectedPatternUp(state, selectedPatternIndex),
               onMoveDown: () =>
                   _moveSelectedPatternDown(state, selectedPatternIndex),
-              onCopy: () =>
-                _copySelectedPattern(state, selectedPatternIndex),
+              onCopy: () => _copySelectedPattern(state, selectedPatternIndex),
               onNewAfter: () =>
-                _newAfterSelectedPattern(state, selectedPatternIndex),
-              onDelete: () => _deleteSelectedPattern(state, selectedPatternIndex),
+                  _newAfterSelectedPattern(state, selectedPatternIndex),
+              onDelete: () =>
+                  _deleteSelectedPattern(state, selectedPatternIndex),
               onClose: () => setState(() => _selectedPatternIndex = null),
             ),
           ],
@@ -256,8 +280,7 @@ class _SongScreenState extends State<SongScreen> {
       height: 28,
       alignment: Alignment.center,
       color: kBgHeader,
-      child: Text('PATTERNS',
-          style: kStyleHeader.copyWith(color: kColAccent)),
+      child: Text('PATTERNS', style: kStyleHeader.copyWith(color: kColAccent)),
     );
   }
 
@@ -327,7 +350,8 @@ class _SongScreenState extends State<SongScreen> {
                   tooltip: 'Song actions',
                   color: kBgTrackHeader,
                   icon: Icon(Icons.menu, size: 28, color: kColAccent),
-                  onSelected: (action) => _handleSongMenuAction(ctx, state, action),
+                  onSelected: (action) =>
+                      _handleSongMenuAction(ctx, state, action),
                   itemBuilder: (_) => const [
                     PopupMenuItem(
                       value: _SongMenuAction.newSong,
@@ -341,19 +365,35 @@ class _SongScreenState extends State<SongScreen> {
                       value: _SongMenuAction.loadSong,
                       child: Text('Load Song', style: TextStyle(fontSize: 16)),
                     ),
+                    PopupMenuItem(
+                      value: _SongMenuAction.chooseProjectFolder,
+                      child: Text(
+                        'Project Folder',
+                        style: TextStyle(fontSize: 16),
+                      ),
+                    ),
                     PopupMenuDivider(),
                     PopupMenuItem(
                       value: _SongMenuAction.changePalette,
-                      child: Text('Color Palette', style: TextStyle(fontSize: 16)),
+                      child: Text(
+                        'Color Palette',
+                        style: TextStyle(fontSize: 16),
+                      ),
                     ),
                     PopupMenuDivider(),
                     PopupMenuItem(
                       enabled: false,
-                      child: Text('Export WAV (coming soon)', style: TextStyle(fontSize: 16)),
+                      child: Text(
+                        'Export WAV (coming soon)',
+                        style: TextStyle(fontSize: 16),
+                      ),
                     ),
                     PopupMenuItem(
                       enabled: false,
-                      child: Text('Export Tracks (coming soon)', style: TextStyle(fontSize: 16)),
+                      child: Text(
+                        'Export Tracks (coming soon)',
+                        style: TextStyle(fontSize: 16),
+                      ),
                     ),
                   ],
                 ),
@@ -378,7 +418,9 @@ class _SongScreenState extends State<SongScreen> {
                         hintStyle: TextStyle(color: kColInactive),
                         isDense: true,
                         contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 8, vertical: 6),
+                          horizontal: 8,
+                          vertical: 6,
+                        ),
                         enabledBorder: OutlineInputBorder(
                           borderSide: BorderSide(color: kColAccent),
                         ),
@@ -417,35 +459,45 @@ class _SongScreenState extends State<SongScreen> {
                       child: Text(
                         'Loading songs...',
                         style: kStyleHeader.copyWith(
-                            color: kColInactive, fontSize: 11),
+                          color: kColInactive,
+                          fontSize: 11,
+                        ),
                       ),
                     )
                   : _savedSongNames.isEmpty
-                      ? Padding(
-                          padding: const EdgeInsets.all(8),
-                          child: Text(
-                            'No saved songs',
-                            style: kStyleHeader.copyWith(
-                                color: kColInactive, fontSize: 11),
-                          ),
-                        )
-                      : Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: _savedSongNames
-                              .map((name) => GestureDetector(
-                                    onTap: () => _loadFromName(ctx, state, name),
-                                    child: Padding(
-                                      padding: const EdgeInsets.symmetric(
-                                          horizontal: 8, vertical: 7),
-                                      child: Text(
-                                        name,
-                                        style: kStyleHeader.copyWith(
-                                            color: kColAccent, fontSize: 12),
-                                      ),
-                                    ),
-                                  ))
-                              .toList(),
+                  ? Padding(
+                      padding: const EdgeInsets.all(8),
+                      child: Text(
+                        'No saved songs',
+                        style: kStyleHeader.copyWith(
+                          color: kColInactive,
+                          fontSize: 11,
                         ),
+                      ),
+                    )
+                  : Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: _savedSongNames
+                          .map(
+                            (name) => GestureDetector(
+                              onTap: () => _loadFromName(ctx, state, name),
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                  vertical: 7,
+                                ),
+                                child: Text(
+                                  name,
+                                  style: kStyleHeader.copyWith(
+                                    color: kColAccent,
+                                    fontSize: 12,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          )
+                          .toList(),
+                    ),
             ),
           ],
         ],
@@ -464,21 +516,29 @@ class _SongScreenState extends State<SongScreen> {
     });
   }
 
-  void _commitRename(AppState state) {
+  Future<void> _commitRename(AppState state) async {
     final value = _nameCtrl.text.trim();
     if (value.isEmpty) return;
     state.renameSong(value);
     if (!mounted) return;
     setState(() => _editingName = false);
+
+    if (_saveAfterRename) {
+      _saveAfterRename = false;
+      await _handleSave(context, state);
+    }
   }
 
   void _cancelRename() {
     if (!mounted) return;
+    _saveAfterRename = false;
     setState(() => _editingName = false);
   }
 
   Future<void> _handleNew(BuildContext ctx, AppState state) async {
     if (_editingName) _commitRename(state);
+    final ready = await _ensureProjectFolder(ctx, state);
+    if (!ready) return;
     final saved = await state.newSong();
     if (!ctx.mounted) return;
     setState(() {
@@ -486,38 +546,49 @@ class _SongScreenState extends State<SongScreen> {
       _showLoadMenu = false;
       _selectedPatternIndex = null;
     });
-    ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(
-      content: Text(saved
-          ? 'Song saved. New project created.'
-          : 'New project created (save failed).'),
-      duration: const Duration(seconds: 2),
-    ));
+    ScaffoldMessenger.of(ctx).showSnackBar(
+      SnackBar(
+        content: Text(
+          saved
+              ? 'Song saved. New project created.'
+              : 'New project created (save failed).',
+        ),
+        duration: const Duration(seconds: 2),
+      ),
+    );
   }
 
   Future<void> _handleSave(BuildContext ctx, AppState state) async {
     if (_editingName) _commitRename(state);
+    final ready = await _ensureProjectFolder(ctx, state);
+    if (!ready) return;
     if (state.song.name == 'New Song') {
+      _saveAfterRename = true;
       _startRename(state);
       if (!ctx.mounted) return;
-      ScaffoldMessenger.of(ctx).showSnackBar(const SnackBar(
-        content: Text('Name the song first, then press SAVE.'),
-        duration: Duration(seconds: 2),
-      ));
+      ScaffoldMessenger.of(ctx).showSnackBar(
+        const SnackBar(
+          content: Text('Name the song, then confirm to save it.'),
+          duration: Duration(seconds: 2),
+        ),
+      );
       return;
     }
     final ok = await state.saveSong();
     if (!ctx.mounted) return;
-    ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(
-      content: Text(ok ? 'Saved "${state.song.name}".' : 'Save failed.'),
-      duration: const Duration(seconds: 2),
-    ));
+    ScaffoldMessenger.of(ctx).showSnackBar(
+      SnackBar(
+        content: Text(ok ? 'Saved "${state.song.name}".' : 'Save failed.'),
+        duration: const Duration(seconds: 2),
+      ),
+    );
   }
 
   void _handleSongMenuAction(
-      BuildContext ctx,
-      AppState state,
-      _SongMenuAction action,
-      ) {
+    BuildContext ctx,
+    AppState state,
+    _SongMenuAction action,
+  ) {
     switch (action) {
       case _SongMenuAction.newSong:
         _handleNew(ctx, state);
@@ -526,12 +597,60 @@ class _SongScreenState extends State<SongScreen> {
         _handleSave(ctx, state);
         break;
       case _SongMenuAction.loadSong:
-        _toggleLoadMenu(state);
+        _handleLoadMenu(ctx, state);
+        break;
+      case _SongMenuAction.chooseProjectFolder:
+        _handleChooseProjectFolder(ctx, state);
         break;
       case _SongMenuAction.changePalette:
         _showPalettePicker(ctx);
         break;
     }
+  }
+
+  Future<bool> _ensureProjectFolder(BuildContext ctx, AppState state) async {
+    if (state.hasProjectRootFolder) return true;
+    final picked = await state.chooseProjectRootFolder();
+    if (!ctx.mounted) return false;
+    if (picked == null) {
+      ScaffoldMessenger.of(ctx).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Choose where STRIA_PROJECTS should be created before saving or loading songs.',
+          ),
+          duration: Duration(seconds: 2),
+        ),
+      );
+      return false;
+    }
+    ScaffoldMessenger.of(ctx).showSnackBar(
+      SnackBar(
+        content: Text('Project folder set to STRIA_PROJECTS.'),
+        duration: const Duration(seconds: 2),
+      ),
+    );
+    return true;
+  }
+
+  Future<void> _handleLoadMenu(BuildContext ctx, AppState state) async {
+    final ready = await _ensureProjectFolder(ctx, state);
+    if (!ready || !mounted) return;
+    _toggleLoadMenu(state);
+  }
+
+  Future<void> _handleChooseProjectFolder(
+    BuildContext ctx,
+    AppState state,
+  ) async {
+    final picked = await state.chooseProjectRootFolder();
+    if (!ctx.mounted || picked == null) return;
+    setState(() => _showLoadMenu = false);
+    ScaffoldMessenger.of(ctx).showSnackBar(
+      const SnackBar(
+        content: Text('Project folder updated to STRIA_PROJECTS.'),
+        duration: Duration(seconds: 2),
+      ),
+    );
   }
 
   void _showPalettePicker(BuildContext ctx) {
@@ -543,18 +662,21 @@ class _SongScreenState extends State<SongScreen> {
       ),
       builder: (_) => ValueListenableBuilder<TrackerPalette>(
         valueListenable: paletteNotifier,
-        builder: (_, active, __) => Padding(
+        builder: (_, active, _) => Padding(
           padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 20),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('Color Palette',
-                  style: TextStyle(
-                      color: kColAccent,
-                      fontSize: 18,
-                      fontWeight: FontWeight.w700,
-                      fontFamily: kFontMono)),
+              Text(
+                'Color Palette',
+                style: TextStyle(
+                  color: kColAccent,
+                  fontSize: 18,
+                  fontWeight: FontWeight.w700,
+                  fontFamily: kFontMono,
+                ),
+              ),
               const SizedBox(height: 20),
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceEvenly,
@@ -574,20 +696,30 @@ class _SongScreenState extends State<SongScreen> {
                             color: p.previewColor,
                             shape: BoxShape.circle,
                             border: Border.all(
-                              color: selected ? Colors.white : Colors.transparent,
+                              color: selected
+                                  ? Colors.white
+                                  : Colors.transparent,
                               width: 3,
                             ),
                             boxShadow: selected
-                                ? [BoxShadow(color: p.previewColor.withAlpha(180), blurRadius: 12)]
+                                ? [
+                                    BoxShadow(
+                                      color: p.previewColor.withAlpha(180),
+                                      blurRadius: 12,
+                                    ),
+                                  ]
                                 : null,
                           ),
                         ),
                         const SizedBox(height: 6),
-                        Text(p.name,
-                            style: TextStyle(
-                                color: selected ? Colors.white : kColHeader,
-                                fontSize: 11,
-                                fontFamily: kFontMono)),
+                        Text(
+                          p.name,
+                          style: TextStyle(
+                            color: selected ? Colors.white : kColHeader,
+                            fontSize: 11,
+                            fontFamily: kFontMono,
+                          ),
+                        ),
                       ],
                     ),
                   );
@@ -619,14 +751,20 @@ class _SongScreenState extends State<SongScreen> {
     });
   }
 
-  Future<void> _loadFromName(BuildContext ctx, AppState state, String name) async {
+  Future<void> _loadFromName(
+    BuildContext ctx,
+    AppState state,
+    String name,
+  ) async {
     final ok = await state.loadSongByName(name);
     if (!ctx.mounted) return;
     setState(() => _showLoadMenu = false);
-    ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(
-      content: Text(ok ? 'Loaded "$name".' : 'Load failed.'),
-      duration: const Duration(seconds: 2),
-    ));
+    ScaffoldMessenger.of(ctx).showSnackBar(
+      SnackBar(
+        content: Text(ok ? 'Loaded "$name".' : 'Load failed.'),
+        duration: const Duration(seconds: 2),
+      ),
+    );
   }
 
   Widget _buildTimeline(AppState state, double slotPitch) {
@@ -650,15 +788,14 @@ class _SongScreenState extends State<SongScreen> {
           child: CustomPaint(
             size: Size(width, totalH),
             painter: _SongTimelinePainter(
-              patterns:    List.of(state.song.patterns),
-              slotPitch:   slotPitch,
-              playheadSlot: state.isPlaying ? state.playheadArrangementSlot : null,
-              playheadRow:  state.isPlaying ? state.playheadRow : null,
+              patterns: List.of(state.song.patterns),
+              slotPitch: slotPitch,
+              playheadSlot: state.isPlaying
+                  ? state.playheadArrangementSlot
+                  : null,
+              playheadRow: state.isPlaying ? state.playheadRow : null,
             ),
-            child: SizedBox(
-              width: width,
-              height: totalH,
-            ),
+            child: SizedBox(width: width, height: totalH),
           ),
         );
       },
@@ -710,11 +847,11 @@ class _SongScreenState extends State<SongScreen> {
 
 /// A song arrangement slot. Tap focuses/queues it, long-press opens actions.
 class _PatternSlot extends StatelessWidget {
-  final int    patternIndex; // index in song.patterns
-  final bool   isCurrent;
-  final bool   isPending;
-  final bool   pendingBlinkOn;
-  final bool   isMenuSelected;
+  final int patternIndex; // index in song.patterns
+  final bool isCurrent;
+  final bool isPending;
+  final bool pendingBlinkOn;
+  final bool isMenuSelected;
   final double size;
   final double gap;
   final VoidCallback onTap;
@@ -750,7 +887,9 @@ class _PatternSlot extends StatelessWidget {
         border: Border.all(
           color: isPending
               ? (pendingBlinkOn ? kColAccent : kColInactive)
-              : (isMenuSelected ? kColAccent : (isCurrent ? kColAccent : kColInactive)),
+              : (isMenuSelected
+                    ? kColAccent
+                    : (isCurrent ? kColAccent : kColInactive)),
           width: (isCurrent || isPending || isMenuSelected) ? 2 : 1,
         ),
         borderRadius: BorderRadius.circular(6),
@@ -777,7 +916,9 @@ class _PatternSlot extends StatelessWidget {
           duration: const Duration(milliseconds: 120),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(6),
-            color: isMenuSelected ? kColAccent.withAlpha(20) : Colors.transparent,
+            color: isMenuSelected
+                ? kColAccent.withAlpha(20)
+                : Colors.transparent,
           ),
           child: square,
         ),
@@ -788,9 +929,9 @@ class _PatternSlot extends StatelessWidget {
 
 /// An empty virtual slot — shows '+' and accepts drag-copy.
 class _EmptySlot extends StatelessWidget {
-  final int    slotNumber;  // 1-based display number
-  final bool   active;      // true = tappable
-  final bool   showPlus;
+  final int slotNumber; // 1-based display number
+  final bool active; // true = tappable
+  final bool showPlus;
   final double gap;
   final VoidCallback? onTap;
   final VoidCallback? onLongPress;
@@ -814,21 +955,12 @@ class _EmptySlot extends StatelessWidget {
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 120),
           decoration: BoxDecoration(
-            border: Border.all(
-              color: kColInactive,
-              width: 1,
-            ),
+            border: Border.all(color: kColInactive, width: 1),
             borderRadius: BorderRadius.circular(6),
             color: Colors.transparent,
           ),
           child: showPlus
-              ? Center(
-                  child: Icon(
-                    Icons.add,
-                    size: 32,
-                    color: kColInactive,
-                  ),
-                )
+              ? Center(child: Icon(Icons.add, size: 32, color: kColInactive))
               : const SizedBox.shrink(),
         ),
       ),
@@ -840,9 +972,9 @@ class _EmptySlot extends StatelessWidget {
 
 class _SongTimelinePainter extends CustomPainter {
   final List<PatternModel> patterns;
-  final double             slotPitch;
-  final int?               playheadSlot;
-  final int?               playheadRow;
+  final double slotPitch;
+  final int? playheadSlot;
+  final int? playheadRow;
 
   _SongTimelinePainter({
     required this.patterns,
@@ -851,24 +983,24 @@ class _SongTimelinePainter extends CustomPainter {
     required this.playheadRow,
   });
 
-  static const double _padTop    = 4;
+  static const double _padTop = 4;
   static const double _padBottom = 4;
-  static const double _laneGap   = 1;
+  static const double _laneGap = 1;
 
   @override
   void paint(Canvas canvas, Size size) {
     final laneCount = kMaxTracks;
     final laneAreaW = size.width - 8;
-    final laneW     = (laneAreaW - (laneCount - 1) * _laneGap) / laneCount;
-    const originX   = 4.0;
+    final laneW = (laneAreaW - (laneCount - 1) * _laneGap) / laneCount;
+    const originX = 4.0;
 
     final dividerPaint = Paint()
       ..color = kColInactive.withAlpha(60)
       ..strokeWidth = 0.5;
 
     for (int s = 0; s < patterns.length; s++) {
-      final pat    = patterns[s];
-      final yTop   = s * slotPitch + _padTop;
+      final pat = patterns[s];
+      final yTop = s * slotPitch + _padTop;
       final blockH = slotPitch - _padTop - _padBottom;
 
       final laneBorderPaint = Paint()
@@ -887,13 +1019,20 @@ class _SongTimelinePainter extends CustomPainter {
           laneBorderPaint,
         );
         if (t < pat.tracks.length) {
-          _drawLaneNotes(canvas, pat.tracks[t], lx, yTop, laneW, blockH,
-              pat.rowCount);
+          _drawLaneNotes(
+            canvas,
+            pat.tracks[t],
+            lx,
+            yTop,
+            laneW,
+            blockH,
+            pat.rowCount,
+          );
         }
       }
 
       canvas.drawLine(
-        Offset(0,          yTop + blockH + _padBottom - 0.5),
+        Offset(0, yTop + blockH + _padBottom - 0.5),
         Offset(size.width, yTop + blockH + _padBottom - 0.5),
         dividerPaint,
       );
@@ -903,10 +1042,10 @@ class _SongTimelinePainter extends CustomPainter {
     if (playheadSlot != null && playheadRow != null) {
       final s = playheadSlot!.clamp(0, patterns.length - 1);
       if (s < patterns.length) {
-        final pat    = patterns[s];
-        final yTop   = s * slotPitch + _padTop;
+        final pat = patterns[s];
+        final yTop = s * slotPitch + _padTop;
         final blockH = slotPitch - _padTop - _padBottom;
-        final y      = yTop + (playheadRow! / pat.rowCount) * blockH;
+        final y = yTop + (playheadRow! / pat.rowCount) * blockH;
         canvas.drawLine(
           Offset(0, y),
           Offset(size.width, y),
@@ -918,9 +1057,16 @@ class _SongTimelinePainter extends CustomPainter {
     }
   }
 
-  void _drawLaneNotes(Canvas canvas, TrackModel track,
-      double x, double y, double w, double h, int rowCount) {
-    final paint    = Paint();
+  void _drawLaneNotes(
+    Canvas canvas,
+    TrackModel track,
+    double x,
+    double y,
+    double w,
+    double h,
+    int rowCount,
+  ) {
+    final paint = Paint();
     final pxPerRow = h / rowCount;
     for (int r = 0; r < track.cells.length && r < rowCount; r++) {
       final n = track.cells[r].note;
