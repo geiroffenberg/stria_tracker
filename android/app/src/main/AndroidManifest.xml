@@ -2,6 +2,8 @@
     <!-- Storage access: READ_EXTERNAL_STORAGE for API <=32, READ_MEDIA_AUDIO for API 33+ -->
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"
         android:maxSdkVersion="32" />
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+        android:maxSdkVersion="29" />
     <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
     <!-- Microphone access for sample recording -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />

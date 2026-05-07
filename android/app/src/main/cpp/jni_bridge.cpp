@@ -361,6 +361,16 @@ Java_com_example_tracker_AudioEnginePlugin_nativeStartExportTap(JNIEnv*, jobject
     reinterpret_cast<AudioEngine*>(ptr)->startExportTap();
 }
 
+JNIEXPORT void JNICALL
+Java_com_example_tracker_AudioEnginePlugin_nativeSetSendRouting(
+        JNIEnv* env, jobject, jlong ptr, jintArray routing) {
+    const int len = env->GetArrayLength(routing);
+    jint* data = env->GetIntArrayElements(routing, nullptr);
+    std::vector<int> r(data, data + len);
+    env->ReleaseIntArrayElements(routing, data, JNI_ABORT);
+    reinterpret_cast<AudioEngine*>(ptr)->setSendRouting(r);
+}
+
 JNIEXPORT jfloatArray JNICALL
 Java_com_example_tracker_AudioEnginePlugin_nativeStopExportTap(
         JNIEnv* env, jobject, jlong ptr, jintArray outSampleRate) {

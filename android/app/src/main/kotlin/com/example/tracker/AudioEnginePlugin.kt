@@ -438,6 +438,15 @@ class AudioEnginePlugin : FlutterPlugin, MethodCallHandler {
                 if (enginePtr != 0L) nativeStartExportTap(enginePtr)
                 result.success(null)
             }
+            "setSendRouting" -> {
+                if (enginePtr != 0L) {
+                    val routing = (call.arguments as List<*>)
+                        .map { (it as Number).toInt() }
+                        .toIntArray()
+                    nativeSetSendRouting(enginePtr, routing)
+                }
+                result.success(null)
+            }
             "stopExportTap" -> {
                 if (enginePtr != 0L) {
                     val outRate = IntArray(1)
@@ -529,6 +538,7 @@ class AudioEnginePlugin : FlutterPlugin, MethodCallHandler {
     private external fun nativeGetVoiceEnvelopeStage(ptr: Long, trackIdx: Int): Int
     private external fun nativeStartExportTap(ptr: Long)
     private external fun nativeStopExportTap(ptr: Long, outSampleRate: IntArray): FloatArray?
+    private external fun nativeSetSendRouting(ptr: Long, routing: IntArray)
     private external fun nativeDispose(ptr: Long)
 
     companion object {

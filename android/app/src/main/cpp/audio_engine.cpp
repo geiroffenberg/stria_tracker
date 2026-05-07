@@ -2236,8 +2236,51 @@ oboe::DataCallbackResult AudioEngine::onAudioReady(
         }
     }
 
-    // Apply track insert effects, then sum all track buses into master output.
+    // Apply track insert effects, then route via send configuration.
+    //
+    // Send routing rules:
+    //   mTrackSendChannel[track] == 0  → direct to master output
+    //   mTrackSendChannel[track] == N  → accumulate into track N-1's bus
+    //
+    // Two-pass approach:
+    //   Pass 1: for each track, apply its own insert FX, then either:
+    //           a) sum straight into `out[]` (direct-to-master), or
+    //           b) accumulate into the destination track's bus (send).
+    //   Pass 2: for any track bus that received sends (is a send destination),
+    //           apply that track's insert FX to the accumulated signal and
+    //           sum the result into master.
+    //
+    // We detect send destinations by scanning mTrackSendChannel once.
+
+    // Determine which tracks are send destinations.
+    std::array<bool, kMaxVoices> isSendDest{};
+    for (int t = 0; t < kMaxVoices; ++t) {
+        const int dest = mTrackSendChannel[t];
+        if (dest > 0 && dest <= kMaxVoices && (dest - 1) != t) {
+            isSendDest[dest - 1] = true;
+        }
+    }
+
+    // Allocate/zero send accumulation buffers for destinations.
+    // We reuse a local array of per-track accumulation vectors.
+    // For send destination tracks we zero their bus here (it will be
+    // filled by the sends below); their voice output has already been
+    // written to mTrackBusL/R, so we save it to a temporary first.
+    std::array<std::vector<float>, kMaxVoices> savedBusL;
+    std::array<std::vector<float>, kMaxVoices> savedBusR;
+    for (int t = 0; t < kMaxVoices; ++t) {
+        if (isSendDest[t]) {
+            savedBusL[t].assign(mTrackBusL[t].begin(), mTrackBusL[t].begin() + numFrames);
+            savedBusR[t].assign(mTrackBusR[t].begin(), mTrackBusR[t].begin() + numFrames);
+            std::fill_n(mTrackBusL[t].data(), numFrames, 0.0f);
+            std::fill_n(mTrackBusR[t].data(), numFrames, 0.0f);
+        }
+    }
+
+    // Pass 1: apply insert FX to each source track, then route.
     for (int track = 0; track < kMaxVoices; ++track) {
+        if (isSendDest[track]) continue; // handled in pass 2
+
         if (!mPreviewBypassTrackInserts[track]) {
             processEffects(
                 mTrackBusL[track].data(),
@@ -2246,11 +2289,53 @@ oboe::DataCallbackResult AudioEngine::onAudioReady(
                 mTrackInserts[track]
             );
         }
+
+        const int dest = mTrackSendChannel[track];
+        if (dest == 0 || dest > kMaxVoices || (dest - 1) == track) {
+            // Direct to master
+            for (int i = 0; i < numFrames; ++i) {
+                out[i * 2]     += mTrackBusL[track][i];
+                out[i * 2 + 1] += mTrackBusR[track][i];
+            }
+        } else {
+            // Accumulate into destination send bus
+            const int di = dest - 1;
+            for (int i = 0; i < numFrames; ++i) {
+                mTrackBusL[di][i] += mTrackBusL[track][i];
+                mTrackBusR[di][i] += mTrackBusR[track][i];
+            }
+        }
+    }
+
+    // Pass 2: process each send-destination track.
+    // Its bus now holds the accumulated sends from all source tracks.
+    // Also restore its own voices' signal (saved above) and mix in.
+    for (int track = 0; track < kMaxVoices; ++track) {
+        if (!isSendDest[track]) continue;
+
+        // Add this track's own voice output back into the accumulated bus.
+        for (int i = 0; i < numFrames; ++i) {
+            mTrackBusL[track][i] += savedBusL[track][i];
+            mTrackBusR[track][i] += savedBusR[track][i];
+        }
+
+        // Apply this track's insert FX to the fully-accumulated bus.
+        if (!mPreviewBypassTrackInserts[track]) {
+            processEffects(
+                mTrackBusL[track].data(),
+                mTrackBusR[track].data(),
+                numFrames,
+                mTrackInserts[track]
+            );
+        }
+
+        // Send-destination tracks always route to master (no chaining).
         for (int i = 0; i < numFrames; ++i) {
             out[i * 2]     += mTrackBusL[track][i];
             out[i * 2 + 1] += mTrackBusR[track][i];
         }
     }
+
 
     // Apply master mute and volume ───────────────────────────────────────────────
     const bool masterMute = mMasterMute.load();
@@ -2472,4 +2557,11 @@ std::vector<float> AudioEngine::stopExportTap(int& outSampleRate) {
 
     std::vector<float> result = std::move(mExportBuffer);
     return result;
+}
+
+void AudioEngine::setSendRouting(const std::vector<int>& routing) {
+    std::lock_guard<std::mutex> lock(mVoiceMutex);
+    for (int i = 0; i < kMaxVoices && i < static_cast<int>(routing.size()); ++i) {
+        mTrackSendChannel[i] = std::clamp(routing[i], 0, kMaxVoices);
+    }
 }

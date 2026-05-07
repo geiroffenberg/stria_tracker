@@ -458,6 +458,10 @@ public:
     /// Also returns the stream sample rate via [outSampleRate].
     std::vector<float> stopExportTap(int& outSampleRate);
 
+    /// Set per-track send routing. [routing] has one entry per track:
+    /// 0 = route to master, 1-8 = route audio into that channel's bus (1-based).
+    void setSendRouting(const std::vector<int>& routing);
+
 private:
     // Oboe callback shim for the recording (input) stream.
     // Oboe requires a stable pointer so we heap-allocate it.
@@ -525,6 +529,7 @@ private:
     InsertEffect                     mMasterInserts[kMaxInsertSlots];
     InsertEffect                     mTrackInserts[kMaxVoices][kMaxInsertSlots];
     std::array<bool, kMaxVoices>     mPreviewBypassTrackInserts{};
+    std::array<int, kMaxVoices>      mTrackSendChannel{}; // 0=master, 1..kMaxVoices=send to that channel (1-based)
     std::array<std::vector<float>, kMaxVoices> mTrackBusL;
     std::array<std::vector<float>, kMaxVoices> mTrackBusR;
     std::vector<float>               mMasterBusL;

@@ -5,6 +5,7 @@ import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:flutter/scheduler.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:path_provider/path_provider.dart';
@@ -156,8 +157,13 @@ class AppState extends ChangeNotifier {
   int _previewBypassVoice = -1;
   String? _defaultSampleFolder;
   String? _projectRootFolder;
+  String? _projectRootTreeUri;
+  String? _lastLoadError;
 
   static const String kDefaultProjectsFolderName = 'STRIA_PROJECTS';
+  static const MethodChannel _projectStorageChannel = MethodChannel(
+    'project_storage',
+  );
 
   CellPosition? selectedCell;
   int? _selectedRow;
@@ -212,8 +218,11 @@ class AppState extends ChangeNotifier {
       _previewSamplerSlot == _currentInstrumentIndex;
   String? get defaultSampleFolder => _defaultSampleFolder;
   String? get projectRootFolder => _projectRootFolder;
+    String? get projectRootTreeUri => _projectRootTreeUri;
+  String? get lastLoadError => _lastLoadError;
   bool get hasProjectRootFolder =>
-      _projectRootFolder != null && _projectRootFolder!.isNotEmpty;
+      (_projectRootFolder != null && _projectRootFolder!.isNotEmpty) ||
+      (_projectRootTreeUri != null && _projectRootTreeUri!.isNotEmpty);
   int get songStateVersion => _songStateVersion;
   List<List<bool>> get trackInsertOccupied => _trackInsertOccupied;
   List<List<String?>> get trackInsertEffectNames => _trackInsertEffectNames;
@@ -618,6 +627,9 @@ class AppState extends ChangeNotifier {
     if (queue.isNotEmpty) {
       AudioEngine.instance.queueMixerCommands(queue);
     }
+    if (trackIndex == null) {
+      _pushSendRouting();
+    }
   }
 
   void _ensureTrackInsertLists(int trackIdx) {
@@ -699,6 +711,55 @@ class AppState extends ChangeNotifier {
     AudioEngine.instance.queueMixerCommands([trackIndex + 1, 3, soloValue, 0]);
     _applyImmediateMixerMuteState();
     notifyListeners();
+  }
+
+  // ── Send routing ─────────────────────────────────────────────────────────
+
+  /// Returns true if [trackIndex] is a send bus — i.e. another track routes
+  /// its audio into this track. Send buses cannot themselves send anywhere
+  /// except master (no chaining).
+  bool isSendBus(int trackIndex) {
+    if (song.patterns.isEmpty) return false;
+    final tracks = song.patterns.first.tracks;
+    for (int i = 0; i < tracks.length; i++) {
+      if (i == trackIndex) continue;
+      if (tracks[i].sendChannel == trackIndex + 1) return true;
+    }
+    return false;
+  }
+
+  void setTrackSendChannel(int trackIndex, int sendChannel) {
+    if (trackIndex < 0 || trackIndex >= currentPattern.tracks.length) return;
+    // Clamp to valid range: 0=master, 1..kMaxVoices
+    final ch = sendChannel.clamp(0, 8);
+    // Disallow self-send
+    if (ch == trackIndex + 1) return;
+    // Send routing is project-wide: update the same track on every pattern.
+    for (final pattern in song.patterns) {
+      if (trackIndex < pattern.tracks.length) {
+        pattern.tracks[trackIndex].sendChannel = ch;
+      }
+    }
+    _pushSendRouting();
+    notifyListeners();
+  }
+
+  void _copyProjectSendRoutingToPattern(PatternModel targetPattern) {
+    if (song.patterns.isEmpty || targetPattern.tracks.isEmpty) return;
+    final sourceTracks = currentPattern.tracks;
+    final count = math.min(sourceTracks.length, targetPattern.tracks.length);
+    for (int i = 0; i < count; i++) {
+      targetPattern.tracks[i].sendChannel = sourceTracks[i].sendChannel;
+    }
+  }
+
+  void _pushSendRouting() {
+    final tracks = currentPattern.tracks;
+    final routing = List.generate(
+      tracks.length,
+      (i) => tracks[i].sendChannel,
+    );
+    AudioEngine.instance.setSendRouting(routing);
   }
 
   // ── Cell selection ───────────────────────────────────────────────────────
@@ -1096,7 +1157,8 @@ class AppState extends ChangeNotifier {
   /// Append a new empty pattern to the end of the song.
   void appendNewPattern() {
     if (song.patterns.length >= kMaxSongPatterns) return;
-    song.addPattern();
+    final idx = song.addPattern();
+    _copyProjectSendRoutingToPattern(song.patterns[idx]);
     notifyListeners();
   }
 
@@ -1104,7 +1166,9 @@ class AppState extends ChangeNotifier {
   void insertNewPatternAt(int index) {
     if (song.patterns.length >= kMaxSongPatterns) return;
     final clamped = index.clamp(0, song.patterns.length);
-    song.patterns.insert(clamped, song.createEmptyPattern());
+    final pattern = song.createEmptyPattern();
+    _copyProjectSendRoutingToPattern(pattern);
+    song.patterns.insert(clamped, pattern);
     notifyListeners();
   }
 
@@ -1227,7 +1291,9 @@ class AppState extends ChangeNotifier {
     // Fill gap with empty patterns up to and including [index].
     while (song.patterns.length <= index) {
       if (song.patterns.length >= kMaxSongPatterns) return;
-      song.patterns.add(song.createEmptyPattern());
+      final pattern = song.createEmptyPattern();
+      _copyProjectSendRoutingToPattern(pattern);
+      song.patterns.add(pattern);
     }
     // The slot at [index] is now an existing empty pattern — leave it as the
     // newly "created" pattern (it's already blank and editable).
@@ -3261,6 +3327,19 @@ class AppState extends ChangeNotifier {
     return d;
   }
 
+  bool _hasAnyProjectJson(Directory root) {
+    if (!root.existsSync()) return false;
+    try {
+      for (final entry in root.listSync(followLinks: false)) {
+        if (entry is! Directory) continue;
+        if (File('${entry.path}/project.json').existsSync()) return true;
+      }
+    } catch (_) {
+      return false;
+    }
+    return false;
+  }
+
   Future<Directory> _projectRootDir() async {
     final configured = _projectRootFolder;
     if (configured != null && configured.isNotEmpty) {
@@ -3279,20 +3358,29 @@ class AppState extends ChangeNotifier {
   Future<void> _loadAppSettings() async {
     try {
       final file = await _appSettingsFile();
-      if (!file.existsSync()) return;
-      final raw = await file.readAsString();
-      final j = jsonDecode(raw) as Map<String, dynamic>;
+      Map<String, dynamic> j = const {};
+      if (file.existsSync()) {
+        final raw = await file.readAsString();
+        j = jsonDecode(raw) as Map<String, dynamic>;
+      }
+
       final projectRoot = j['projectRootFolder'] as String?;
       if (projectRoot != null && projectRoot.isNotEmpty) {
         final dir = Directory(projectRoot);
-        if (dir.existsSync()) {
+        if (dir.existsSync() && (_hasAnyProjectJson(dir) || dir.path.isNotEmpty)) {
           _projectRootFolder = dir.path;
         }
       }
+
+      final projectTreeUri = j['projectRootTreeUri'] as String?;
+      if (projectTreeUri != null && projectTreeUri.isNotEmpty) {
+        _projectRootTreeUri = projectTreeUri;
+      }
+
       final folder = j['defaultSampleFolder'] as String?;
-      if (folder == null || folder.isEmpty) return;
-      if (!Directory(folder).existsSync()) return;
-      _defaultSampleFolder = folder;
+      if (folder != null && folder.isNotEmpty && Directory(folder).existsSync()) {
+        _defaultSampleFolder = folder;
+      }
       _notifyListenersSafe();
     } catch (_) {
       // Ignore malformed/unavailable settings and keep defaults.
@@ -3305,6 +3393,7 @@ class AppState extends ChangeNotifier {
       final payload = jsonEncode({
         'defaultSampleFolder': _defaultSampleFolder,
         'projectRootFolder': _projectRootFolder,
+        'projectRootTreeUri': _projectRootTreeUri,
       });
       await file.writeAsString(payload, flush: true);
     } catch (_) {
@@ -3330,6 +3419,24 @@ class AppState extends ChangeNotifier {
   }
 
   Future<bool?> chooseProjectRootFolder() async {
+    if (Platform.isAndroid) {
+      try {
+        final pickedUri = await _projectStorageChannel.invokeMethod<String>(
+          'pickProjectFolder',
+        );
+        if (pickedUri == null || pickedUri.trim().isEmpty) {
+          return null;
+        }
+        _projectRootTreeUri = pickedUri.trim();
+        _projectRootFolder = null;
+        await _saveAppSettings();
+        _notifyListenersSafe();
+        return true;
+      } catch (_) {
+        return false;
+      }
+    }
+
     final picked = await FilePicker.platform.getDirectoryPath(
       dialogTitle: 'Choose where to create STRIA_PROJECTS',
     );
@@ -3348,6 +3455,7 @@ class AppState extends ChangeNotifier {
       dir.createSync(recursive: true);
     }
     _projectRootFolder = dir.path;
+    _projectRootTreeUri = null;
     await _saveAppSettings();
     _notifyListenersSafe();
     return true;
@@ -3373,6 +3481,7 @@ class AppState extends ChangeNotifier {
   }
 
   Future<String?> currentProjectPath() async {
+    if (_usesProjectTreeStorage) return _projectRootTreeUri;
     if (!hasProjectRootFolder) return null;
     final dir = await _projectDirForName(song.name);
     return dir.path;
@@ -3493,43 +3602,218 @@ class AppState extends ChangeNotifier {
     }
   }
 
+  Future<List<File>> _listProjectFiles() async {
+    final dir = await _projectRootDir();
+    final files = <File>[];
+    for (final entry in dir.listSync()) {
+      if (entry is! Directory) continue;
+      final projectFile = File('${entry.path}/project.json');
+      if (projectFile.existsSync()) {
+        files.add(projectFile);
+        continue;
+      }
+
+      // Legacy fallback
+      final legacyFile = File('${entry.path}/song.json');
+      if (legacyFile.existsSync()) {
+        files.add(legacyFile);
+      }
+    }
+    return files;
+  }
+
+  bool get _usesProjectTreeStorage =>
+      Platform.isAndroid &&
+      _projectRootTreeUri != null &&
+      _projectRootTreeUri!.isNotEmpty;
+
+  Future<List<({String folderName, String source, bool isUri})>>
+  _listProjectEntries() async {
+    if (_usesProjectTreeStorage) {
+      try {
+        final raw = await _projectStorageChannel.invokeMethod<List<dynamic>>(
+          'listProjectFiles',
+          {'treeUri': _projectRootTreeUri},
+        );
+        final entries = <({String folderName, String source, bool isUri})>[];
+        for (final item in (raw ?? const <dynamic>[])) {
+          if (item is! Map) continue;
+          final map = Map<String, dynamic>.from(item);
+          final folder = (map['folderName'] as String?)?.trim() ?? '';
+          final uri = (map['uri'] as String?)?.trim() ?? '';
+          if (uri.isEmpty) continue;
+          entries.add((folderName: folder, source: uri, isUri: true));
+        }
+        return entries;
+      } catch (_) {
+        return [];
+      }
+    }
+
+    final files = await _listProjectFiles();
+    return files
+        .map(
+          (f) => (
+            folderName: f.parent.path.split(Platform.pathSeparator).last,
+            source: f.path,
+            isUri: false,
+          ),
+        )
+        .toList();
+  }
+
+  Future<String?> _readProjectEntryRaw(
+    ({String folderName, String source, bool isUri}) entry,
+  ) async {
+    if (entry.isUri) {
+      return await _projectStorageChannel.invokeMethod<String>(
+        'readTextFile',
+        {'uri': entry.source},
+      );
+    }
+    return File(entry.source).readAsString();
+  }
+
   /// Returns the display names of all saved songs, sorted alphabetically.
   Future<List<String>> listSavedSongs() async {
     try {
-      final dir = await _projectRootDir();
-      final files = dir
-          .listSync()
-          .whereType<Directory>()
-          .map((d) => File('${d.path}/project.json'))
-          .where((f) => f.existsSync())
-          .toList();
+      final entries = await _listProjectEntries();
       final names = <String>[];
-      for (final f in files) {
+      for (final entry in entries) {
         try {
-          final j = jsonDecode(await f.readAsString()) as Map<String, dynamic>;
+          final raw = await _readProjectEntryRaw(entry);
+          if (raw == null || raw.isEmpty) {
+            names.add(entry.folderName);
+            continue;
+          }
+          final j = jsonDecode(raw) as Map<String, dynamic>;
           final n = (j['song'] as Map<String, dynamic>?)?['name'] as String?;
-          if (n != null) names.add(n);
-        } catch (_) {}
+          if (n != null && n.trim().isNotEmpty) {
+            names.add(n.trim());
+          } else {
+            // Legacy/fallback: show folder name when song name is missing.
+            names.add(entry.folderName);
+          }
+        } catch (_) {
+          // Corrupt or older schema: still expose the folder in the picker.
+          names.add(entry.folderName);
+        }
       }
-      return names..sort();
+      final unique = names.toSet().toList()..sort();
+      return unique;
     } catch (_) {
       return [];
     }
   }
 
+  ({SongModel song, List<InstrumentModel> instruments})? _decodeSongPayload(
+    String raw,
+  ) {
+    final decoded = jsonDecode(raw);
+    if (decoded is! Map<String, dynamic>) return null;
+
+    Map<String, dynamic>? songJson;
+    List<dynamic>? instrumentList;
+
+    // Current schema: { "song": {...}, "instruments": [...] }
+    final wrappedSong = decoded['song'];
+    if (wrappedSong is Map<String, dynamic>) {
+      songJson = wrappedSong;
+      instrumentList = decoded['instruments'] as List<dynamic>?;
+    }
+
+    // Legacy schema: song fields at top level (optionally with instruments).
+    if (songJson == null && decoded['name'] is String && decoded['patterns'] is List) {
+      songJson = decoded;
+      instrumentList = decoded['instruments'] as List<dynamic>?;
+    }
+
+    if (songJson == null) return null;
+
+    final loadedSong = SongModel.fromJson(songJson);
+    final loadedInstruments = <InstrumentModel>[];
+    for (final item in (instrumentList ?? const <dynamic>[])) {
+      if (item is! Map) continue;
+      try {
+        final map = Map<String, dynamic>.from(item);
+        loadedInstruments.add(InstrumentModel.fromJson(map));
+      } catch (_) {
+        // Skip malformed legacy instrument entries instead of failing whole load.
+      }
+    }
+
+    return (song: loadedSong, instruments: loadedInstruments);
+  }
+
   /// Load a song by its display name.
   Future<bool> loadSongByName(String name) async {
     try {
-      final file = await _songFile(name);
-      if (!file.existsSync()) return false;
+      _lastLoadError = null;
+      ({String folderName, String source, bool isUri})? selected;
+      String? selectedRaw;
+
+      if (!_usesProjectTreeStorage) {
+        // Fast path for current naming scheme (slug-based folder).
+        final direct = await _songFile(name);
+        if (direct.existsSync()) {
+          selected = (
+            folderName: direct.parent.path.split(Platform.pathSeparator).last,
+            source: direct.path,
+            isUri: false,
+          );
+        }
+      }
+
+      if (selected == null) {
+        // Fallback path: scan every project and match by embedded song name
+        // OR by folder name. This keeps older/migrated projects loadable.
+        final wanted = name.trim().toLowerCase();
+        final candidates = await _listProjectEntries();
+        for (final candidate in candidates) {
+          final folderName = candidate.folderName.trim().toLowerCase();
+          if (folderName == wanted) {
+            selected = candidate;
+            selectedRaw = await _readProjectEntryRaw(candidate);
+            break;
+          }
+          try {
+            final raw = await _readProjectEntryRaw(candidate);
+            if (raw == null || raw.isEmpty) continue;
+            final decoded = _decodeSongPayload(raw);
+            final embedded = decoded?.song.name.trim().toLowerCase();
+            if (embedded == wanted) {
+              selected = candidate;
+              selectedRaw = raw;
+              break;
+            }
+          } catch (_) {
+            // Keep scanning other candidates.
+          }
+        }
+      }
+
+      if (selected == null) {
+        _lastLoadError = 'Project file not found for "$name".';
+        return false;
+      }
       await _clearInsertEffectsInEngine();
-      final raw = await file.readAsString();
-      final j = jsonDecode(raw) as Map<String, dynamic>;
-      final loadedSong = SongModel.fromJson(j['song'] as Map<String, dynamic>);
-      final loadedInstruments = (j['instruments'] as List<dynamic>)
-          .map((e) => InstrumentModel.fromJson(e as Map<String, dynamic>))
-          .toList();
+      final raw = selectedRaw ?? await _readProjectEntryRaw(selected);
+      if (raw == null || raw.isEmpty) {
+        _lastLoadError = 'Project file is empty for "$name".';
+        return false;
+      }
+      final decoded = _decodeSongPayload(raw);
+      if (decoded == null) {
+        _lastLoadError = 'Unsupported project format in ${selected.source}';
+        return false;
+      }
+
+      final loadedSong = decoded.song;
+      final loadedInstruments = decoded.instruments;
       song = loadedSong;
+      for (var i = 0; i < instruments.length; i++) {
+        instruments[i] = InstrumentModel.empty(i + 1);
+      }
       for (
         var i = 0;
         i < instruments.length && i < loadedInstruments.length;
@@ -3540,10 +3824,23 @@ class AppState extends ChangeNotifier {
       for (var i = 0; i < instruments.length; i++) {
         final ins = instruments[i];
         if (ins.type == InstrumentType.sampler) {
-          await AudioEngine.instance.setSamplerSample(
-            i,
-            ins.sampler.samplePath,
-          );
+          try {
+            final ok = await AudioEngine.instance.setSamplerSample(
+              i,
+              ins.sampler.samplePath,
+            );
+            if (!ok) {
+              // Keep loading the song even if a sampler file is unavailable.
+              ins.sampler.samplePath = null;
+              ins.sampler.sampleName = null;
+              await AudioEngine.instance.setSamplerSample(i, null);
+            }
+          } catch (_) {
+            // Non-fatal: project data can still be loaded without the sample.
+            ins.sampler.samplePath = null;
+            ins.sampler.sampleName = null;
+            await AudioEngine.instance.setSamplerSample(i, null);
+          }
         }
       }
       _resetSongScopedState();
@@ -3555,7 +3852,8 @@ class AppState extends ChangeNotifier {
       _songStateVersion++;
       _notifyListenersSafe();
       return true;
-    } catch (_) {
+    } catch (e) {
+      _lastLoadError = e.toString();
       return false;
     }
   }

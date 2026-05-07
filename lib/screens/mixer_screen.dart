@@ -1073,6 +1073,8 @@ class _MixerScreenState extends State<MixerScreen> {
                 soloed: tracks[i].mixerSolo,
                 inserts: _inserts[i],
                 bypassed: _trackBypassed[i],
+                sendChannel: tracks[i].sendChannel,
+                isSendBus: state.isSendBus(i),
                 onVolume: (v) => state.setTrackMixerVolume(i, v),
                 onPan: (v) => state.setTrackMixerPan(i, v),
                 onMute: () => state.toggleTrackMixerMute(i),
@@ -1086,11 +1088,54 @@ class _MixerScreenState extends State<MixerScreen> {
                   state.setTrackInsertEffectName(i, slot, null);
                   AudioEngine.instance.setTrackInsertEffect(i, slot, -1, 0.0);
                 },
+                onSendTap: () => _onSendTap(i, state),
               ),
           ],
         ),
       ),
     );
+  }
+
+  void _onSendTap(int trackIdx, AppState state) async {
+    // Build choices: 0=Master, 1-8 valid channels excluding self and send buses
+    final tracks = state.currentPattern.tracks;
+    final numTracks = tracks.length;
+    final choices = <int>[0]; // 0 = Master
+    for (int ch = 1; ch <= numTracks; ch++) {
+      if (ch == trackIdx + 1) continue; // no self-send
+      choices.add(ch);
+    }
+
+    final currentSend = tracks[trackIdx].sendChannel;
+
+    final picked = await showDialog<int>(
+      context: context,
+      builder: (ctx) => SimpleDialog(
+        backgroundColor: const Color(0xFF1A1A1A),
+        title: Text(
+          'SEND: T${(trackIdx + 1).toString().padLeft(2, '0')}',
+          style: kStyleHeader.copyWith(color: kColAccent, fontSize: 13),
+        ),
+        children: choices.map((ch) {
+          final label = ch == 0 ? 'MASTER' : 'CH ${ch.toString().padLeft(2, '0')}';
+          final isCurrent = ch == currentSend;
+          return SimpleDialogOption(
+            onPressed: () => Navigator.of(ctx).pop(ch),
+            child: Text(
+              label,
+              style: kStyleBase.copyWith(
+                color: isCurrent ? kColAccent : kColHeader,
+                fontWeight: isCurrent ? FontWeight.w700 : FontWeight.normal,
+              ),
+            ),
+          );
+        }).toList(),
+      ),
+    );
+
+    if (picked != null) {
+      state.setTrackSendChannel(trackIdx, picked);
+    }
   }
 
   void _onInsertSlotTap(int trackIdx, int slotIdx) async {
@@ -1786,12 +1831,15 @@ class _ChannelStrip extends StatelessWidget {
   final bool soloed;
   final List<String?> inserts;
   final List<bool> bypassed;
+  final int sendChannel; // 0=master, 1-8=channel number
+  final bool isSendBus;
   final ValueChanged<double> onVolume;
   final ValueChanged<double> onPan;
   final VoidCallback onMute;
   final VoidCallback onSolo;
   final void Function(int slot) onInsertTap;
   final void Function(int slot) onInsertClear;
+  final VoidCallback onSendTap;
 
   const _ChannelStrip({
     required this.index,
@@ -1802,12 +1850,15 @@ class _ChannelStrip extends StatelessWidget {
     required this.soloed,
     required this.inserts,
     required this.bypassed,
+    required this.sendChannel,
+    required this.isSendBus,
     required this.onVolume,
     required this.onPan,
     required this.onMute,
     required this.onSolo,
     required this.onInsertTap,
     required this.onInsertClear,
+    required this.onSendTap,
   });
 
   @override
@@ -1922,6 +1973,42 @@ class _ChannelStrip extends StatelessWidget {
                         bypassed: bypassed[slot],
                         onTap: () => onInsertTap(slot),
                         onClear: () => onInsertClear(slot),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  // ── SEND destination button ──────────────────────
+                  GestureDetector(
+                    onTap: isSendBus ? null : onSendTap,
+                    child: Container(
+                      height: 22,
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        color: sendChannel > 0
+                            ? kColComplement.withAlpha(40)
+                            : Colors.transparent,
+                        border: Border.all(
+                          color: isSendBus
+                              ? kColInactive.withAlpha(60)
+                              : sendChannel > 0
+                                  ? kColComplement
+                                  : kColInactive.withAlpha(120),
+                        ),
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                      child: Text(
+                        sendChannel == 0
+                            ? 'MST'
+                            : 'CH ${sendChannel.toString().padLeft(2, '0')}',
+                        style: kStyleBase.copyWith(
+                          fontSize: 9,
+                          letterSpacing: 0.5,
+                          color: isSendBus
+                              ? kColInactive.withAlpha(80)
+                              : sendChannel > 0
+                                  ? kColComplement
+                                  : kColInactive,
+                        ),
                       ),
                     ),
                   ),

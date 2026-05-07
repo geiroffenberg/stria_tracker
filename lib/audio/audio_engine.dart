@@ -207,6 +207,13 @@ class AudioEngine {
     await _channel.invokeMethod('startExportTap');
   }
 
+  /// Set the send routing for all tracks. [routingPerTrack] is one int per
+  /// track: 0=route to master, 1-8=route audio into that channel's bus.
+  Future<void> setSendRouting(List<int> routingPerTrack) async {
+    if (!_initialised) return;
+    await _channel.invokeMethod('setSendRouting', routingPerTrack);
+  }
+
   /// Stop capturing and return the captured interleaved stereo float samples
   /// and the stream sample rate. Returns null samples on failure.
   Future<({List<double> samples, int sampleRate})> stopExportTap() async {

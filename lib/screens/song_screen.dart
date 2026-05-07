@@ -869,10 +869,17 @@ class _SongScreenState extends State<SongScreen> {
     final ok = await state.loadSongByName(name);
     if (!ctx.mounted) return;
     setState(() => _showLoadMenu = false);
+    final failReason = state.lastLoadError;
     ScaffoldMessenger.of(ctx).showSnackBar(
       SnackBar(
-        content: Text(ok ? 'Loaded "$name".' : 'Load failed.'),
-        duration: const Duration(seconds: 2),
+        content: Text(
+          ok
+              ? 'Loaded "$name".'
+              : failReason == null || failReason.isEmpty
+              ? 'Load failed.'
+              : 'Load failed: $failReason',
+        ),
+        duration: const Duration(seconds: 4),
       ),
     );
   }

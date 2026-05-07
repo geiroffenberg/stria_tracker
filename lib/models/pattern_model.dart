@@ -154,6 +154,7 @@ class PatternModel {
                 mixerPan: t.mixerPan,
                 mixerMute: t.mixerMute,
                 mixerSolo: t.mixerSolo,
+                sendChannel: t.sendChannel,
                 cells: t.cells.map((c) => c.copy()).toList(),
               ))
           .toList(),
