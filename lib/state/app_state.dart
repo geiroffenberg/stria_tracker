@@ -1138,6 +1138,68 @@ class AppState extends ChangeNotifier {
     copyPatternInsertAt(index, index + 1);
   }
 
+  bool canMergePatternWithNext(int index) {
+    if (index < 0 || index >= song.patterns.length - 1) return false;
+    final current = song.patterns[index];
+    final next = song.patterns[index + 1];
+    final currentBpm = current.bpm ?? 120.0;
+    final nextBpm = next.bpm ?? 120.0;
+    if (currentBpm != nextBpm) return false;
+    if (current.lpb != next.lpb) return false;
+    if (current.beatCount + next.beatCount > 99) return false;
+    return true;
+  }
+
+  bool canDoublePattern(int index) {
+    if (index < 0 || index >= song.patterns.length) return false;
+    if (song.patterns.length >= kMaxSongPatterns) return false;
+    final pattern = song.patterns[index];
+    if (pattern.beatCount * 2 > 99) return false;
+    return true;
+  }
+
+  void mergePatternWithNext(int index) {
+    if (!canMergePatternWithNext(index)) return;
+    final current = song.patterns[index];
+    final next = song.patterns[index + 1];
+    final mergedBeatCount = current.beatCount + next.beatCount;
+    final mergedBeatOverrides = <int?>[
+      ...current.beatLineOverrides,
+      ...next.beatLineOverrides,
+    ];
+
+    for (int trackIndex = 0; trackIndex < current.tracks.length; trackIndex++) {
+      final currentTrack = current.tracks[trackIndex];
+      final nextTrack = next.tracks[trackIndex];
+      currentTrack.cells.addAll(nextTrack.cells.map((cell) => cell.copy()));
+    }
+
+    current.beats = mergedBeatCount;
+    current.beatLineOverrides = mergedBeatOverrides;
+    current.syncTrackLengths();
+    song.patterns.removeAt(index + 1);
+    _currentPatternIndex = index.clamp(0, song.patterns.length - 1);
+    _currentArrangementSlotIndex = _currentArrangementSlotIndex.clamp(
+      0,
+      song.patterns.length - 1,
+    );
+    notifyListeners();
+  }
+
+  void doublePattern(int index) {
+    if (!canDoublePattern(index)) return;
+    duplicatePattern(index);
+    mergePatternWithNext(index);
+    _currentPatternIndex = index.clamp(0, song.patterns.length - 1);
+    _currentArrangementSlotIndex = _currentPatternIndex;
+    if (_playbackFollowsSong) {
+      _playheadArrangementSlot = _currentArrangementSlotIndex;
+      _syncCurrentPatternToSongPlayhead();
+      playheadRow = 0;
+    }
+    notifyListeners();
+  }
+
   void movePatternUp(int index) {
     if (index <= 0 || index >= song.patterns.length) return;
     final pat = song.patterns.removeAt(index);

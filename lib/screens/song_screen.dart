@@ -102,6 +102,28 @@ class _SongScreenState extends State<SongScreen> {
     );
   }
 
+  void _mergeSelectedPattern(AppState state, int patternIndex) {
+    if (!state.canMergePatternWithNext(patternIndex)) return;
+    state.mergePatternWithNext(patternIndex);
+    setState(
+      () => _selectedPatternIndex = patternIndex.clamp(
+        0,
+        state.song.patterns.length - 1,
+      ),
+    );
+  }
+
+  void _doubleSelectedPattern(AppState state, int patternIndex) {
+    if (!state.canDoublePattern(patternIndex)) return;
+    state.doublePattern(patternIndex);
+    setState(
+      () => _selectedPatternIndex = patternIndex.clamp(
+        0,
+        state.song.patterns.length - 1,
+      ),
+    );
+  }
+
   void _newAfterSelectedPattern(AppState state, int patternIndex) {
     state.insertNewPatternAt(patternIndex + 1);
     setState(
@@ -259,12 +281,16 @@ class _SongScreenState extends State<SongScreen> {
               canMoveUp: selectedPatternIndex > 0,
               canMoveDown:
                   selectedPatternIndex < state.song.patterns.length - 1,
+              canDouble: state.canDoublePattern(selectedPatternIndex),
+              canMerge: state.canMergePatternWithNext(selectedPatternIndex),
               canDelete: state.song.patterns.length > 1,
               onMoveUp: () =>
                   _moveSelectedPatternUp(state, selectedPatternIndex),
               onMoveDown: () =>
                   _moveSelectedPatternDown(state, selectedPatternIndex),
               onCopy: () => _copySelectedPattern(state, selectedPatternIndex),
+              onDouble: () => _doubleSelectedPattern(state, selectedPatternIndex),
+              onMerge: () => _mergeSelectedPattern(state, selectedPatternIndex),
               onNewAfter: () =>
                   _newAfterSelectedPattern(state, selectedPatternIndex),
               onDelete: () =>
@@ -1172,10 +1198,14 @@ class _SongTimelinePainter extends CustomPainter {
 class _SongPatternActionBar extends StatelessWidget {
   final bool canMoveUp;
   final bool canMoveDown;
+  final bool canDouble;
+  final bool canMerge;
   final bool canDelete;
   final VoidCallback onMoveUp;
   final VoidCallback onMoveDown;
   final VoidCallback onCopy;
+  final VoidCallback onDouble;
+  final VoidCallback onMerge;
   final VoidCallback onNewAfter;
   final VoidCallback onDelete;
   final VoidCallback onClose;
@@ -1183,10 +1213,14 @@ class _SongPatternActionBar extends StatelessWidget {
   const _SongPatternActionBar({
     required this.canMoveUp,
     required this.canMoveDown,
+    required this.canDouble,
+    required this.canMerge,
     required this.canDelete,
     required this.onMoveUp,
     required this.onMoveDown,
     required this.onCopy,
+    required this.onDouble,
+    required this.onMerge,
     required this.onNewAfter,
     required this.onDelete,
     required this.onClose,
@@ -1204,6 +1238,8 @@ class _SongPatternActionBar extends StatelessWidget {
           _SongActionBtn(label: '↓', onTap: onMoveDown, enabled: canMoveDown),
           const SizedBox(width: 4),
           _SongActionBtn(label: 'COPY', onTap: onCopy),
+          _SongActionBtn(label: '2X', onTap: onDouble, enabled: canDouble),
+          _SongActionBtn(label: 'MERGE', onTap: onMerge, enabled: canMerge),
           _SongActionBtn(label: 'NEW', onTap: onNewAfter),
           const Spacer(),
           _SongActionBtn(

@@ -865,6 +865,11 @@ class _FxCmdActions extends StatelessWidget {
                   color: kColStopBtn,
                   onTap: () => state.clearColumnValue(row, column),
                 ),
+              const SizedBox(width: 4),
+              _ActionBtn(
+                label: '✕',
+                onTap: () => state.clearSelection(),
+              ),
             ],
           ),
           const SizedBox(height: 4),

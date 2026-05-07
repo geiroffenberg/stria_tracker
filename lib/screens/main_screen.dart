@@ -78,8 +78,9 @@ class _MainScreenState extends State<MainScreen> {
           return Expanded(
             child: GestureDetector(
               onTap: () {
+                if (state.isPlaying) state.stop();
                 setState(() => _tabIndex = i);
-                state.setPlaybackFollowsSong(i == 0);
+                state.setPlaybackFollowsSong(i != 1); // only PATTERN tab loops
               },
               child: Container(
                 decoration: BoxDecoration(
