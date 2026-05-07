@@ -434,6 +434,22 @@ class AudioEnginePlugin : FlutterPlugin, MethodCallHandler {
                     result.success(0)
                 }
             }
+            "startExportTap" -> {
+                if (enginePtr != 0L) nativeStartExportTap(enginePtr)
+                result.success(null)
+            }
+            "stopExportTap" -> {
+                if (enginePtr != 0L) {
+                    val outRate = IntArray(1)
+                    val samples = nativeStopExportTap(enginePtr, outRate)
+                    result.success(mapOf(
+                        "samples" to samples?.toList(),
+                        "sampleRate" to outRate[0]
+                    ))
+                } else {
+                    result.success(mapOf("samples" to emptyList<Float>(), "sampleRate" to 48000))
+                }
+            }
             "dispose" -> {
                 if (enginePtr != 0L) {
                     nativeDispose(enginePtr)
@@ -511,6 +527,8 @@ class AudioEnginePlugin : FlutterPlugin, MethodCallHandler {
     private external fun nativeStopRecording(ptr: Long, outSampleRate: IntArray): FloatArray?
     private external fun nativeIsVoicePlaying(ptr: Long, trackIdx: Int): Boolean
     private external fun nativeGetVoiceEnvelopeStage(ptr: Long, trackIdx: Int): Int
+    private external fun nativeStartExportTap(ptr: Long)
+    private external fun nativeStopExportTap(ptr: Long, outSampleRate: IntArray): FloatArray?
     private external fun nativeDispose(ptr: Long)
 
     companion object {

@@ -2285,8 +2285,19 @@ oboe::DataCallbackResult AudioEngine::onAudioReady(
         out[i * 2 + 1] = mMasterBusR[i];
     }
 
-    // ── Record output if enabled ──────────────────────────────────────────────
-    // (Recording is now done on a separate input stream, not on playback output)
+    // ── Export tap: copy final stereo output to export buffer ─────────────────
+    if (mExportTapActive.load()) {
+        std::lock_guard<std::mutex> exportLock(mExportMutex);
+        if (mExportTapActive.load()) { // re-check under lock
+            const int totalSamples = static_cast<int>(mExportBuffer.size());
+            if (totalSamples < kMaxExportFrames * 2) {
+                mExportBuffer.insert(
+                    mExportBuffer.end(),
+                    out,
+                    out + numFrames * 2);
+            }
+        }
+    }
 
     return oboe::DataCallbackResult::Continue;
 }
@@ -2436,5 +2447,29 @@ std::vector<float> AudioEngine::stopRecording(int& outSampleRate) {
          mRecordingBuffer.size(), outSampleRate);
 
     std::vector<float> result = std::move(mRecordingBuffer);
+    return result;
+}
+
+// ---------------------------------------------------------------------------
+// Export tap — capture stereo master output during song playback
+// ---------------------------------------------------------------------------
+
+void AudioEngine::startExportTap() {
+    std::lock_guard<std::mutex> lock(mExportMutex);
+    mExportBuffer.clear();
+    mExportTapActive.store(true);
+    LOGI("startExportTap: export capture started");
+}
+
+std::vector<float> AudioEngine::stopExportTap(int& outSampleRate) {
+    mExportTapActive.store(false);
+
+    std::lock_guard<std::mutex> lock(mExportMutex);
+
+    outSampleRate = static_cast<int>(mCachedSampleRate);
+    LOGI("stopExportTap: %zu interleaved frames captured at %d Hz",
+         mExportBuffer.size() / 2, outSampleRate);
+
+    std::vector<float> result = std::move(mExportBuffer);
     return result;
 }

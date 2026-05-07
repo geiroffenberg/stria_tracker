@@ -200,6 +200,24 @@ class AudioEngine {
     return result ?? 0;
   }
 
+  /// Begin capturing the stereo master output into an internal buffer.
+  /// Call before starting song playback for WAV export.
+  Future<void> startExportTap() async {
+    if (!_initialised) return;
+    await _channel.invokeMethod('startExportTap');
+  }
+
+  /// Stop capturing and return the captured interleaved stereo float samples
+  /// and the stream sample rate. Returns null samples on failure.
+  Future<({List<double> samples, int sampleRate})> stopExportTap() async {
+    if (!_initialised) return (samples: const <double>[], sampleRate: 48000);
+    final result = await _channel.invokeMethod<Map>('stopExportTap');
+    final rawSamples = result?['samples'] as List? ?? const [];
+    final sampleRate = (result?['sampleRate'] as int?) ?? 48000;
+    final samples = rawSamples.map((e) => (e as num).toDouble()).toList();
+    return (samples: samples, sampleRate: sampleRate);
+  }
+
   /// Configure a master bus insert effect.
   /// [slotIdx] is 0-5 (6 insert slots).
   /// [effectType] is -1=empty, 0=reverb.

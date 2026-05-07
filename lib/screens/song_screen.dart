@@ -16,7 +16,9 @@ enum _SongMenuAction {
   saveSong,
   loadSong,
   chooseProjectFolder,
+  showProjectPath,
   changePalette,
+  exportWav,
 }
 
 /// Song arrangement screen.
@@ -372,6 +374,10 @@ class _SongScreenState extends State<SongScreen> {
                         style: TextStyle(fontSize: 16),
                       ),
                     ),
+                    PopupMenuItem(
+                      value: _SongMenuAction.showProjectPath,
+                      child: Text('Show Path', style: TextStyle(fontSize: 16)),
+                    ),
                     PopupMenuDivider(),
                     PopupMenuItem(
                       value: _SongMenuAction.changePalette,
@@ -382,9 +388,9 @@ class _SongScreenState extends State<SongScreen> {
                     ),
                     PopupMenuDivider(),
                     PopupMenuItem(
-                      enabled: false,
+                      value: _SongMenuAction.exportWav,
                       child: Text(
-                        'Export WAV (coming soon)',
+                        'Export WAV',
                         style: TextStyle(fontSize: 16),
                       ),
                     ),
@@ -602,8 +608,14 @@ class _SongScreenState extends State<SongScreen> {
       case _SongMenuAction.chooseProjectFolder:
         _handleChooseProjectFolder(ctx, state);
         break;
+      case _SongMenuAction.showProjectPath:
+        _showProjectPath(ctx, state);
+        break;
       case _SongMenuAction.changePalette:
         _showPalettePicker(ctx);
+        break;
+      case _SongMenuAction.exportWav:
+        _handleExportWav(ctx, state);
         break;
     }
   }
@@ -651,6 +663,78 @@ class _SongScreenState extends State<SongScreen> {
         duration: Duration(seconds: 2),
       ),
     );
+  }
+
+  Future<void> _showProjectPath(BuildContext ctx, AppState state) async {
+    final projectPath = await state.currentProjectPath();
+    if (!ctx.mounted) return;
+
+    final text = projectPath ?? 'No project folder set yet.';
+    await showDialog<void>(
+      context: ctx,
+      builder: (_) => AlertDialog(
+        title: const Text('Project Path'),
+        content: SelectableText(text),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _handleExportWav(BuildContext ctx, AppState state) async {
+    if (state.isPlaying) {
+      ScaffoldMessenger.of(ctx).showSnackBar(
+        const SnackBar(
+          content: Text('Stop playback before exporting.'),
+          duration: Duration(seconds: 2),
+        ),
+      );
+      return;
+    }
+
+    // Show progress dialog — export takes as long as the song.
+    if (!ctx.mounted) return;
+    showDialog<void>(
+      context: ctx,
+      barrierDismissible: false,
+      builder: (_) => const AlertDialog(
+        title: Text('Exporting WAV'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            SizedBox(height: 16),
+            CircularProgressIndicator(),
+            SizedBox(height: 16),
+            Text('Playing song and capturing audio…'),
+          ],
+        ),
+      ),
+    );
+
+    final path = await state.exportSongToWav();
+
+    if (!ctx.mounted) return;
+    Navigator.of(ctx).pop(); // close progress dialog
+
+    if (path == null) {
+      ScaffoldMessenger.of(ctx).showSnackBar(
+        const SnackBar(
+          content: Text('Export failed or song is empty.'),
+          duration: Duration(seconds: 3),
+        ),
+      );
+    } else {
+      ScaffoldMessenger.of(ctx).showSnackBar(
+        SnackBar(
+          content: Text('Saved: $path'),
+          duration: const Duration(seconds: 5),
+        ),
+      );
+    }
   }
 
   void _showPalettePicker(BuildContext ctx) {

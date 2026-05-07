@@ -9,6 +9,7 @@ import 'package:flutter/widgets.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import '../audio/audio_engine.dart';
+import '../audio/wav_encoder.dart';
 import '../models/cell.dart';
 import '../models/instrument_model.dart';
 import '../models/note_value.dart';
@@ -121,6 +122,7 @@ class AppState extends ChangeNotifier {
   int _currentArrangementSlotIndex = 0;
   int _playheadArrangementSlot = 0;
   int? _queuedArrangementSlot;
+  Completer<void>? _exportCompleter; // non-null while a WAV export is in progress
 
   // Song mode native queue tracking.
   List<({int arrangementSlot, int rowWithinSlot})> _songRowMap = [];
@@ -1584,7 +1586,80 @@ class AppState extends ChangeNotifier {
     // Restore mixer snapshot (UI state is source of truth) before stopping.
     _queueCurrentMixerSnapshotToEngine();
     AudioEngine.instance.stop();
+    // Signal any in-progress WAV export that song playback has ended.
+    final completer = _exportCompleter;
+    _exportCompleter = null;
+    completer?.complete();
     notifyListeners();
+  }
+
+  /// Export the current song to a WAV file by tapping the stereo output
+  /// while the song plays from start to finish.
+  ///
+  /// Returns the path of the saved file on success, or null on failure.
+  Future<String?> exportSongToWav() async {
+    if (isPlaying) return null; // don't interrupt live playback
+    if (song.patterns.isEmpty) return null;
+
+    // Ensure song-follow mode so the whole arrangement plays once.
+    final wasFollowing = _playbackFollowsSong;
+    _playbackFollowsSong = true;
+    _playheadArrangementSlot = 0;
+    _syncCurrentPatternToSongPlayhead();
+    playheadRow = 0;
+
+    // Arm the tap before starting the engine.
+    await AudioEngine.instance.startExportTap();
+
+    // Create a completer that stop() will signal when the song ends.
+    _exportCompleter = Completer<void>();
+    final done = _exportCompleter!.future;
+
+    // Start playback.
+    _resetInstrumentCarry();
+    _captureStartStates();
+    isPlaying = true;
+    await _loadNativeSongPlaybackQueue(startSlot: 0, startRow: 0);
+    await AudioEngine.instance.start();
+    _startNativeSongPoller();
+    notifyListeners();
+
+    // Wait for song to finish (stop() completes the future).
+    await done;
+
+    // Retrieve captured audio.
+    final tap = await AudioEngine.instance.stopExportTap();
+
+    // Restore playback mode.
+    _playbackFollowsSong = wasFollowing;
+
+    if (tap.samples.isEmpty) return null;
+
+    // Build stereo WAV — samples are interleaved L,R floats.
+    final wavBytes = WavEncoder.encodeWav(
+      samples: tap.samples,
+      sampleRate: tap.sampleRate,
+      numChannels: 2,
+    );
+
+    // Save next to the project folder, or fall back to app documents dir.
+    final String dirPath;
+    final projectRoot = _projectRootFolder;
+    if (projectRoot != null && projectRoot.isNotEmpty) {
+      dirPath = projectRoot;
+    } else {
+      final dir = await getApplicationDocumentsDirectory();
+      dirPath = dir.path;
+    }
+
+    final safeName = song.name
+        .replaceAll(RegExp(r'[^\w\s\-]'), '')
+        .trim()
+        .replaceAll(RegExp(r'\s+'), '_');
+    final fileName = '${safeName.isEmpty ? 'export' : safeName}.wav';
+    final filePath = '$dirPath/$fileName';
+    await File(filePath).writeAsBytes(wavBytes);
+    return filePath;
   }
 
   void toggleRecord() {
@@ -3233,6 +3308,12 @@ class AppState extends ChangeNotifier {
   Future<File> _songFile(String name) async {
     final dir = await _projectDirForName(name);
     return File('${dir.path}/project.json');
+  }
+
+  Future<String?> currentProjectPath() async {
+    if (!hasProjectRootFolder) return null;
+    final dir = await _projectDirForName(song.name);
+    return dir.path;
   }
 
   Future<Directory> _songSamplesDir([String? songName]) async {

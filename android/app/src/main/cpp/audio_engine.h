@@ -450,6 +450,14 @@ public:
     /// Returns EnvelopeStage enum value: 0=Idle, 1=Attack, 2=Decay, 3=Sustain, 4=Release
     int getVoiceEnvelopeStage(int trackIdx) const;
 
+    /// Begin capturing the stereo master output into the export buffer.
+    /// Clears any previously captured data.
+    void startExportTap();
+
+    /// Stop capturing and return the accumulated interleaved stereo float samples.
+    /// Also returns the stream sample rate via [outSampleRate].
+    std::vector<float> stopExportTap(int& outSampleRate);
+
 private:
     // Oboe callback shim for the recording (input) stream.
     // Oboe requires a stable pointer so we heap-allocate it.
@@ -505,6 +513,12 @@ private:
     int                              mRecordingWarmupFrames{0}; // frames to skip at stream open
     static constexpr int             kMaxRecordingFrames  = 44100 * 60; // 60 seconds at 44.1kHz
     static constexpr int             kWarmupFrames        = 4096;       // ~85ms at 48kHz
+
+    // Export tap state (stereo output capture during song playback)
+    std::mutex                       mExportMutex;
+    std::atomic<bool>                mExportTapActive{false};
+    std::vector<float>               mExportBuffer;       // interleaved stereo L,R,...
+    static constexpr int             kMaxExportFrames = 48000 * 60 * 20; // 20 min at 48 kHz
 
     // Insert effects (master + per-track)
     static constexpr int             kMaxInsertSlots = 6;
