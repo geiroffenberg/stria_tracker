@@ -654,7 +654,7 @@ class _SongScreenState extends State<SongScreen> {
       ScaffoldMessenger.of(ctx).showSnackBar(
         const SnackBar(
           content: Text(
-            'Choose where STRIA_PROJECTS should be created before saving or loading songs.',
+            'Choose a project folder before saving, loading, or exporting songs.',
           ),
           duration: Duration(seconds: 2),
         ),
@@ -663,7 +663,7 @@ class _SongScreenState extends State<SongScreen> {
     }
     ScaffoldMessenger.of(ctx).showSnackBar(
       SnackBar(
-        content: Text('Project folder set to STRIA_PROJECTS.'),
+        content: Text('Project folder selected.'),
         duration: const Duration(seconds: 2),
       ),
     );
@@ -685,7 +685,7 @@ class _SongScreenState extends State<SongScreen> {
     setState(() => _showLoadMenu = false);
     ScaffoldMessenger.of(ctx).showSnackBar(
       const SnackBar(
-        content: Text('Project folder updated to STRIA_PROJECTS.'),
+        content: Text('Project folder updated.'),
         duration: Duration(seconds: 2),
       ),
     );
@@ -712,6 +712,9 @@ class _SongScreenState extends State<SongScreen> {
   }
 
   Future<void> _handleExportWav(BuildContext ctx, AppState state) async {
+    final ready = await _ensureProjectFolder(ctx, state);
+    if (!ready) return;
+
     if (state.isPlaying) {
       ScaffoldMessenger.of(ctx).showSnackBar(
         const SnackBar(

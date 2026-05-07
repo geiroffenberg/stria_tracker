@@ -22,6 +22,14 @@ class TransportBar extends StatelessWidget {
             label: state.isPlaying ? 'STOP' : 'PLAY',
             onTap: state.isPlaying ? state.stop : state.play,
           ),
+          const SizedBox(width: 8),
+          _TransportButton(
+            icon: Icons.repeat,
+            color: state.loopPlaybackEnabled ? kColAccent : kColInactive,
+            label: 'LOOP',
+            pressed: state.loopPlaybackEnabled,
+            onTap: () => state.setLoopPlaybackEnabled(!state.loopPlaybackEnabled),
+          ),
           const SizedBox(width: 10),
           Expanded(
             child: Row(
@@ -124,12 +132,14 @@ class _TransportButton extends StatelessWidget {
   final IconData icon;
   final Color    color;
   final String   label;
+  final bool pressed;
   final VoidCallback onTap;
 
   const _TransportButton({
     required this.icon,
     required this.color,
     required this.label,
+    this.pressed = false,
     required this.onTap,
   });
 
@@ -138,8 +148,16 @@ class _TransportButton extends StatelessWidget {
     return GestureDetector(
       onTap: onTap,
       behavior: HitTestBehavior.opaque,
-      child: SizedBox(
+      child: Container(
         width: 60,
+        decoration: BoxDecoration(
+          color: pressed ? color.withAlpha(28) : Colors.transparent,
+          border: Border.all(
+            color: pressed ? color : Colors.transparent,
+            width: 1,
+          ),
+          borderRadius: BorderRadius.circular(4),
+        ),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [

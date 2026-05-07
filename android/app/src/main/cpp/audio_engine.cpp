@@ -266,6 +266,11 @@ uint32_t readLe32(const uint8_t* p) {
 
 AudioEngine::AudioEngine() {
     for (auto& v : mVoices) v = Voice{};
+    for (int i = 0; i < kMaxVoices; ++i) {
+        mTrackVolume[i] = 1.0f;
+        mTrackMute[i]   = false;
+        mTrackSolo[i]   = false;
+    }
 }
 
 AudioEngine::~AudioEngine() {
@@ -696,13 +701,22 @@ void AudioEngine::triggerRowLocked(const std::vector<int>& rowData) {
             if (v.currentFreq <= 0.0f || v.glideSec <= 0.0f) {
                 v.currentFreq = v.targetFreq;
             }
-            // Reset filter integrator state on each note-on to avoid stale-energy bursts.
-            v.filterLow = 0.0f;
-            v.filterBand = 0.0f;
-            // Reset envelope levels so the attack ramp always starts from
-            // silence — this makes every retrigger (RET) clearly audible.
-            v.envLevel       = 0.0f;
-            v.filterEnvLevel = 0.0f;
+            // Only reset filter state when the voice is effectively idle.
+            // Resetting during an overlapping retrigger causes discontinuities (clicks).
+            const bool voiceWasActive =
+                (v.envStage != EnvelopeStage::Idle) ||
+                (v.gain > 1e-4f) ||
+                (v.gainTarget > 1e-4f);
+            if (!voiceWasActive) {
+                v.filterLow = 0.0f;
+                v.filterBand = 0.0f;
+            }
+            // Keep envelope continuity for overlapping retriggers to avoid
+            // hard amplitude/cutoff discontinuities (clicks).
+            if (!voiceWasActive) {
+                v.envLevel       = 0.0f;
+                v.filterEnvLevel = 0.0f;
+            }
             v.noteHeld   = true;
             v.envStage   = EnvelopeStage::Attack;
             v.filterEnvStage = EnvelopeStage::Attack;
@@ -1752,10 +1766,18 @@ oboe::DataCallbackResult AudioEngine::onAudioReady(
                 if (v.currentFreq <= 0.0f || v.glideSec <= 0.0f) {
                     v.currentFreq = v.targetFreq;
                 }
-                v.filterLow      = 0.0f;
-                v.filterBand     = 0.0f;
-                v.envLevel       = 0.0f;
-                v.filterEnvLevel = 0.0f;
+                const bool voiceWasActive =
+                    (v.envStage != EnvelopeStage::Idle) ||
+                    (v.gain > 1e-4f) ||
+                    (v.gainTarget > 1e-4f);
+                if (!voiceWasActive) {
+                    v.filterLow  = 0.0f;
+                    v.filterBand = 0.0f;
+                }
+                if (!voiceWasActive) {
+                    v.envLevel       = 0.0f;
+                    v.filterEnvLevel = 0.0f;
+                }
                 v.noteHeld       = true;
                 v.envStage       = EnvelopeStage::Attack;
                 v.filterEnvStage = EnvelopeStage::Attack;
@@ -1843,10 +1865,18 @@ oboe::DataCallbackResult AudioEngine::onAudioReady(
                 if (v.currentFreq <= 0.0f || v.glideSec <= 0.0f) {
                     v.currentFreq = v.targetFreq;
                 }
-                v.filterLow      = 0.0f;
-                v.filterBand     = 0.0f;
-                v.envLevel       = 0.0f;
-                v.filterEnvLevel = 0.0f;
+                const bool voiceWasActive =
+                    (v.envStage != EnvelopeStage::Idle) ||
+                    (v.gain > 1e-4f) ||
+                    (v.gainTarget > 1e-4f);
+                if (!voiceWasActive) {
+                    v.filterLow  = 0.0f;
+                    v.filterBand = 0.0f;
+                }
+                if (!voiceWasActive) {
+                    v.envLevel       = 0.0f;
+                    v.filterEnvLevel = 0.0f;
+                }
                 v.noteHeld       = true;
                 v.envStage       = EnvelopeStage::Attack;
                 v.filterEnvStage = EnvelopeStage::Attack;
@@ -1916,8 +1946,17 @@ oboe::DataCallbackResult AudioEngine::onAudioReady(
                     // M02: master volume (0-99 → 0.0-1.0)
                     mMasterVolume.store(ev.value / 99.0f);
                 }
+            } else if (ev.channel >= 1 && ev.channel <= kMaxVoices) {
+                const int ti = ev.channel - 1;
+                if (ev.controller == 2) {          // mute
+                    mTrackMute[ti] = (ev.value > 0);
+                } else if (ev.controller == 3) {   // solo
+                    mTrackSolo[ti] = (ev.value > 0);
+                } else if (ev.controller == 4) {   // volume (0-99 → 0..1)
+                    mTrackVolume[ti] = ev.value / 99.0f;
+                }
+                // controller == 1 (pan) is handled per-voice; skip at bus level
             }
-            // TODO: Channel 1-15 mute/volume/pan/solo states
         }
         // Clear mixer commands after processing.
         mPendingMixerCommands.clear();
@@ -2051,8 +2090,10 @@ oboe::DataCallbackResult AudioEngine::onAudioReady(
             : 1.0f;
         const float lfoHz = normToLfoHz(v.lfoRateNorm);
         const double lfoPhaseInc = 2.0 * M_PI * lfoHz / sampleRate;
-        // Chamberlin SVF stays stable with conservative damping.
-        const float damp = std::clamp(1.8f - (v.resonanceNorm * 1.4f), 0.25f, 1.8f);
+        // Chamberlin SVF damping: map resonance to a musically useful Q range.
+        // Keeping this <= 1.0 avoids over-damping that can turn high-cutoff
+        // content into mostly transients/clicks.
+        const float damp = std::max(0.05f, 1.0f - (v.resonanceNorm * 0.95f));
 
         for (int i = 0; i < numFrames; ++i) {
             v.gain += smoothK * (v.gainTarget - v.gain);
@@ -2261,6 +2302,12 @@ oboe::DataCallbackResult AudioEngine::onAudioReady(
         }
     }
 
+    // Pre-compute solo flag: if any track is soloed, non-soloed tracks are silenced.
+    bool anySolo = false;
+    for (int t = 0; t < kMaxVoices; ++t) {
+        if (mTrackSolo[t]) { anySolo = true; break; }
+    }
+
     // Allocate/zero send accumulation buffers for destinations.
     // We reuse a local array of per-track accumulation vectors.
     // For send destination tracks we zero their bus here (it will be
@@ -2288,6 +2335,18 @@ oboe::DataCallbackResult AudioEngine::onAudioReady(
                 numFrames,
                 mTrackInserts[track]
             );
+        }
+
+        // Apply per-track bus-level gain, mute, and solo.
+        {
+            const bool silenced = mTrackMute[track] || (anySolo && !mTrackSolo[track]);
+            const float gain = silenced ? 0.0f : mTrackVolume[track];
+            if (gain != 1.0f) {
+                for (int i = 0; i < numFrames; ++i) {
+                    mTrackBusL[track][i] *= gain;
+                    mTrackBusR[track][i] *= gain;
+                }
+            }
         }
 
         const int dest = mTrackSendChannel[track];
@@ -2327,6 +2386,18 @@ oboe::DataCallbackResult AudioEngine::onAudioReady(
                 numFrames,
                 mTrackInserts[track]
             );
+        }
+
+        // Apply per-track bus-level gain, mute, and solo for the send destination.
+        {
+            const bool silenced = mTrackMute[track] || (anySolo && !mTrackSolo[track]);
+            const float gain = silenced ? 0.0f : mTrackVolume[track];
+            if (gain != 1.0f) {
+                for (int i = 0; i < numFrames; ++i) {
+                    mTrackBusL[track][i] *= gain;
+                    mTrackBusR[track][i] *= gain;
+                }
+            }
         }
 
         // Send-destination tracks always route to master (no chaining).

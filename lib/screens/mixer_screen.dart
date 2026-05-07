@@ -980,6 +980,20 @@ class _MixerScreenState extends State<MixerScreen> {
     _trackCompressorStates[trackIdx][slotIdx] = const _CompressorUiState();
   }
 
+  void _resetMasterInsertSlotState(int slot) {
+    _masterInserts[slot] = null;
+    _masterBypassed[slot] = false;
+    _masterReverbStates[slot] = const _ReverbUiState();
+    _masterDelayStates[slot] = const _DelayUiState();
+    _masterFilterStates[slot] = const _FilterUiState();
+    _masterDistortionStates[slot] = const _DistortionUiState();
+    _masterBitcrusherStates[slot] = const _BitcrusherUiState();
+    _masterLimiterStates[slot] = const _LimiterUiState();
+    _masterChorusStates[slot] = const _ChorusUiState();
+    _masterEqStates[slot] = const _EqUiState();
+    _masterCompressorStates[slot] = const _CompressorUiState();
+  }
+
   void _resetMasterInsertState() {
     for (int slot = 0; slot < kInsertSlots; slot++) {
       _masterInserts[slot] = null;
@@ -996,6 +1010,141 @@ class _MixerScreenState extends State<MixerScreen> {
     }
   }
 
+  // Serializes all current in-memory insert state to a Map suitable for
+  // passing to AppState.setInsertSnapshot().
+  Map<String, dynamic> _buildInsertSnapshot() {
+    if (!_insertsInitialized) return {};
+
+    Map<String, dynamic>? _serSlot(
+      String? type,
+      bool bypass, {
+      required bool onMaster,
+      int? t,
+      required int s,
+    }) {
+      if (type == null) return null;
+      final Map<String, dynamic> p;
+      switch (type) {
+        case 'REVERB':
+          final r = onMaster ? _masterReverbStates[s] : _trackReverbStates[t!][s];
+          p = {'roomSize': r.roomSize, 'damp': r.damp, 'width': r.width, 'dry': r.dry, 'wet': r.wet, 'freeze': r.freeze};
+        case 'DELAY':
+          final d = onMaster ? _masterDelayStates[s] : _trackDelayStates[t!][s];
+          p = {'timeMs': d.timeMs, 'feedback': d.feedback, 'hpCutoff': d.hpCutoff, 'dry': d.dry, 'wet': d.wet, 'sync': d.sync};
+        case 'FILTER':
+          final f = onMaster ? _masterFilterStates[s] : _trackFilterStates[t!][s];
+          p = {'cutoff': f.cutoff, 'resonance': f.resonance, 'mode': f.mode, 'dry': f.dry, 'wet': f.wet};
+        case 'DISTORTION':
+          final d = onMaster ? _masterDistortionStates[s] : _trackDistortionStates[t!][s];
+          p = {'drive': d.drive, 'tone': d.tone, 'distType': d.distType, 'dry': d.dry, 'wet': d.wet};
+        case 'BITCRUSHER':
+          final b = onMaster ? _masterBitcrusherStates[s] : _trackBitcrusherStates[t!][s];
+          p = {'bits': b.bits, 'rate': b.rate, 'dry': b.dry, 'wet': b.wet};
+        case 'LIMITER':
+          final l = onMaster ? _masterLimiterStates[s] : _trackLimiterStates[t!][s];
+          p = {'gain': l.gain, 'dry': l.dry, 'wet': l.wet};
+        case 'CHORUS':
+          final c = onMaster ? _masterChorusStates[s] : _trackChorusStates[t!][s];
+          p = {'rate': c.rate, 'depth': c.depth, 'delay': c.delay, 'stereo': c.stereo, 'dry': c.dry, 'wet': c.wet};
+        case 'EQ':
+          final e = onMaster ? _masterEqStates[s] : _trackEqStates[t!][s];
+          p = {'lowGain': e.lowGain, 'lowFreq': e.lowFreq, 'midGain': e.midGain, 'midFreq': e.midFreq, 'midQ': e.midQ, 'highGain': e.highGain, 'highFreq': e.highFreq, 'dry': e.dry, 'wet': e.wet};
+        case 'COMPRESSOR':
+          final c = onMaster ? _masterCompressorStates[s] : _trackCompressorStates[t!][s];
+          p = {'threshold': c.threshold, 'ratio': c.ratio, 'attack': c.attack, 'release': c.release, 'makeup': c.makeup, 'knee': c.knee, 'dry': c.dry, 'wet': c.wet};
+        default:
+          p = {};
+      }
+      return {'type': type, 'bypass': bypass, ...p};
+    }
+
+    final master = List<Map<String, dynamic>?>.generate(
+      kInsertSlots,
+      (s) => _serSlot(_masterInserts[s], _masterBypassed[s], onMaster: true, s: s),
+    );
+    final tracks = List<List<Map<String, dynamic>?>>.generate(
+      _inserts.length,
+      (t) => List<Map<String, dynamic>?>.generate(
+        kInsertSlots,
+        (s) => _serSlot(_inserts[t][s], _trackBypassed[t][s], onMaster: false, t: t, s: s),
+      ),
+    );
+    return {'master': master, 'tracks': tracks};
+  }
+
+  // Restores the MixerScreen UI state from AppState.insertSnapshot.
+  // Called synchronously from _syncInsertStateFromAppState after resetting.
+  // (Native engine has already been set up by loadSongByName.)
+  void _restoreInsertUiFromSnapshot(AppState state) {
+    final snapshot = state.insertSnapshot;
+    if (snapshot.isEmpty) return;
+
+    double d(Map<String, dynamic> m, String k, double def) => (m[k] as num?)?.toDouble() ?? def;
+    bool b(Map<String, dynamic> m, String k, bool def) => (m[k] as bool?) ?? def;
+    int iv(Map<String, dynamic> m, String k, int def) => (m[k] as num?)?.toInt() ?? def;
+
+    void applySlot(Map<String, dynamic> data, {required bool onMaster, int? t, required int s}) {
+      final type = data['type'] as String?;
+      if (type == null) return;
+      final bypass = b(data, 'bypass', false);
+      if (onMaster) {
+        _masterInserts[s] = type;
+        _masterBypassed[s] = bypass;
+      } else {
+        _inserts[t!][s] = type;
+        _trackBypassed[t][s] = bypass;
+      }
+      switch (type) {
+        case 'REVERB':
+          final r = _ReverbUiState(roomSize: d(data,'roomSize',0.5), damp: d(data,'damp',0.5), width: d(data,'width',1.0), dry: d(data,'dry',1.0), wet: d(data,'wet',0.3), freeze: b(data,'freeze',false));
+          if (onMaster) _masterReverbStates[s] = r; else _trackReverbStates[t!][s] = r;
+        case 'DELAY':
+          final dl = _DelayUiState(timeMs: d(data,'timeMs',375.0), feedback: d(data,'feedback',0.4), hpCutoff: d(data,'hpCutoff',0.0), dry: d(data,'dry',1.0), wet: d(data,'wet',0.35), sync: b(data,'sync',false));
+          if (onMaster) _masterDelayStates[s] = dl; else _trackDelayStates[t!][s] = dl;
+        case 'FILTER':
+          final f = _FilterUiState(cutoff: d(data,'cutoff',0.5), resonance: d(data,'resonance',0.2), mode: iv(data,'mode',0), dry: d(data,'dry',1.0), wet: d(data,'wet',1.0));
+          if (onMaster) _masterFilterStates[s] = f; else _trackFilterStates[t!][s] = f;
+        case 'DISTORTION':
+          final ds = _DistortionUiState(drive: d(data,'drive',0.5), tone: d(data,'tone',0.5), distType: iv(data,'distType',0), dry: d(data,'dry',1.0), wet: d(data,'wet',1.0));
+          if (onMaster) _masterDistortionStates[s] = ds; else _trackDistortionStates[t!][s] = ds;
+        case 'BITCRUSHER':
+          final bc = _BitcrusherUiState(bits: d(data,'bits',1.0), rate: d(data,'rate',1.0), dry: d(data,'dry',1.0), wet: d(data,'wet',1.0));
+          if (onMaster) _masterBitcrusherStates[s] = bc; else _trackBitcrusherStates[t!][s] = bc;
+        case 'LIMITER':
+          final lm = _LimiterUiState(gain: d(data,'gain',0.0), dry: d(data,'dry',0.0), wet: d(data,'wet',1.0));
+          if (onMaster) _masterLimiterStates[s] = lm; else _trackLimiterStates[t!][s] = lm;
+        case 'CHORUS':
+          final ch = _ChorusUiState(rate: d(data,'rate',0.3), depth: d(data,'depth',0.5), delay: d(data,'delay',0.3), stereo: iv(data,'stereo',0), dry: d(data,'dry',0.0), wet: d(data,'wet',1.0));
+          if (onMaster) _masterChorusStates[s] = ch; else _trackChorusStates[t!][s] = ch;
+        case 'EQ':
+          final eq = _EqUiState(lowGain: d(data,'lowGain',0.0), lowFreq: d(data,'lowFreq',0.2), midGain: d(data,'midGain',0.0), midFreq: d(data,'midFreq',0.3), midQ: d(data,'midQ',0.3), highGain: d(data,'highGain',0.0), highFreq: d(data,'highFreq',0.5), dry: d(data,'dry',0.0), wet: d(data,'wet',1.0));
+          if (onMaster) _masterEqStates[s] = eq; else _trackEqStates[t!][s] = eq;
+        case 'COMPRESSOR':
+          final cp = _CompressorUiState(threshold: d(data,'threshold',0.7), ratio: d(data,'ratio',0.2), attack: d(data,'attack',0.1), release: d(data,'release',0.2), makeup: d(data,'makeup',0.0), knee: iv(data,'knee',0), dry: d(data,'dry',0.0), wet: d(data,'wet',1.0));
+          if (onMaster) _masterCompressorStates[s] = cp; else _trackCompressorStates[t!][s] = cp;
+      }
+    }
+
+    final masterData = snapshot['master'];
+    if (masterData is List) {
+      for (int s = 0; s < kInsertSlots && s < masterData.length; s++) {
+        final slotData = masterData[s];
+        if (slotData is Map<String, dynamic>) applySlot(slotData, onMaster: true, s: s);
+      }
+    }
+    final trackData = snapshot['tracks'];
+    if (trackData is List) {
+      for (int t = 0; t < _inserts.length && t < trackData.length; t++) {
+        final rowData = trackData[t];
+        if (rowData is! List) continue;
+        for (int s = 0; s < kInsertSlots && s < rowData.length; s++) {
+          final slotData = rowData[s];
+          if (slotData is Map<String, dynamic>) applySlot(slotData, onMaster: false, t: t, s: s);
+        }
+      }
+    }
+  }
+
   void _syncInsertStateFromAppState(AppState state) {
     final trackCount = state.currentPattern.tracks.length;
     _ensureSized(trackCount);
@@ -1009,6 +1158,8 @@ class _MixerScreenState extends State<MixerScreen> {
         }
       }
       _seenSongStateVersion = state.songStateVersion;
+      // Restore UI state from the saved snapshot (engine already set up by loadSongByName).
+      _restoreInsertUiFromSnapshot(state);
     }
 
     for (int trackIdx = 0; trackIdx < trackCount; trackIdx++) {
@@ -1059,7 +1210,8 @@ class _MixerScreenState extends State<MixerScreen> {
                   _masterCompressorStates[slot] = const _CompressorUiState();
                 });
                 AudioEngine.instance.setMasterInsertEffect(slot, -1, 0.0);
-              },
+              state.setInsertSnapshot(_buildInsertSnapshot());
+            },
             ),
             const SizedBox(width: 6),
             // ── Channel strips ─────────────────────────────────────────
@@ -1087,6 +1239,7 @@ class _MixerScreenState extends State<MixerScreen> {
                   });
                   state.setTrackInsertEffectName(i, slot, null);
                   AudioEngine.instance.setTrackInsertEffect(i, slot, -1, 0.0);
+                  state.setInsertSnapshot(_buildInsertSnapshot());
                 },
                 onSendTap: () => _onSendTap(i, state),
               ),
@@ -1140,7 +1293,8 @@ class _MixerScreenState extends State<MixerScreen> {
 
   void _onInsertSlotTap(int trackIdx, int slotIdx) async {
     final state = AppStateScope.of(context);
-    final currentFx = _inserts[trackIdx][slotIdx];
+    try {
+      final currentFx = _inserts[trackIdx][slotIdx];
     if (currentFx == 'REVERB') {
       await _openReverbEditor(
         onMaster: false,
@@ -1475,9 +1629,14 @@ class _MixerScreenState extends State<MixerScreen> {
         );
       }
     }
+    } finally {
+      if (mounted) state.setInsertSnapshot(_buildInsertSnapshot());
+    }
   }
 
   void _onMasterInsertTap(int slotIdx) async {
+    final state = AppStateScope.of(context);
+    try {
     final currentFx = _masterInserts[slotIdx];
     if (currentFx == 'REVERB') {
       await _openReverbEditor(onMaster: true, slotIdx: slotIdx);
@@ -1631,6 +1790,9 @@ class _MixerScreenState extends State<MixerScreen> {
       } else {
         await AudioEngine.instance.setMasterInsertEffect(slotIdx, -1, 0.0);
       }
+    }
+    } finally {
+      if (mounted) state.setInsertSnapshot(_buildInsertSnapshot());
     }
   }
 }

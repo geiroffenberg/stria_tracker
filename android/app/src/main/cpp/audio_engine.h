@@ -530,6 +530,10 @@ private:
     InsertEffect                     mTrackInserts[kMaxVoices][kMaxInsertSlots];
     std::array<bool, kMaxVoices>     mPreviewBypassTrackInserts{};
     std::array<int, kMaxVoices>      mTrackSendChannel{}; // 0=master, 1..kMaxVoices=send to that channel (1-based)
+    // Per-track bus-level mixer state (applied in routing pass, set via MixerCommandEvent)
+    float mTrackVolume[kMaxVoices]; // 0..1, 1.0 = unity
+    bool  mTrackMute[kMaxVoices];   // true = silenced
+    bool  mTrackSolo[kMaxVoices];   // true = this track is soloed
     std::array<std::vector<float>, kMaxVoices> mTrackBusL;
     std::array<std::vector<float>, kMaxVoices> mTrackBusR;
     std::vector<float>               mMasterBusL;

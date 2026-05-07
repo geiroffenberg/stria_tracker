@@ -86,6 +86,119 @@ class MainActivity : FlutterActivity() {
 						result.error("read_failed", e.message, null)
 					}
 				}
+				"writeProjectFile" -> {
+					val treeUriRaw = call.argument<String>("treeUri")
+					val folderNameRaw = call.argument<String>("folderName")
+					val text = call.argument<String>("text")
+					if (treeUriRaw.isNullOrBlank() || folderNameRaw.isNullOrBlank() || text == null) {
+						result.error("bad_args", "Missing treeUri/folderName/text", null)
+						return@setMethodCallHandler
+					}
+
+					try {
+						val root = DocumentFile.fromTreeUri(this, Uri.parse(treeUriRaw))
+						if (root == null || !root.isDirectory || !root.canWrite()) {
+							result.error("write_failed", "Project root is not writable", null)
+							return@setMethodCallHandler
+						}
+
+						val folderName = folderNameRaw.trim()
+						if (folderName.isEmpty()) {
+							result.error("bad_args", "Invalid folder name", null)
+							return@setMethodCallHandler
+						}
+
+						var projectFolder = findDirectoryByName(root, folderName)
+						if (projectFolder == null) {
+							projectFolder = root.createDirectory(folderName)
+						}
+						if (projectFolder == null || !projectFolder.isDirectory || !projectFolder.canWrite()) {
+							result.error("write_failed", "Unable to create/access project folder", null)
+							return@setMethodCallHandler
+						}
+
+						var projectFile = findChildByName(projectFolder, "project.json")
+						if (projectFile == null) {
+							projectFile = projectFolder.createFile("application/json", "project.json")
+						}
+						if (projectFile == null || !projectFile.isFile) {
+							result.error("write_failed", "Unable to create project.json", null)
+							return@setMethodCallHandler
+						}
+
+						contentResolver.openOutputStream(projectFile.uri, "wt")?.use { output ->
+							output.write(text.toByteArray(StandardCharsets.UTF_8))
+							output.flush()
+						} ?: run {
+							result.error("write_failed", "Unable to open project.json for write", null)
+							return@setMethodCallHandler
+						}
+
+						result.success(true)
+					} catch (e: Exception) {
+						result.error("write_failed", e.message, null)
+					}
+				}
+				"writeProjectBinaryFile" -> {
+					val treeUriRaw = call.argument<String>("treeUri")
+					val folderNameRaw = call.argument<String>("folderName")
+					val fileNameRaw = call.argument<String>("fileName")
+					val bytes = call.argument<ByteArray>("bytes")
+					if (treeUriRaw.isNullOrBlank() || folderNameRaw.isNullOrBlank() || fileNameRaw.isNullOrBlank() || bytes == null) {
+						result.error("bad_args", "Missing treeUri/folderName/fileName/bytes", null)
+						return@setMethodCallHandler
+					}
+
+					try {
+						val root = DocumentFile.fromTreeUri(this, Uri.parse(treeUriRaw))
+						if (root == null || !root.isDirectory || !root.canWrite()) {
+							result.error("write_failed", "Project root is not writable", null)
+							return@setMethodCallHandler
+						}
+
+						val folderName = folderNameRaw.trim()
+						if (folderName.isEmpty()) {
+							result.error("bad_args", "Invalid folder name", null)
+							return@setMethodCallHandler
+						}
+
+						var projectFolder = findDirectoryByName(root, folderName)
+						if (projectFolder == null) {
+							projectFolder = root.createDirectory(folderName)
+						}
+						if (projectFolder == null || !projectFolder.isDirectory || !projectFolder.canWrite()) {
+							result.error("write_failed", "Unable to create/access project folder", null)
+							return@setMethodCallHandler
+						}
+
+						val fileName = fileNameRaw.trim()
+						if (fileName.isEmpty()) {
+							result.error("bad_args", "Invalid file name", null)
+							return@setMethodCallHandler
+						}
+
+						var outFile = findChildByName(projectFolder, fileName)
+						if (outFile == null) {
+							outFile = projectFolder.createFile("audio/wav", fileName)
+						}
+						if (outFile == null || !outFile.isFile) {
+							result.error("write_failed", "Unable to create output file", null)
+							return@setMethodCallHandler
+						}
+
+						contentResolver.openOutputStream(outFile.uri, "wt")?.use { output ->
+							output.write(bytes)
+							output.flush()
+						} ?: run {
+							result.error("write_failed", "Unable to open output file for write", null)
+							return@setMethodCallHandler
+						}
+
+						result.success(outFile.uri.toString())
+					} catch (e: Exception) {
+						result.error("write_failed", e.message, null)
+					}
+				}
 				else -> result.notImplemented()
 			}
 		}
@@ -125,6 +238,16 @@ class MainActivity : FlutterActivity() {
 	private fun findChildByName(dir: DocumentFile, name: String): DocumentFile? {
 		for (child in dir.listFiles()) {
 			if (!child.isFile) continue
+			if (child.name.equals(name, ignoreCase = true)) {
+				return child
+			}
+		}
+		return null
+	}
+
+	private fun findDirectoryByName(dir: DocumentFile, name: String): DocumentFile? {
+		for (child in dir.listFiles()) {
+			if (!child.isDirectory) continue
 			if (child.name.equals(name, ignoreCase = true)) {
 				return child
 			}

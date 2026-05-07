@@ -90,13 +90,11 @@ class _PatternScreenState extends State<PatternScreen> {
                   },
                 ),
         ),
-        if (!state.collapsedView) ...[
-          Container(
-            height: 1,
-            color: const Color(0xFF226666),
-          ),
-          const CellActionBar(),
-        ],
+        Container(
+          height: 1,
+          color: const Color(0xFF226666),
+        ),
+        const CellActionBar(),
       ],
     );
   }
