@@ -12,6 +12,7 @@ import 'package:path_provider/path_provider.dart';
 import '../audio/audio_engine.dart';
 import '../audio/wav_encoder.dart';
 import '../models/cell.dart';
+import '../models/fx_envelope_run.dart';
 import '../models/instrument_model.dart';
 import '../models/note_value.dart';
 import '../models/pattern_model.dart';
@@ -123,7 +124,8 @@ class AppState extends ChangeNotifier {
   int _currentArrangementSlotIndex = 0;
   int _playheadArrangementSlot = 0;
   int? _queuedArrangementSlot;
-  Completer<void>? _exportCompleter; // non-null while a WAV export is in progress
+  Completer<void>?
+  _exportCompleter; // non-null while a WAV export is in progress
 
   // Song mode native queue tracking.
   List<({int arrangementSlot, int rowWithinSlot})> _songRowMap = [];
@@ -622,109 +624,384 @@ class AppState extends ChangeNotifier {
           final typeCode = 0;
           final wet = d('wet', 0.3);
           if (onMaster) {
-            await AudioEngine.instance.setMasterInsertEffect(slot, typeCode, wet);
-            await AudioEngine.instance.setMasterInsertMix(slot, d('dry', 1.0), wet);
-            await AudioEngine.instance.setMasterReverbParams(slot, d('roomSize', 0.5), d('damp', 0.5), d('width', 1.0), b('freeze', false));
+            await AudioEngine.instance.setMasterInsertEffect(
+              slot,
+              typeCode,
+              wet,
+            );
+            await AudioEngine.instance.setMasterInsertMix(
+              slot,
+              d('dry', 1.0),
+              wet,
+            );
+            await AudioEngine.instance.setMasterReverbParams(
+              slot,
+              d('roomSize', 0.5),
+              d('damp', 0.5),
+              d('width', 1.0),
+              b('freeze', false),
+            );
           } else {
-            await AudioEngine.instance.setTrackInsertEffect(trackIdx!, slot, typeCode, wet);
-            await AudioEngine.instance.setTrackInsertMix(trackIdx, slot, d('dry', 1.0), wet);
-            await AudioEngine.instance.setTrackReverbParams(trackIdx, slot, d('roomSize', 0.5), d('damp', 0.5), d('width', 1.0), b('freeze', false));
+            await AudioEngine.instance.setTrackInsertEffect(
+              trackIdx!,
+              slot,
+              typeCode,
+              wet,
+            );
+            await AudioEngine.instance.setTrackInsertMix(
+              trackIdx,
+              slot,
+              d('dry', 1.0),
+              wet,
+            );
+            await AudioEngine.instance.setTrackReverbParams(
+              trackIdx,
+              slot,
+              d('roomSize', 0.5),
+              d('damp', 0.5),
+              d('width', 1.0),
+              b('freeze', false),
+            );
           }
         case 'DELAY':
           final typeCode = 1;
           final wet = d('wet', 0.35);
           if (onMaster) {
-            await AudioEngine.instance.setMasterInsertEffect(slot, typeCode, wet);
-            await AudioEngine.instance.setMasterInsertMix(slot, d('dry', 1.0), wet);
-            await AudioEngine.instance.setMasterDelayParams(slot, d('timeMs', 375.0), d('feedback', 0.4), d('hpCutoff', 0.0), b('sync', false));
+            await AudioEngine.instance.setMasterInsertEffect(
+              slot,
+              typeCode,
+              wet,
+            );
+            await AudioEngine.instance.setMasterInsertMix(
+              slot,
+              d('dry', 1.0),
+              wet,
+            );
+            await AudioEngine.instance.setMasterDelayParams(
+              slot,
+              d('timeMs', 375.0),
+              d('feedback', 0.4),
+              d('hpCutoff', 0.0),
+              b('sync', false),
+            );
           } else {
-            await AudioEngine.instance.setTrackInsertEffect(trackIdx!, slot, typeCode, wet);
-            await AudioEngine.instance.setTrackInsertMix(trackIdx, slot, d('dry', 1.0), wet);
-            await AudioEngine.instance.setTrackDelayParams(trackIdx, slot, d('timeMs', 375.0), d('feedback', 0.4), d('hpCutoff', 0.0), b('sync', false));
+            await AudioEngine.instance.setTrackInsertEffect(
+              trackIdx!,
+              slot,
+              typeCode,
+              wet,
+            );
+            await AudioEngine.instance.setTrackInsertMix(
+              trackIdx,
+              slot,
+              d('dry', 1.0),
+              wet,
+            );
+            await AudioEngine.instance.setTrackDelayParams(
+              trackIdx,
+              slot,
+              d('timeMs', 375.0),
+              d('feedback', 0.4),
+              d('hpCutoff', 0.0),
+              b('sync', false),
+            );
           }
         case 'FILTER':
           final typeCode = 2;
           final wet = d('wet', 1.0);
           if (onMaster) {
-            await AudioEngine.instance.setMasterInsertEffect(slot, typeCode, wet);
-            await AudioEngine.instance.setMasterInsertMix(slot, d('dry', 1.0), wet);
-            await AudioEngine.instance.setMasterFilterParams(slot, d('cutoff', 0.5), d('resonance', 0.2), i('mode', 0));
+            await AudioEngine.instance.setMasterInsertEffect(
+              slot,
+              typeCode,
+              wet,
+            );
+            await AudioEngine.instance.setMasterInsertMix(
+              slot,
+              d('dry', 1.0),
+              wet,
+            );
+            await AudioEngine.instance.setMasterFilterParams(
+              slot,
+              d('cutoff', 0.5),
+              d('resonance', 0.2),
+              i('mode', 0),
+            );
           } else {
-            await AudioEngine.instance.setTrackInsertEffect(trackIdx!, slot, typeCode, wet);
-            await AudioEngine.instance.setTrackInsertMix(trackIdx, slot, d('dry', 1.0), wet);
-            await AudioEngine.instance.setTrackFilterParams(trackIdx, slot, d('cutoff', 0.5), d('resonance', 0.2), i('mode', 0));
+            await AudioEngine.instance.setTrackInsertEffect(
+              trackIdx!,
+              slot,
+              typeCode,
+              wet,
+            );
+            await AudioEngine.instance.setTrackInsertMix(
+              trackIdx,
+              slot,
+              d('dry', 1.0),
+              wet,
+            );
+            await AudioEngine.instance.setTrackFilterParams(
+              trackIdx,
+              slot,
+              d('cutoff', 0.5),
+              d('resonance', 0.2),
+              i('mode', 0),
+            );
           }
         case 'DISTORTION':
           final typeCode = 3;
           final wet = d('wet', 1.0);
           if (onMaster) {
-            await AudioEngine.instance.setMasterInsertEffect(slot, typeCode, wet);
-            await AudioEngine.instance.setMasterInsertMix(slot, d('dry', 1.0), wet);
-            await AudioEngine.instance.setMasterDistortionParams(slot, d('drive', 0.5), d('tone', 0.5), i('distType', 0));
+            await AudioEngine.instance.setMasterInsertEffect(
+              slot,
+              typeCode,
+              wet,
+            );
+            await AudioEngine.instance.setMasterInsertMix(
+              slot,
+              d('dry', 1.0),
+              wet,
+            );
+            await AudioEngine.instance.setMasterDistortionParams(
+              slot,
+              d('drive', 0.5),
+              d('tone', 0.5),
+              i('distType', 0),
+            );
           } else {
-            await AudioEngine.instance.setTrackInsertEffect(trackIdx!, slot, typeCode, wet);
-            await AudioEngine.instance.setTrackInsertMix(trackIdx, slot, d('dry', 1.0), wet);
-            await AudioEngine.instance.setTrackDistortionParams(trackIdx, slot, d('drive', 0.5), d('tone', 0.5), i('distType', 0));
+            await AudioEngine.instance.setTrackInsertEffect(
+              trackIdx!,
+              slot,
+              typeCode,
+              wet,
+            );
+            await AudioEngine.instance.setTrackInsertMix(
+              trackIdx,
+              slot,
+              d('dry', 1.0),
+              wet,
+            );
+            await AudioEngine.instance.setTrackDistortionParams(
+              trackIdx,
+              slot,
+              d('drive', 0.5),
+              d('tone', 0.5),
+              i('distType', 0),
+            );
           }
         case 'BITCRUSHER':
           final typeCode = 4;
           final wet = d('wet', 1.0);
           if (onMaster) {
-            await AudioEngine.instance.setMasterInsertEffect(slot, typeCode, wet);
-            await AudioEngine.instance.setMasterInsertMix(slot, d('dry', 1.0), wet);
-            await AudioEngine.instance.setMasterBitcrusherParams(slot, d('bits', 1.0), d('rate', 1.0));
+            await AudioEngine.instance.setMasterInsertEffect(
+              slot,
+              typeCode,
+              wet,
+            );
+            await AudioEngine.instance.setMasterInsertMix(
+              slot,
+              d('dry', 1.0),
+              wet,
+            );
+            await AudioEngine.instance.setMasterBitcrusherParams(
+              slot,
+              d('bits', 1.0),
+              d('rate', 1.0),
+            );
           } else {
-            await AudioEngine.instance.setTrackInsertEffect(trackIdx!, slot, typeCode, wet);
-            await AudioEngine.instance.setTrackInsertMix(trackIdx, slot, d('dry', 1.0), wet);
-            await AudioEngine.instance.setTrackBitcrusherParams(trackIdx, slot, d('bits', 1.0), d('rate', 1.0));
+            await AudioEngine.instance.setTrackInsertEffect(
+              trackIdx!,
+              slot,
+              typeCode,
+              wet,
+            );
+            await AudioEngine.instance.setTrackInsertMix(
+              trackIdx,
+              slot,
+              d('dry', 1.0),
+              wet,
+            );
+            await AudioEngine.instance.setTrackBitcrusherParams(
+              trackIdx,
+              slot,
+              d('bits', 1.0),
+              d('rate', 1.0),
+            );
           }
         case 'LIMITER':
           final typeCode = 5;
           final wet = d('wet', 1.0);
           if (onMaster) {
-            await AudioEngine.instance.setMasterInsertEffect(slot, typeCode, wet);
-            await AudioEngine.instance.setMasterInsertMix(slot, d('dry', 0.0), wet);
-            await AudioEngine.instance.setMasterLimiterParams(slot, d('gain', 0.0));
+            await AudioEngine.instance.setMasterInsertEffect(
+              slot,
+              typeCode,
+              wet,
+            );
+            await AudioEngine.instance.setMasterInsertMix(
+              slot,
+              d('dry', 0.0),
+              wet,
+            );
+            await AudioEngine.instance.setMasterLimiterParams(
+              slot,
+              d('gain', 0.0),
+            );
           } else {
-            await AudioEngine.instance.setTrackInsertEffect(trackIdx!, slot, typeCode, wet);
-            await AudioEngine.instance.setTrackInsertMix(trackIdx, slot, d('dry', 0.0), wet);
-            await AudioEngine.instance.setTrackLimiterParams(trackIdx, slot, d('gain', 0.0));
+            await AudioEngine.instance.setTrackInsertEffect(
+              trackIdx!,
+              slot,
+              typeCode,
+              wet,
+            );
+            await AudioEngine.instance.setTrackInsertMix(
+              trackIdx,
+              slot,
+              d('dry', 0.0),
+              wet,
+            );
+            await AudioEngine.instance.setTrackLimiterParams(
+              trackIdx,
+              slot,
+              d('gain', 0.0),
+            );
           }
         case 'CHORUS':
           final typeCode = 6;
           final wet = d('wet', 1.0);
           if (onMaster) {
-            await AudioEngine.instance.setMasterInsertEffect(slot, typeCode, wet);
-            await AudioEngine.instance.setMasterInsertMix(slot, d('dry', 0.0), wet);
-            await AudioEngine.instance.setMasterChorusParams(slot, d('rate', 0.3), d('depth', 0.5), d('delay', 0.3), i('stereo', 0));
+            await AudioEngine.instance.setMasterInsertEffect(
+              slot,
+              typeCode,
+              wet,
+            );
+            await AudioEngine.instance.setMasterInsertMix(
+              slot,
+              d('dry', 0.0),
+              wet,
+            );
+            await AudioEngine.instance.setMasterChorusParams(
+              slot,
+              d('rate', 0.3),
+              d('depth', 0.5),
+              d('delay', 0.3),
+              i('stereo', 0),
+            );
           } else {
-            await AudioEngine.instance.setTrackInsertEffect(trackIdx!, slot, typeCode, wet);
-            await AudioEngine.instance.setTrackInsertMix(trackIdx, slot, d('dry', 0.0), wet);
-            await AudioEngine.instance.setTrackChorusParams(trackIdx, slot, d('rate', 0.3), d('depth', 0.5), d('delay', 0.3), i('stereo', 0));
+            await AudioEngine.instance.setTrackInsertEffect(
+              trackIdx!,
+              slot,
+              typeCode,
+              wet,
+            );
+            await AudioEngine.instance.setTrackInsertMix(
+              trackIdx,
+              slot,
+              d('dry', 0.0),
+              wet,
+            );
+            await AudioEngine.instance.setTrackChorusParams(
+              trackIdx,
+              slot,
+              d('rate', 0.3),
+              d('depth', 0.5),
+              d('delay', 0.3),
+              i('stereo', 0),
+            );
           }
         case 'EQ':
           final typeCode = 7;
           final wet = d('wet', 1.0);
           if (onMaster) {
-            await AudioEngine.instance.setMasterInsertEffect(slot, typeCode, wet);
-            await AudioEngine.instance.setMasterInsertMix(slot, d('dry', 0.0), wet);
-            await AudioEngine.instance.setMasterEqParams(slot, d('lowGain', 0.0), d('lowFreq', 0.2), d('midGain', 0.0), d('midFreq', 0.3), d('midQ', 0.3), d('highGain', 0.0), d('highFreq', 0.5));
+            await AudioEngine.instance.setMasterInsertEffect(
+              slot,
+              typeCode,
+              wet,
+            );
+            await AudioEngine.instance.setMasterInsertMix(
+              slot,
+              d('dry', 0.0),
+              wet,
+            );
+            await AudioEngine.instance.setMasterEqParams(
+              slot,
+              d('lowGain', 0.0),
+              d('lowFreq', 0.2),
+              d('midGain', 0.0),
+              d('midFreq', 0.3),
+              d('midQ', 0.3),
+              d('highGain', 0.0),
+              d('highFreq', 0.5),
+            );
           } else {
-            await AudioEngine.instance.setTrackInsertEffect(trackIdx!, slot, typeCode, wet);
-            await AudioEngine.instance.setTrackInsertMix(trackIdx, slot, d('dry', 0.0), wet);
-            await AudioEngine.instance.setTrackEqParams(trackIdx, slot, d('lowGain', 0.0), d('lowFreq', 0.2), d('midGain', 0.0), d('midFreq', 0.3), d('midQ', 0.3), d('highGain', 0.0), d('highFreq', 0.5));
+            await AudioEngine.instance.setTrackInsertEffect(
+              trackIdx!,
+              slot,
+              typeCode,
+              wet,
+            );
+            await AudioEngine.instance.setTrackInsertMix(
+              trackIdx,
+              slot,
+              d('dry', 0.0),
+              wet,
+            );
+            await AudioEngine.instance.setTrackEqParams(
+              trackIdx,
+              slot,
+              d('lowGain', 0.0),
+              d('lowFreq', 0.2),
+              d('midGain', 0.0),
+              d('midFreq', 0.3),
+              d('midQ', 0.3),
+              d('highGain', 0.0),
+              d('highFreq', 0.5),
+            );
           }
         case 'COMPRESSOR':
           final typeCode = 8;
           final wet = d('wet', 1.0);
           if (onMaster) {
-            await AudioEngine.instance.setMasterInsertEffect(slot, typeCode, wet);
-            await AudioEngine.instance.setMasterInsertMix(slot, d('dry', 0.0), wet);
-            await AudioEngine.instance.setMasterCompressorParams(slot, d('threshold', 0.7), d('ratio', 0.2), d('attack', 0.1), d('release', 0.2), d('makeup', 0.0), i('knee', 0));
+            await AudioEngine.instance.setMasterInsertEffect(
+              slot,
+              typeCode,
+              wet,
+            );
+            await AudioEngine.instance.setMasterInsertMix(
+              slot,
+              d('dry', 0.0),
+              wet,
+            );
+            await AudioEngine.instance.setMasterCompressorParams(
+              slot,
+              d('threshold', 0.7),
+              d('ratio', 0.2),
+              d('attack', 0.1),
+              d('release', 0.2),
+              d('makeup', 0.0),
+              i('knee', 0),
+            );
           } else {
-            await AudioEngine.instance.setTrackInsertEffect(trackIdx!, slot, typeCode, wet);
-            await AudioEngine.instance.setTrackInsertMix(trackIdx, slot, d('dry', 0.0), wet);
-            await AudioEngine.instance.setTrackCompressorParams(trackIdx, slot, d('threshold', 0.7), d('ratio', 0.2), d('attack', 0.1), d('release', 0.2), d('makeup', 0.0), i('knee', 0));
+            await AudioEngine.instance.setTrackInsertEffect(
+              trackIdx!,
+              slot,
+              typeCode,
+              wet,
+            );
+            await AudioEngine.instance.setTrackInsertMix(
+              trackIdx,
+              slot,
+              d('dry', 0.0),
+              wet,
+            );
+            await AudioEngine.instance.setTrackCompressorParams(
+              trackIdx,
+              slot,
+              d('threshold', 0.7),
+              d('ratio', 0.2),
+              d('attack', 0.1),
+              d('release', 0.2),
+              d('makeup', 0.0),
+              i('knee', 0),
+            );
           }
       }
 
@@ -732,7 +1009,11 @@ class AppState extends ChangeNotifier {
         if (onMaster) {
           await AudioEngine.instance.setMasterInsertBypass(slot, true);
         } else {
-          await AudioEngine.instance.setTrackInsertBypass(trackIdx!, slot, true);
+          await AudioEngine.instance.setTrackInsertBypass(
+            trackIdx!,
+            slot,
+            true,
+          );
         }
       }
     }
@@ -855,9 +1136,7 @@ class AppState extends ChangeNotifier {
         pattern.tracks[trackIndex].mixerVolume = clamped;
       }
     }
-    final volumeValue = (clamped * 99)
-        .round()
-        .clamp(0, 99);
+    final volumeValue = (clamped * 99).round().clamp(0, 99);
     AudioEngine.instance.queueMixerCommands([
       trackIndex + 1,
       4,
@@ -971,10 +1250,7 @@ class AppState extends ChangeNotifier {
 
   void _pushSendRouting() {
     final tracks = currentPattern.tracks;
-    final routing = List.generate(
-      tracks.length,
-      (i) => tracks[i].sendChannel,
-    );
+    final routing = List.generate(tracks.length, (i) => tracks[i].sendChannel);
     AudioEngine.instance.setSendRouting(routing);
   }
 
@@ -1282,11 +1558,14 @@ class AppState extends ChangeNotifier {
   }
 
   /// Fill every row between the previous valued row and [toRow] (exclusive
-  /// of both endpoints) with linearly interpolated values for [col].
+  /// of both endpoints) with gamma-curved interpolated values for [col].
   /// Interpolation uses time-accurate beat positions so per-beat line
   /// overrides are handled correctly. For FX value columns, every filled row
   /// is also stamped with the matching FX command from [toRow].
-  void interpolateColumn(int toRow, CellColumn col) {
+  /// An [FxEnvelopeRun] is stored on the pattern for visual overlay;
+  /// [gamma] defaults to 1.0 (linear). If a run already exists for the same
+  /// track + slot range, it is replaced.
+  void interpolateColumn(int toRow, CellColumn col, {double gamma = 1.0}) {
     final track = currentTrack;
     final fromRow = _findInterpolationSource(track, toRow, col);
     if (fromRow == null) return;
@@ -1303,7 +1582,8 @@ class AppState extends ChangeNotifier {
     for (int r = fromRow + 1; r < toRow; r++) {
       final t = currentPattern.rowTimeInBeats(r);
       final frac = (t - tStart) / span;
-      final interpolated = (startVal + (endVal - startVal) * frac).round();
+      final curved = math.pow(frac.clamp(0.0, 1.0), gamma).toDouble();
+      final interpolated = (startVal + (endVal - startVal) * curved).round();
       track.writeColumnValue(r, col, interpolated);
       // For fxval columns, also stamp the FX command so the cell is complete.
       final cmd = _fxCommandFor(track.cells[toRow], col);
@@ -1320,6 +1600,81 @@ class AppState extends ChangeNotifier {
         }
       }
     }
+
+    // Store envelope metadata for the visual overlay (fxval columns only).
+    final slotIndex = _fxSlotIndexForColumn(col);
+    if (slotIndex >= 0) {
+      // Remove any existing run that overlaps this track + slot + row range.
+      currentPattern.fxEnvelopes.removeWhere(
+        (e) =>
+            e.trackIndex == _currentTrackIndex &&
+            e.fxSlotIndex == slotIndex &&
+            e.startRow == fromRow &&
+            e.endRow == toRow,
+      );
+      currentPattern.fxEnvelopes.add(FxEnvelopeRun(
+        trackIndex: _currentTrackIndex,
+        fxSlotIndex: slotIndex,
+        startRow: fromRow,
+        endRow: toRow,
+        startValue: startVal,
+        endValue: endVal,
+        gamma: gamma,
+      ));
+    }
+
+    notifyListeners();
+  }
+
+  // ── FX Envelope helpers ──────────────────────────────────────────────────
+
+  /// Returns the fxSlotIndex (0/1/2) for an fxval column, or -1 otherwise.
+  static int _fxSlotIndexForColumn(CellColumn col) {
+    switch (col) {
+      case CellColumn.fx0val:
+        return 0;
+      case CellColumn.fx1val:
+        return 1;
+      case CellColumn.fx2val:
+        return 2;
+      default:
+        return -1;
+    }
+  }
+
+  /// Returns the [FxEnvelopeRun] that contains [row] for the given
+  /// [trackIndex] and [fxSlotIndex], or null if none.
+  FxEnvelopeRun? fxEnvelopeAt(int trackIndex, int fxSlotIndex, int row) {
+    for (final run in currentPattern.fxEnvelopes) {
+      if (run.trackIndex == trackIndex &&
+          run.fxSlotIndex == fxSlotIndex &&
+          run.containsRow(row)) {
+        return run;
+      }
+    }
+    return null;
+  }
+
+  /// Re-bake the interior rows of [run] using a new [gamma] value and
+  /// update [run.gamma]. Anchor rows (startRow / endRow) are not touched.
+  void updateEnvelopeGamma(FxEnvelopeRun run, double newGamma) {
+    run.gamma = newGamma.clamp(0.1, 4.0);
+    final track = currentPattern.tracks[run.trackIndex];
+    final tStart = currentPattern.rowTimeInBeats(run.startRow);
+    final tEnd = currentPattern.rowTimeInBeats(run.endRow);
+    if (tEnd <= tStart) return;
+    final span = tEnd - tStart;
+    for (int r = run.startRow + 1; r < run.endRow; r++) {
+      final t = currentPattern.rowTimeInBeats(r);
+      final frac = (t - tStart) / span;
+      track.writeColumnValue(r, run.valColumn, run.valueAt(frac));
+    }
+    notifyListeners();
+  }
+
+  /// Remove the envelope run from the pattern. Cell values are kept as-is.
+  void deleteEnvelope(FxEnvelopeRun run) {
+    currentPattern.fxEnvelopes.remove(run);
     notifyListeners();
   }
 
@@ -2024,15 +2379,13 @@ class AppState extends ChangeNotifier {
     if (_usesProjectTreeStorage) {
       final slug = _slugify(song.name);
       final folderName = slug.isEmpty ? 'untitled' : slug;
-      final uri = await _projectStorageChannel.invokeMethod<String>(
-        'writeProjectBinaryFile',
-        {
-          'treeUri': _projectRootTreeUri,
-          'folderName': folderName,
-          'fileName': fileName,
-          'bytes': wavBytes,
-        },
-      );
+      final uri = await _projectStorageChannel
+          .invokeMethod<String>('writeProjectBinaryFile', {
+            'treeUri': _projectRootTreeUri,
+            'folderName': folderName,
+            'fileName': fileName,
+            'bytes': wavBytes,
+          });
       return uri;
     }
 
@@ -3623,7 +3976,8 @@ class AppState extends ChangeNotifier {
       final projectRoot = j['projectRootFolder'] as String?;
       if (projectRoot != null && projectRoot.isNotEmpty) {
         final dir = Directory(projectRoot);
-        if (dir.existsSync() && (_hasAnyProjectJson(dir) || dir.path.isNotEmpty)) {
+        if (dir.existsSync() &&
+            (_hasAnyProjectJson(dir) || dir.path.isNotEmpty)) {
           _projectRootFolder = dir.path;
         }
       }
@@ -3634,7 +3988,9 @@ class AppState extends ChangeNotifier {
       }
 
       final folder = j['defaultSampleFolder'] as String?;
-      if (folder != null && folder.isNotEmpty && Directory(folder).existsSync()) {
+      if (folder != null &&
+          folder.isNotEmpty &&
+          Directory(folder).existsSync()) {
         _defaultSampleFolder = folder;
       }
       _notifyListenersSafe();
@@ -3939,10 +4295,9 @@ class AppState extends ChangeNotifier {
     ({String folderName, String source, bool isUri}) entry,
   ) async {
     if (entry.isUri) {
-      return await _projectStorageChannel.invokeMethod<String>(
-        'readTextFile',
-        {'uri': entry.source},
-      );
+      return await _projectStorageChannel.invokeMethod<String>('readTextFile', {
+        'uri': entry.source,
+      });
     }
     return File(entry.source).readAsString();
   }
@@ -3996,7 +4351,9 @@ class AppState extends ChangeNotifier {
     }
 
     // Legacy schema: song fields at top level (optionally with instruments).
-    if (songJson == null && decoded['name'] is String && decoded['patterns'] is List) {
+    if (songJson == null &&
+        decoded['name'] is String &&
+        decoded['patterns'] is List) {
       songJson = decoded;
       instrumentList = decoded['instruments'] as List<dynamic>?;
     }

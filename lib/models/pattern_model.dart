@@ -1,3 +1,4 @@
+import 'fx_envelope_run.dart';
 import 'track_model.dart';
 
 const int kDefaultLinesPerBeat = 4;
@@ -14,6 +15,7 @@ class PatternModel {
   /// Any other value (1–16) overrides the subdivision for that beat only.
   List<int?> beatLineOverrides;
   List<TrackModel> tracks;
+  List<FxEnvelopeRun> fxEnvelopes;
 
   PatternModel({
     required this.name,
@@ -22,7 +24,9 @@ class PatternModel {
     this.linesPerBeat = kDefaultLinesPerBeat,
     List<int?>? beatLineOverrides,
     List<TrackModel>? tracks,
-  })  : beatLineOverrides = beatLineOverrides ??
+    List<FxEnvelopeRun>? fxEnvelopes,
+  })  : fxEnvelopes = fxEnvelopes ?? [],
+        beatLineOverrides = beatLineOverrides ??
             List.filled(beats ?? kDefaultBeats, null, growable: true),
         tracks = tracks ?? _defaultTracks(
           _rowCountFor(beats ?? kDefaultBeats, linesPerBeat ?? kDefaultLinesPerBeat),
@@ -146,6 +150,9 @@ class PatternModel {
       beats: beatCount,
       linesPerBeat: lpb,
       beatLineOverrides: List<int?>.from(beatLineOverrides),
+      fxEnvelopes: fxEnvelopes
+          .map((e) => FxEnvelopeRun.fromJson(e.toJson()))
+          .toList(),
       tracks: tracks
           .map((t) => TrackModel(
                 name: t.name,
@@ -167,6 +174,7 @@ class PatternModel {
     'beats': beats ?? kDefaultBeats,
     'lpb': linesPerBeat ?? kDefaultLinesPerBeat,
     'beatOverrides': beatLineOverrides,
+    'fxEnvelopes': fxEnvelopes.map((e) => e.toJson()).toList(),
     'tracks': tracks.map((t) => t.toJson()).toList(),
   };
 
@@ -180,12 +188,19 @@ class PatternModel {
           .map((e) => e as int?)
           .toList(growable: true);
     }
+    List<FxEnvelopeRun>? loadedEnvelopes;
+    if (j['fxEnvelopes'] != null) {
+      loadedEnvelopes = (j['fxEnvelopes'] as List<dynamic>)
+          .map((e) => FxEnvelopeRun.fromJson(e as Map<String, dynamic>))
+          .toList();
+    }
     return PatternModel(
       name: j['name'] as String,
       bpm: (j['bpm'] as num?)?.toDouble() ?? 120.0,
       beats: (j['beats'] as int?) ?? kDefaultBeats,
       linesPerBeat: (j['lpb'] as int?) ?? kDefaultLinesPerBeat,
       beatLineOverrides: overrides,
+      fxEnvelopes: loadedEnvelopes,
       tracks: loadedTracks,
     );
   }

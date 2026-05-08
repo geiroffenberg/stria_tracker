@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../models/cell.dart';
+import '../models/fx_envelope_run.dart';
 import '../models/instrument_model.dart';
 import '../models/note_value.dart';
 import '../state/app_state.dart';
@@ -497,8 +498,14 @@ class _NumericActions extends StatelessWidget {
                   onTap: () => state.clearColumnValue(row, column),
                 ),
               ],
+              const SizedBox(width: 4),
+              _ActionBtn(
+                label: '✕',
+                onTap: state.clearSelection,
+              ),
             ],
           ),
+          _EnvelopeSection(state: state, row: row, column: column),
         ],
       ),
     );
@@ -1016,6 +1023,97 @@ class _ActionBtn extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+// ─── Envelope section ─────────────────────────────────────────────────────
+
+/// Shows a gamma slider + "REM ENV" button below the main action row when the
+/// selected cell is an fxval column that is part of an [FxEnvelopeRun].
+class _EnvelopeSection extends StatelessWidget {
+  final AppState state;
+  final int row;
+  final CellColumn column;
+
+  const _EnvelopeSection({
+    required this.state,
+    required this.row,
+    required this.column,
+  });
+
+  int get _slotIndex {
+    switch (column) {
+      case CellColumn.fx0val:
+        return 0;
+      case CellColumn.fx1val:
+        return 1;
+      case CellColumn.fx2val:
+        return 2;
+      default:
+        return -1;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final slot = _slotIndex;
+    if (slot < 0) return const SizedBox.shrink();
+    final run = state.fxEnvelopeAt(state.currentTrackIndex, slot, row);
+    if (run == null) return const SizedBox.shrink();
+
+    const envelopeColor = Color(0xCCFF8800);
+    const envelopeFaint = Color(0x44FF8800);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const Divider(height: 8, thickness: 1, color: envelopeFaint),
+        Row(
+          children: [
+            // Gamma label + current value.
+            SizedBox(
+              width: 64,
+              child: Text(
+                'ENV γ ${run.gamma.toStringAsFixed(2)}',
+                style: kStyleBase.copyWith(
+                  color: envelopeColor,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                ),
+                textAlign: TextAlign.center,
+              ),
+            ),
+            const SizedBox(width: 4),
+            Expanded(
+              child: SliderTheme(
+                data: SliderThemeData(
+                  trackHeight: 4,
+                  activeTrackColor: envelopeColor,
+                  inactiveTrackColor: envelopeFaint,
+                  thumbColor: envelopeColor,
+                  overlayColor: const Color(0x22FF8800),
+                  thumbShape:
+                      const RoundSliderThumbShape(enabledThumbRadius: 9),
+                  overlayShape:
+                      const RoundSliderOverlayShape(overlayRadius: 18),
+                ),
+                child: Slider(
+                  value: run.gamma.clamp(0.1, 4.0),
+                  min: 0.1,
+                  max: 4.0,
+                  onChanged: (v) => state.updateEnvelopeGamma(run, v),
+                ),
+              ),
+            ),
+            _ActionBtn(
+              label: 'REM ENV',
+              color: kColStopBtn,
+              onTap: () => state.deleteEnvelope(run),
+            ),
+          ],
+        ),
+      ],
     );
   }
 }
