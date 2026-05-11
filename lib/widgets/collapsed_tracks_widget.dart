@@ -360,6 +360,11 @@ class _MiniCellState extends State<_MiniCell> {
     final text = cellDisplay(widget.column, widget.cell);
     final empty = cellIsEmpty(widget.column, widget.cell);
     final style = empty ? kStyleEmpty : columnStyle(widget.column);
+    final isBoxSelected = state.isCellInBoxSelection(
+      widget.trackIndex,
+      widget.row,
+      widget.column,
+    );
 
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
@@ -381,7 +386,14 @@ class _MiniCellState extends State<_MiniCell> {
         }
       },
       child: Container(
-        color: widget.isSelected ? kBgSelected : Colors.transparent,
+        decoration: (widget.isSelected || isBoxSelected)
+            ? BoxDecoration(
+                color: isBoxSelected
+                    ? kBgSelected.withAlpha(widget.isSelected ? 255 : 170)
+                    : kBgSelected,
+                border: Border.all(color: kColSelection, width: 1.5),
+              )
+            : null,
         alignment: Alignment.centerLeft,
         padding: const EdgeInsets.symmetric(horizontal: 2),
         child: Text(text, style: style, maxLines: 1),

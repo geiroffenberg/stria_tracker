@@ -12,6 +12,93 @@ float byteToNorm(int v) {
     return static_cast<float>(std::clamp(v, 0, 255)) / 255.0f;
 }
 
+float karplusFeedback(float n) {
+    return 0.94f + std::clamp(n, 0.0f, 1.0f) * 0.0592f;
+}
+
+float karplusBrightness(float n) {
+    return 0.08f + std::clamp(n, 0.0f, 1.0f) * 0.90f;
+}
+
+float karplusExcitationTone(float n) {
+    return 0.05f + std::clamp(n, 0.0f, 1.0f) * 0.95f;
+}
+
+float karplusPickPosition(float n) {
+    return 0.06f + std::clamp(n, 0.0f, 1.0f) * 0.44f;
+}
+
+float karplusAttackColor(float n) {
+    return 0.10f + std::clamp(n, 0.0f, 1.0f) * 0.90f;
+}
+
+float karplusBodyBlend(float n) {
+    return std::clamp(n, 0.0f, 1.0f);
+}
+
+float karplusDriveAmount(float n) {
+    return std::clamp(n, 0.0f, 1.0f);
+}
+
+float karplusDispersion(float n) {
+    const float clamped = std::clamp(n, 0.0f, 1.0f);
+    return clamped * clamped * 0.24f;
+}
+
+void startKarplusVoice(Voice& v, int midiNote, int sampleRate) {
+    const float detuneSemitones = (v.detuneNorm - 0.5f) * 24.0f;
+    const float freq = static_cast<float>(440.0 * std::pow(2.0, ((midiNote - 69) + detuneSemitones) / 12.0));
+    const float clampedFreq = std::clamp(freq, 20.0f, 12000.0f);
+    const int delayLen = std::clamp(
+        static_cast<int>(static_cast<float>(sampleRate) / clampedFreq + 0.5f),
+        8,
+        8192);
+
+    v.midiNote = midiNote;
+    v.currentFreq = clampedFreq;
+    v.targetFreq = clampedFreq;
+    v.karplusBuf.assign(delayLen, 0.0f);
+    v.karplusPos = 0;
+    v.karplusDispersionState = 0.0f;
+    v.karplusBodyState = 0.0f;
+    v.karplusBodyState2 = 0.0f;
+    v.karplusActive = true;
+    v.karplusMode = true;
+    v.samplerMode = false;
+    v.sampleActive = false;
+    v.noteHeld = true;
+    v.gain = 0.0f;
+    v.gainTarget = 1.0f;
+    v.pendingWaveform = -1;
+    v.envStage = EnvelopeStage::Idle;
+    v.filterEnvStage = EnvelopeStage::Idle;
+    v.envLevel = 0.0f;
+    v.filterEnvLevel = 0.0f;
+
+    float excite = 0.0f;
+    const float tone = karplusExcitationTone(v.karplusToneNorm);
+    const float attackColor = karplusAttackColor(v.karplusAttackColorNorm);
+    for (int i = 0; i < delayLen; ++i) {
+        v.noiseState = v.noiseState * 1664525u + 1013904223u;
+        const uint32_t bits = (v.noiseState >> 8) & 0xFFFFu;
+        const float raw = (static_cast<float>(bits) / 32767.5f) - 1.0f;
+        excite += tone * (raw - excite);
+        v.karplusBuf[i] = raw * attackColor + excite * (1.0f - attackColor);
+    }
+
+    const int pickOffset = std::clamp(
+        static_cast<int>(karplusPickPosition(v.karplusPickPositionNorm) * static_cast<float>(delayLen - 1)),
+        1,
+        std::max(1, delayLen - 1));
+    if (pickOffset > 0 && pickOffset < delayLen) {
+        const auto base = v.karplusBuf;
+        for (int i = 0; i < delayLen; ++i) {
+            const float delayed = base[(i + pickOffset) % delayLen];
+            v.karplusBuf[i] = std::clamp(base[i] - 0.72f * delayed, -1.0f, 1.0f);
+        }
+    }
+}
+
 float fxValueToUnit(int value) {
     return std::clamp(value, 0, 99) / 99.0f;
 }
@@ -67,9 +154,11 @@ void applyInsertFxCommand(InsertEffect& fx, int function, int value) {
         fx.limGain = 0.0f;
         // Chorus defaults
         fx.chorusRate   = 0.3f;
-        fx.chorusDepth  = 0.5f;
+        fx.chorusDepth  = 0.22f;
         fx.chorusDelay  = 0.3f;
         fx.chorusStereo = 0;
+        fx.dryLevel     = 0.5f;
+        fx.wetLevel     = 1.0f;
         fx.chorusLfoPhL = fx.chorusLfoPhR = 0.0f;
         fx.chorusBufL.assign(2880, 0.0f);
         fx.chorusBufR.assign(2880, 0.0f);
@@ -319,6 +408,13 @@ void AudioEngine::stop() {
     mPlayheadRunning.store(false);
     mPendingRowAdvances.store(0);
     resetPlayheadPhase();
+    {
+        std::lock_guard<std::mutex> meterLock(mMeterMutex);
+        mTrackMeterPeakL.fill(0.0f);
+        mTrackMeterPeakR.fill(0.0f);
+        mMasterMeterPeakL = 0.0f;
+        mMasterMeterPeakR = 0.0f;
+    }
     if (mStream) {
         {
             std::lock_guard<std::mutex> lock(mVoiceMutex);
@@ -337,6 +433,13 @@ void AudioEngine::stop() {
                 v.targetFreq        = 0.0f;
                 v.filterLow         = 0.0f;
                 v.filterBand        = 0.0f;
+                v.karplusMode       = false;
+                v.karplusActive     = false;
+                v.karplusBuf.clear();
+                v.karplusPos        = 0;
+                v.karplusDispersionState = 0.0f;
+                v.karplusBodyState  = 0.0f;
+                v.karplusBodyState2 = 0.0f;
                 v.samplerMode       = false;
                 v.sampleActive      = false;
                 v.sampleSlot        = -1;
@@ -553,7 +656,7 @@ void AudioEngine::triggerRowLocked(const std::vector<int>& rowData) {
         const int vol  = rowData[base + 1];
         const int pan  = rowData[base + 2];
         const int wave = rowData[base + 3];
-        // instrumentType: 0=synth, 1=sampler.
+        // instrumentType: 0=synth, 1=sampler, 2=Karplus.
         // Present in 24- and 25-stride row packets.
         const int instrumentType = (stride >= 24) ? rowData[base + 4] : 0;
         // Synth params (stride 24/23 full; stride 18 compat; stride 4 defaults)
@@ -593,6 +696,7 @@ void AudioEngine::triggerRowLocked(const std::vector<int>& rowData) {
         const int pitchMidi = pitchOnly ? std::clamp(-1000 - n, 0, 127) : n;
 
         const bool isSampler = (instrumentType == 1);
+        const bool isKarplus = (instrumentType == 2);
 
         const int clampedWave = std::clamp(wave, 0, 5);
         const bool waveChanging = (clampedWave != v.waveform);
@@ -620,6 +724,14 @@ void AudioEngine::triggerRowLocked(const std::vector<int>& rowData) {
             v.lfoTarget   = std::clamp(lfoTgt, 0, 2);
         }
         v.drive = byteToNorm(drive);
+        v.karplusDecayNorm = byteToNorm(detune);
+        v.karplusDampingNorm = byteToNorm(cutoff);
+        v.karplusToneNorm = byteToNorm(resonance);
+        v.karplusStretchNorm = byteToNorm(filterMode);
+        v.karplusPickPositionNorm = byteToNorm(fatk);
+        v.karplusAttackColorNorm = byteToNorm(fdec);
+        v.karplusBodyNorm = byteToNorm(fsus);
+        v.karplusDriveNorm = byteToNorm(frel);
 
         if (vol >= 0) {
             const int clampedVol = std::clamp(vol, 0, 255);
@@ -632,7 +744,12 @@ void AudioEngine::triggerRowLocked(const std::vector<int>& rowData) {
         }
 
         v.samplerMode = isSampler;
+        v.karplusMode = isKarplus;
         if (isSampler) {
+            v.karplusActive = false;
+            v.karplusBuf.clear();
+            v.karplusBodyState = 0.0f;
+            v.karplusBodyState2 = 0.0f;
             v.sampleSlot = std::clamp(wave, 0, static_cast<int>(mSamplerSlots.size()) - 1);
             v.loopMode   = std::clamp(drive, 0, 2);
             v.sampleReverse = (reverse != 0);
@@ -688,6 +805,23 @@ void AudioEngine::triggerRowLocked(const std::vector<int>& rowData) {
             v.gain = 0.0f;
             v.gainTarget = 0.0f;
             v.pendingWaveform = -1;
+            continue;
+        }
+
+        if (isKarplus) {
+            v.sampleActive = false;
+            v.filterLow = 0.0f;
+            v.filterBand = 0.0f;
+            v.pendingWaveform = -1;
+
+            if (n >= 0) {
+                startKarplusVoice(v, n, static_cast<int>(mCachedSampleRate));
+            } else if (pitchOnly) {
+                startKarplusVoice(v, pitchMidi, static_cast<int>(mCachedSampleRate));
+            } else if (n == -2) {
+                v.noteHeld = false;
+                v.gainTarget = 0.0f;
+            }
             continue;
         }
 
@@ -831,6 +965,7 @@ void AudioEngine::killVoicesLocked(const std::vector<int>& killMask) {
         v.noteHeld = false;
         v.envStage = EnvelopeStage::Release;
         if (v.samplerMode) v.sampleActive = false;
+        if (v.karplusMode) v.gainTarget = 0.0f;
     }
 }
 
@@ -911,6 +1046,9 @@ bool AudioEngine::isVoicePlaying(int trackIdx) const {
     std::lock_guard<std::mutex> lock(mVoiceMutex);
     const Voice& v = mVoices[trackIdx];
     // Voice is playing if it has a MIDI note and is not in Idle stage.
+    if (v.karplusMode) {
+        return v.karplusActive || v.gain > 1e-4f || v.gainTarget > 1e-4f;
+    }
     return v.midiNote >= 0 && v.envStage != EnvelopeStage::Idle;
 }
 
@@ -919,6 +1057,9 @@ int AudioEngine::getVoiceEnvelopeStage(int trackIdx) const {
         return 0; // Idle
     }
     std::lock_guard<std::mutex> lock(mVoiceMutex);
+    if (mVoices[trackIdx].karplusMode) {
+        return mVoices[trackIdx].karplusActive ? 3 : 0;
+    }
     return static_cast<int>(mVoices[trackIdx].envStage);
 }
 
@@ -947,12 +1088,12 @@ void AudioEngine::queueMixerCommands(const std::vector<int>& data) {
 
 void AudioEngine::queueMixerCommandsLocked(const std::vector<int>& data) {
     // data format: groups of 4 ints — [channel, controller, value, unused].
-    // channel: 0=master, 1-15=mixer channels
+    // channel: 0=master, 1-16=mixer channels
     // controller: 1-4 (pan, mute, solo, volume), 5-9 reserved
     // value: 0-99
     // Mixer commands fire immediately at row start (sampleTarget = 0).
     for (size_t i = 0; i + 3 < data.size(); i += 4) {
-        const int channel = std::clamp(data[i], 0, 15);
+        const int channel = std::clamp(data[i], 0, kMaxVoices);
         const int controller = std::clamp(data[i + 1], 1, 9);
         const int value = std::clamp(data[i + 2], 0, 99);
         mPendingMixerCommands.push_back({0, channel, controller, value});
@@ -1692,6 +1833,12 @@ oboe::DataCallbackResult AudioEngine::onAudioReady(
     // One-pole gain smoother: ~5 ms time constant, eliminates clicks.
     const float smoothK = 1.0f - std::exp(-1.0f / (static_cast<float>(sampleRate) * 0.005f));
     const float panSmoothK = 1.0f - std::exp(-1.0f / (static_cast<float>(sampleRate) * 0.003f));
+    std::array<float, kMaxVoices> callbackTrackPeakL{};
+    std::array<float, kMaxVoices> callbackTrackPeakR{};
+    float callbackMasterPeakL = 0.0f;
+    float callbackMasterPeakR = 0.0f;
+    std::vector<float> previewDirectL(numFrames, 0.0f);
+    std::vector<float> previewDirectR(numFrames, 0.0f);
 
     std::lock_guard<std::mutex> lock(mVoiceMutex);
 
@@ -1758,6 +1905,8 @@ oboe::DataCallbackResult AudioEngine::onAudioReady(
                 v.gain = 0.0f;
                 v.gainTarget = 0.0f;
                 v.pendingWaveform = -1;
+            } else if (v.karplusMode) {
+                startKarplusVoice(v, ev.note, sampleRate);
             } else {
                 v.midiNote = ev.note;
                 const float detuneSemitones = (v.detuneNorm - 0.5f) * 24.0f;
@@ -1805,6 +1954,8 @@ oboe::DataCallbackResult AudioEngine::onAudioReady(
                 // Pitch-only ARP for sampler: retune sample speed only.
                 const float semis = static_cast<float>(ev.note - 60) + detuneSemitones;
                 v.sampleStep = std::pow(2.0f, semis / 12.0f);
+            } else if (v.karplusMode) {
+                startKarplusVoice(v, ev.note, sampleRate);
             } else {
                 // Pitch-only ARP for synth: retune oscillator without retrigger.
                 v.targetFreq = static_cast<float>(midiToFreq(ev.note)) *
@@ -1856,6 +2007,8 @@ oboe::DataCallbackResult AudioEngine::onAudioReady(
                         v.sampleActive = true;
                     }
                 }
+            } else if (v.karplusMode) {
+                startKarplusVoice(v, ev.note, sampleRate);
             } else {
                 // Synth retrigger: restart amp/filter envelopes from zero.
                 v.midiNote = ev.note;
@@ -1933,7 +2086,7 @@ oboe::DataCallbackResult AudioEngine::onAudioReady(
     // Mixer commands fire immediately (sampleTarget = 0).
     if (!mPendingMixerCommands.empty()) {
         for (auto& ev : mPendingMixerCommands) {
-            // ev.channel: 0=master, 1-15=channels
+            // ev.channel: 0=master, 1-16=channels
             // ev.controller: 1-4 (pan, mute, solo, volume), 5-9 reserved
             // ev.value: 0-99
             
@@ -2071,6 +2224,68 @@ oboe::DataCallbackResult AudioEngine::onAudioReady(
 
                 v.samplePos += v.samplePingDir ? -ratio : ratio;
                 v.sampleElapsedFrames += 1.0;
+            }
+            continue;
+        }
+
+        if (v.karplusMode) {
+            if (!v.karplusActive || v.karplusBuf.empty()) {
+                if (!v.noteHeld && v.gain < 1e-4f && v.gainTarget < 1e-4f) {
+                    v.karplusMode = false;
+                    v.midiNote = -1;
+                }
+                continue;
+            }
+
+            const float feedback = karplusFeedback(v.karplusDecayNorm);
+            const float brightness = karplusBrightness(v.karplusDampingNorm);
+            const float dispersion = karplusDispersion(v.karplusStretchNorm);
+            const float bodyBlend = karplusBodyBlend(v.karplusBodyNorm);
+            const float driveAmount = karplusDriveAmount(v.karplusDriveNorm);
+            const int bufSize = static_cast<int>(v.karplusBuf.size());
+
+            for (int i = 0; i < numFrames; ++i) {
+                v.gain += smoothK * (v.gainTarget - v.gain);
+                v.pan += panSmoothK * (v.panTarget - v.pan);
+
+                const int nextPos = (v.karplusPos + 1) % bufSize;
+                const float current = v.karplusBuf[v.karplusPos];
+                const float next = v.karplusBuf[nextPos];
+                const float filtered = current * brightness + next * (1.0f - brightness);
+                const float dispersed = filtered + dispersion * (filtered - v.karplusDispersionState);
+                v.karplusDispersionState = filtered;
+                v.karplusBuf[v.karplusPos] = std::clamp(dispersed * feedback, -1.0f, 1.0f);
+                v.karplusPos = nextPos;
+
+                float sample = current;
+                const float bodyLowCoeff = 0.018f + bodyBlend * 0.085f;
+                const float bodyHighCoeff = 0.090f + bodyBlend * 0.190f;
+                v.karplusBodyState += (sample - v.karplusBodyState) * bodyLowCoeff;
+                v.karplusBodyState2 += (sample - v.karplusBodyState2) * bodyHighCoeff;
+                const float bodyResonance = v.karplusBodyState2 - v.karplusBodyState;
+                sample = sample * (1.0f - bodyBlend * 0.24f) +
+                         v.karplusBodyState * bodyBlend * 0.82f +
+                         bodyResonance * bodyBlend * 1.65f;
+                if (driveAmount > 0.001f) {
+                    const float boosted = sample * (1.0f + driveAmount * 6.0f);
+                    sample = boosted / (1.0f + std::fabs(boosted));
+                }
+                sample = sample * v.gain * v.level * v.instrumentVolume * 0.35f;
+
+                const float pan01 = std::clamp(v.pan, 0.0f, 1.0f);
+                const float angle = pan01 * 1.57079632679f;
+                const float leftGain = std::cos(angle);
+                const float rightGain = std::sin(angle);
+
+                mTrackBusL[trackIdx][i] += sample * leftGain;
+                mTrackBusR[trackIdx][i] += sample * rightGain;
+
+                if (!v.noteHeld && v.gain < 1e-4f) {
+                    v.karplusActive = false;
+                    v.karplusMode = false;
+                    v.midiNote = -1;
+                    break;
+                }
             }
             continue;
         }
@@ -2349,6 +2564,19 @@ oboe::DataCallbackResult AudioEngine::onAudioReady(
             }
         }
 
+        for (int i = 0; i < numFrames; ++i) {
+            callbackTrackPeakL[track] = std::max(callbackTrackPeakL[track], std::abs(mTrackBusL[track][i]));
+            callbackTrackPeakR[track] = std::max(callbackTrackPeakR[track], std::abs(mTrackBusR[track][i]));
+        }
+
+        if (mPreviewBypassTrackInserts[track]) {
+            for (int i = 0; i < numFrames; ++i) {
+                previewDirectL[i] += mTrackBusL[track][i];
+                previewDirectR[i] += mTrackBusR[track][i];
+            }
+            continue;
+        }
+
         const int dest = mTrackSendChannel[track];
         if (dest == 0 || dest > kMaxVoices || (dest - 1) == track) {
             // Direct to master
@@ -2400,6 +2628,19 @@ oboe::DataCallbackResult AudioEngine::onAudioReady(
             }
         }
 
+        for (int i = 0; i < numFrames; ++i) {
+            callbackTrackPeakL[track] = std::max(callbackTrackPeakL[track], std::abs(mTrackBusL[track][i]));
+            callbackTrackPeakR[track] = std::max(callbackTrackPeakR[track], std::abs(mTrackBusR[track][i]));
+        }
+
+        if (mPreviewBypassTrackInserts[track]) {
+            for (int i = 0; i < numFrames; ++i) {
+                previewDirectL[i] += mTrackBusL[track][i];
+                previewDirectR[i] += mTrackBusR[track][i];
+            }
+            continue;
+        }
+
         // Send-destination tracks always route to master (no chaining).
         for (int i = 0; i < numFrames; ++i) {
             out[i * 2]     += mTrackBusL[track][i];
@@ -2439,6 +2680,25 @@ oboe::DataCallbackResult AudioEngine::onAudioReady(
     for (int i = 0; i < numFrames; ++i) {
         out[i * 2] = mMasterBusL[i];
         out[i * 2 + 1] = mMasterBusR[i];
+    }
+
+    // Preview audition should bypass channel routing, inserts, and the master chain.
+    for (int i = 0; i < numFrames; ++i) {
+        out[i * 2] += previewDirectL[i];
+        out[i * 2 + 1] += previewDirectR[i];
+        callbackMasterPeakL = std::max(callbackMasterPeakL, std::abs(out[i * 2]));
+        callbackMasterPeakR = std::max(callbackMasterPeakR, std::abs(out[i * 2 + 1]));
+    }
+
+    {
+        constexpr float kMeterRelease = 0.86f;
+        std::lock_guard<std::mutex> meterLock(mMeterMutex);
+        for (int track = 0; track < kMaxVoices; ++track) {
+            mTrackMeterPeakL[track] = std::max(callbackTrackPeakL[track], mTrackMeterPeakL[track] * kMeterRelease);
+            mTrackMeterPeakR[track] = std::max(callbackTrackPeakR[track], mTrackMeterPeakR[track] * kMeterRelease);
+        }
+        mMasterMeterPeakL = std::max(callbackMasterPeakL, mMasterMeterPeakL * kMeterRelease);
+        mMasterMeterPeakR = std::max(callbackMasterPeakR, mMasterMeterPeakR * kMeterRelease);
     }
 
     // ── Export tap: copy final stereo output to export buffer ─────────────────
@@ -2635,4 +2895,16 @@ void AudioEngine::setSendRouting(const std::vector<int>& routing) {
     for (int i = 0; i < kMaxVoices && i < static_cast<int>(routing.size()); ++i) {
         mTrackSendChannel[i] = std::clamp(routing[i], 0, kMaxVoices);
     }
+}
+
+std::array<float, kMaxVoices * 2 + 2> AudioEngine::getMeterValues() const {
+    std::array<float, kMaxVoices * 2 + 2> values{};
+    std::lock_guard<std::mutex> meterLock(mMeterMutex);
+    for (int track = 0; track < kMaxVoices; ++track) {
+        values[track] = mTrackMeterPeakL[track];
+        values[kMaxVoices + track] = mTrackMeterPeakR[track];
+    }
+    values[kMaxVoices * 2] = mMasterMeterPeakL;
+    values[kMaxVoices * 2 + 1] = mMasterMeterPeakR;
+    return values;
 }

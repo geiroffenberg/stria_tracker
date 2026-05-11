@@ -166,7 +166,7 @@ class AudioEngine {
 
   /// Queue mixer control commands (M01-M99).
   /// [data] is packed in groups of 4: [channel, controller, value, unused].
-  /// channel: 0=master, 1-15=mixer channels
+  /// channel: 0=master, 1-16=mixer channels
   /// controller: 1-4 for pan/mute/solo/volume (or reserved 5-9 for future)
   /// value: 0-99 (normalized parameter value)
   Future<void> queueMixerCommands(List<int> data) async {
@@ -183,7 +183,7 @@ class AudioEngine {
   }
 
   /// Check if a voice (track) is currently playing.
-  /// [trackIdx] is 0-7 (track index).
+  /// [trackIdx] is 0-15 (track index).
   /// Returns true if the voice has an active note or is in release stage.
   Future<bool> isVoicePlaying(int trackIdx) async {
     if (!_initialised) return false;
@@ -192,12 +192,23 @@ class AudioEngine {
   }
 
   /// Get the current envelope stage of a voice.
-  /// [trackIdx] is 0-7 (track index).
+  /// [trackIdx] is 0-15 (track index).
   /// Returns: 0=Idle, 1=Attack, 2=Decay, 3=Sustain, 4=Release
   Future<int> getVoiceEnvelopeStage(int trackIdx) async {
     if (!_initialised) return 0;
     final result = await _channel.invokeMethod<int>('getVoiceEnvelopeStage', {'trackIdx': trackIdx});
     return result ?? 0;
+  }
+
+  /// Return packed stereo peak meter values as linear amplitudes.
+  /// Layout: [track0L..track15L, track0R..track15R, masterL, masterR].
+  Future<List<double>> getMeterValues() async {
+    if (!_initialised) return List<double>.filled(34, 0.0);
+    final result = await _channel.invokeListMethod<dynamic>('getMeterValues');
+    if (result == null || result.length != 34) {
+      return List<double>.filled(34, 0.0);
+    }
+    return result.map((value) => (value as num).toDouble()).toList(growable: false);
   }
 
   /// Begin capturing the stereo master output into an internal buffer.
@@ -208,7 +219,7 @@ class AudioEngine {
   }
 
   /// Set the send routing for all tracks. [routingPerTrack] is one int per
-  /// track: 0=route to master, 1-8=route audio into that channel's bus.
+  /// track: 0=route to master, 1-16=route audio into that channel's bus.
   Future<void> setSendRouting(List<int> routingPerTrack) async {
     if (!_initialised) return;
     await _channel.invokeMethod('setSendRouting', routingPerTrack);
@@ -269,7 +280,7 @@ class AudioEngine {
   }
 
   /// Configure a track insert effect.
-  /// [trackIdx] is 0-7 (track index), [slotIdx] is 0-5.
+  /// [trackIdx] is 0-15 (track index), [slotIdx] is 0-5.
   Future<void> setTrackInsertEffect(int trackIdx, int slotIdx, int effectType, double dryWet) async {
     if (!_initialised) return;
     await _channel.invokeMethod('setTrackInsertEffect', {

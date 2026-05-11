@@ -9,7 +9,7 @@
 // to ship across the MethodChannel to the Oboe engine when wiring up
 // audio later.
 
-enum InstrumentType { sampler, simpleSynth, empty }
+enum InstrumentType { sampler, simpleSynth, karplusStrong, empty }
 
 extension InstrumentTypeLabel on InstrumentType {
   String get label {
@@ -18,6 +18,8 @@ extension InstrumentTypeLabel on InstrumentType {
         return 'SAMPLER';
       case InstrumentType.simpleSynth:
         return 'SIMPLE SYNTH';
+      case InstrumentType.karplusStrong:
+        return 'KARPLUS';
       case InstrumentType.empty:
         return 'EMPTY';
     }
@@ -269,6 +271,114 @@ class SimpleSynthParams {
   }
 }
 
+class KarplusStrongParams {
+  double decay; // 0..1 -> feedback / sustain length
+  double damping; // 0..1 -> low-pass damping / brightness
+  double tone; // 0..1 -> excitation hardness / attack color
+  double stretch; // 0..1 -> inharmonicity / dispersion
+  double pickPosition; // 0..1 -> excitation point along the string
+  double attackColor; // 0..1 -> brightness / noisiness of the pick transient
+  double body; // 0..1 -> resonant body emphasis
+  double drive; // 0..1 -> output saturation
+
+  KarplusStrongParams({
+    this.decay = 0.55,
+    this.damping = 0.62,
+    this.tone = 0.50,
+    this.stretch = 0.22,
+    this.pickPosition = 0.30,
+    this.attackColor = 0.48,
+    this.body = 0.35,
+    this.drive = 0.10,
+  });
+
+  Map<String, dynamic> toJson() => {
+    'decay': decay,
+    'damping': damping,
+    'tone': tone,
+    'stretch': stretch,
+    'pickPosition': pickPosition,
+    'attackColor': attackColor,
+    'body': body,
+    'drive': drive,
+  };
+
+  factory KarplusStrongParams.fromJson(Map<String, dynamic> j) =>
+      KarplusStrongParams(
+        decay: (j['decay'] as num?)?.toDouble() ?? 0.55,
+        damping: (j['damping'] as num?)?.toDouble() ?? 0.62,
+        tone: (j['tone'] as num?)?.toDouble() ?? 0.50,
+        stretch: (j['stretch'] as num?)?.toDouble() ?? 0.22,
+        pickPosition: (j['pickPosition'] as num?)?.toDouble() ?? 0.30,
+        attackColor: (j['attackColor'] as num?)?.toDouble() ?? 0.48,
+        body: (j['body'] as num?)?.toDouble() ?? 0.35,
+        drive: (j['drive'] as num?)?.toDouble() ?? 0.10,
+      );
+
+  KarplusStrongParams copy() => KarplusStrongParams(
+    decay: decay,
+    damping: damping,
+    tone: tone,
+    stretch: stretch,
+    pickPosition: pickPosition,
+    attackColor: attackColor,
+    body: body,
+    drive: drive,
+  );
+
+  static const int maxParamIndex = 8;
+
+  static String paramName(int idx) {
+    switch (idx) {
+      case 0:
+        return 'Reset';
+      case 1:
+        return 'Decay';
+      case 2:
+        return 'Damping';
+      case 3:
+        return 'Tone';
+      case 4:
+        return 'Stretch';
+      case 5:
+        return 'Pick Pos';
+      case 6:
+        return 'Attack Color';
+      case 7:
+        return 'Body';
+      case 8:
+        return 'Drive';
+      default:
+        return 'P${idx.toString().padLeft(2, '0')}';
+    }
+  }
+
+  static String paramDescription(int idx) {
+    switch (idx) {
+      case 0:
+        return 'P00 — reset all Karplus params to original slider values';
+      case 1:
+        return 'P01 Decay — string feedback / sustain length (00=short, 99=long)';
+      case 2:
+        return 'P02 Damping — brightness and decay filtering (00=dark, 99=bright)';
+      case 3:
+        return 'P03 Tone — excitation hardness (00=soft, 99=hard)';
+      case 4:
+        return 'P04 Stretch — inharmonicity / string stiffness (00=clean, 99=stiff)';
+      case 5:
+        return 'P05 Pick Pos — where the string is excited (00=near bridge, 99=near center)';
+      case 6:
+        return 'P06 Attack Color — pick transient brightness/noise (00=soft, 99=hard)';
+      case 7:
+        return 'P07 Body — resonant body emphasis (00=dry, 99=boxy/resonant)';
+      case 8:
+        return 'P08 Drive — output saturation (00=clean, 99=full drive)';
+      default:
+        return '';
+    }
+  }
+}
+
 enum SamplerLoopMode { off, forward, pingPong }
 
 extension SamplerLoopModeLabel on SamplerLoopMode {
@@ -464,22 +574,28 @@ class InstrumentModel {
   String name;
   InstrumentType type;
   SimpleSynthParams synth;
+  KarplusStrongParams karplus;
   SamplerParams sampler;
   late SimpleSynthParams synthStartState;
+  late KarplusStrongParams karplusStartState;
   late SamplerParams samplerStartState;
 
   InstrumentModel({
     required this.name,
     this.type = InstrumentType.empty,
     SimpleSynthParams? synth,
+    KarplusStrongParams? karplus,
     SamplerParams? sampler,
     SimpleSynthParams? synthStartState,
+    KarplusStrongParams? karplusStartState,
     SamplerParams? samplerStartState,
   }) : synth = synth ?? SimpleSynthParams(),
+       karplus = karplus ?? KarplusStrongParams(),
        sampler = sampler ?? SamplerParams() {
     // Initialize start states as copies of the working parameters.
     // When play() is called, these get updated as snapshots.
     this.synthStartState = synthStartState ?? this.synth.copy();
+    this.karplusStartState = karplusStartState ?? this.karplus.copy();
     this.samplerStartState = samplerStartState ?? this.sampler.copy();
   }
 
@@ -490,8 +606,10 @@ class InstrumentModel {
     'name': name,
     'type': type.index,
     'synth': synth.toJson(),
+    'karplus': karplus.toJson(),
     'sampler': sampler.toJson(),
     'synthStartState': synthStartState.toJson(),
+    'karplusStartState': karplusStartState.toJson(),
     'samplerStartState': samplerStartState.toJson(),
   };
 
@@ -504,11 +622,17 @@ class InstrumentModel {
     synth: SimpleSynthParams.fromJson(
       (j['synth'] as Map<String, dynamic>?) ?? {},
     ),
+    karplus: KarplusStrongParams.fromJson(
+      (j['karplus'] as Map<String, dynamic>?) ?? {},
+    ),
     sampler: SamplerParams.fromJson(
       (j['sampler'] as Map<String, dynamic>?) ?? {},
     ),
     synthStartState: SimpleSynthParams.fromJson(
       (j['synthStartState'] as Map<String, dynamic>?) ?? {},
+    ),
+    karplusStartState: KarplusStrongParams.fromJson(
+      (j['karplusStartState'] as Map<String, dynamic>?) ?? {},
     ),
     samplerStartState: SamplerParams.fromJson(
       (j['samplerStartState'] as Map<String, dynamic>?) ?? {},

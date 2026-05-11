@@ -9,6 +9,7 @@ import 'package:permission_handler/permission_handler.dart';
 import '../audio/audio_engine.dart';
 import '../audio/wav_encoder.dart';
 import '../models/instrument_model.dart';
+import '../models/karplus_preset_bank.dart';
 import '../models/synth_preset_bank.dart';
 import '../state/app_state.dart';
 import '../theme/app_theme.dart';
@@ -33,6 +34,8 @@ class InstrumentScreen extends StatelessWidget {
           Expanded(
             child: switch (ins.type) {
               InstrumentType.simpleSynth => _SimpleSynthEditor(state: state),
+              InstrumentType.karplusStrong =>
+                _KarplusStrongEditor(state: state),
               InstrumentType.sampler => _SamplerEditor(state: state),
               InstrumentType.empty => _EmptyInstrumentPlaceholder(
                 onPick: (t) =>
@@ -144,6 +147,8 @@ class _InstrumentHeader extends StatelessWidget {
                 sub = sn != null && sn.isNotEmpty
                     ? 'SAMPLER  ·  $sn'
                     : 'SAMPLER  ·  no sample';
+              } else if (ins.type == InstrumentType.karplusStrong) {
+                sub = 'KARPLUS  ·  ${ins.name}';
               } else {
                 sub = 'SYNTH  ·  ${ins.name}';
               }
@@ -257,6 +262,7 @@ class _TypeButton extends StatelessWidget {
                 const Divider(height: 1, color: Color(0xFF1A1A1A)),
                 for (final t in [
                   InstrumentType.simpleSynth,
+                  InstrumentType.karplusStrong,
                   InstrumentType.sampler,
                 ])
                   ListTile(
@@ -264,6 +270,8 @@ class _TypeButton extends StatelessWidget {
                     leading: Icon(
                       t == InstrumentType.simpleSynth
                           ? Icons.graphic_eq
+                          : t == InstrumentType.karplusStrong
+                          ? Icons.music_note
                           : Icons.audiotrack,
                       color: t == type ? kColAccent : kColHeader,
                     ),
@@ -335,6 +343,7 @@ class _EmptyInstrumentPlaceholder extends StatelessWidget {
             children: [
               for (final t in [
                 InstrumentType.simpleSynth,
+                InstrumentType.karplusStrong,
                 InstrumentType.sampler,
               ])
                 Padding(
@@ -714,6 +723,197 @@ class _SimpleSynthEditor extends StatelessWidget {
             'SYNTH params are live in the native audio engine.',
             textAlign: TextAlign.center,
             style: kStyleBase.copyWith(color: kColInactive, fontSize: 11),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _KarplusStrongEditor extends StatelessWidget {
+  final AppState state;
+  const _KarplusStrongEditor({required this.state});
+
+  @override
+  Widget build(BuildContext context) {
+    final p = state.currentInstrument.karplus;
+    final presets = [...kKarplusStrongPresets]
+      ..sort((a, b) {
+        final an = a.name.toLowerCase();
+        final bn = b.name.toLowerCase();
+        if (an == 'default' && bn != 'default') return -1;
+        if (bn == 'default' && an != 'default') return 1;
+        return an.compareTo(bn);
+      });
+
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _Section(
+            title: 'PRESETS',
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: ElevatedButton.icon(
+                    onPressed: () async {
+                      final err = await state.previewCurrentKarplusOneShot();
+                      if (!context.mounted || err == null) return;
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text('Preview failed: $err'),
+                          duration: const Duration(seconds: 2),
+                        ),
+                      );
+                    },
+                    icon: const Icon(Icons.play_arrow),
+                    label: const Text('PREVIEW'),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                DropdownButtonFormField<KarplusStrongPreset>(
+                  initialValue: null,
+                  isExpanded: true,
+                  dropdownColor: kBgTrackHeader,
+                  decoration: const InputDecoration(
+                    border: OutlineInputBorder(),
+                  ),
+                  hint: const Text('Select preset'),
+                  items: [
+                    for (final preset in presets)
+                      DropdownMenuItem<KarplusStrongPreset>(
+                        value: preset,
+                        child: Text(preset.name),
+                      ),
+                  ],
+                  onChanged: (picked) {
+                    if (picked == null) return;
+                    picked.applyTo(state.currentInstrument.karplus);
+                    state.instrumentParamsChanged();
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text('Loaded preset: ${picked.name}'),
+                        duration: const Duration(milliseconds: 1200),
+                      ),
+                    );
+                  },
+                ),
+              ],
+            ),
+          ),
+          _Section(
+            title: 'STRING MODEL',
+            child: Column(
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: _Knob(
+                        label: 'DECAY',
+                        value: p.decay,
+                        display: '${(p.decay * 100).round()}%',
+                        onChanged: (v) {
+                          p.decay = v;
+                          state.instrumentParamsChanged();
+                        },
+                      ),
+                    ),
+                    Expanded(
+                      child: _Knob(
+                        label: 'DAMP',
+                        value: p.damping,
+                        display: '${(p.damping * 100).round()}%',
+                        onChanged: (v) {
+                          p.damping = v;
+                          state.instrumentParamsChanged();
+                        },
+                      ),
+                    ),
+                    Expanded(
+                      child: _Knob(
+                        label: 'TONE',
+                        value: p.tone,
+                        display: '${(p.tone * 100).round()}%',
+                        onChanged: (v) {
+                          p.tone = v;
+                          state.instrumentParamsChanged();
+                        },
+                      ),
+                    ),
+                    Expanded(
+                      child: _Knob(
+                        label: 'STRETCH',
+                        value: p.stretch,
+                        display: '${(p.stretch * 100).round()}%',
+                        onChanged: (v) {
+                          p.stretch = v;
+                          state.instrumentParamsChanged();
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+                Row(
+                  children: [
+                    Expanded(
+                      child: _Knob(
+                        label: 'PICK POS',
+                        value: p.pickPosition,
+                        display: '${(p.pickPosition * 100).round()}%',
+                        onChanged: (v) {
+                          p.pickPosition = v;
+                          state.instrumentParamsChanged();
+                        },
+                      ),
+                    ),
+                    Expanded(
+                      child: _Knob(
+                        label: 'ATTACK',
+                        value: p.attackColor,
+                        display: '${(p.attackColor * 100).round()}%',
+                        onChanged: (v) {
+                          p.attackColor = v;
+                          state.instrumentParamsChanged();
+                        },
+                      ),
+                    ),
+                    Expanded(
+                      child: _Knob(
+                        label: 'BODY',
+                        value: p.body,
+                        display: '${(p.body * 100).round()}%',
+                        onChanged: (v) {
+                          p.body = v;
+                          state.instrumentParamsChanged();
+                        },
+                      ),
+                    ),
+                    Expanded(
+                      child: _Knob(
+                        label: 'DRIVE',
+                        value: p.drive,
+                        display: '${(p.drive * 100).round()}%',
+                        onChanged: (v) {
+                          p.drive = v;
+                          state.instrumentParamsChanged();
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  'Karplus params are live in the native audio engine.',
+                  style: kStyleBase.copyWith(
+                    color: kColInactive,
+                    fontSize: 11,
+                  ),
+                ),
+              ],
+            ),
           ),
         ],
       ),

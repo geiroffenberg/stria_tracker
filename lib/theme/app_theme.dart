@@ -275,13 +275,13 @@ Color get kColVol => _palette.colVol;
 Color get kColPan => _palette.colPan;
 Color get kColFxCmd => _palette.colFxCmd;
 Color get kColFxVal => _palette.colFxVal;
-Color get kColEmpty => _palette.colEmpty;
+Color get kColEmpty => Color.lerp(_palette.colEmpty, _palette.colHeader, 0.3)!;
 Color get kColRowNum => _palette.colRowNum;
-Color get kColHeader => _palette.colHeader;
+Color get kColHeader => Color.lerp(_palette.colHeader, _palette.colAccent, 0.18)!;
 
 Color get kColAccent => _palette.colAccent;
 Color get kColActive => _palette.colActive;
-Color get kColInactive => _palette.colInactive;
+Color get kColInactive => Color.lerp(_palette.colInactive, _palette.colHeader, 0.48)!;
 Color get kColSelection => _palette.colSelection;
 Color get kColPlayBtn => _palette.colPlayBtn;
 Color get kColComplement => _palette.colComplement;

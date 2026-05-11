@@ -437,4 +437,15 @@ Java_com_example_tracker_AudioEnginePlugin_nativeGetVoiceEnvelopeStage(
     return reinterpret_cast<AudioEngine*>(ptr)->getVoiceEnvelopeStage(trackIdx);
 }
 
+JNIEXPORT jfloatArray JNICALL
+Java_com_example_tracker_AudioEnginePlugin_nativeGetMeterValues(
+        JNIEnv* env, jobject, jlong ptr) {
+    const auto values = reinterpret_cast<AudioEngine*>(ptr)->getMeterValues();
+    jfloatArray result = env->NewFloatArray(static_cast<jsize>(values.size()));
+    if (result != nullptr) {
+        env->SetFloatArrayRegion(result, 0, static_cast<jsize>(values.size()), values.data());
+    }
+    return result;
+}
+
 } // extern "C"

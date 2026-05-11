@@ -2,7 +2,7 @@ import 'fx_envelope_run.dart';
 import 'track_model.dart';
 
 const int kDefaultLinesPerBeat = 4;
-const int kDefaultBeats = 16;
+const int kDefaultBeats = 4;
 const int kBeatsPerBar  = 4; // 4 lines × 4 beats = 16 lines per bar
 
 class PatternModel {

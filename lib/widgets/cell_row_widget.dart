@@ -31,7 +31,7 @@ class CellRowWidget extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final state = AppStateScope.of(context);
-    final isRowSelected = state.selectedRow == row;
+    final isRowSelected = state.isRowInSelection(row);
     final isBeatStart = state.isBeatStart(row);
     final beat = isBeatStart ? state.beatForRow(row) : -1;
     final bg = rowBgColor(row, isSelected, isPlayhead, state.linesPerBeat);

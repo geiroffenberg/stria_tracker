@@ -99,7 +99,7 @@ class _ScheduledPlaybackRow {
 }
 
 class AppState extends ChangeNotifier {
-  static const int _audioVoiceCount = 8;
+  static const int _audioVoiceCount = kMaxTracks;
   static const int _audioRowStride = 25;
 
   AppState() {
@@ -170,8 +170,28 @@ class AppState extends ChangeNotifier {
   );
 
   CellPosition? selectedCell;
-  int? _selectedRow;
-  int? get selectedRow => _selectedRow;
+  int? _selectedRowStart;
+  int? _selectedRowEnd;
+  int? get selectedRow => _selectedRowStart; // For backward compat with single-row ops
+  bool isRowInSelection(int row) {
+    if (_selectedRowStart == null || _selectedRowEnd == null) return false;
+    final min = _selectedRowStart!;
+    final max = _selectedRowEnd!;
+    return row >= (min <= max ? min : max) && row <= (min <= max ? max : min);
+  }
+  int get selectedRowCount {
+    if (_selectedRowStart == null || _selectedRowEnd == null) return 0;
+    final min = _selectedRowStart!;
+    final max = _selectedRowEnd!;
+    return (min <= max ? max - min : min - max) + 1;
+  }
+  /// Returns (minRow, maxRow) tuple of selected range, or null if nothing selected.
+  (int, int)? get selectedRowRange {
+    if (_selectedRowStart == null || _selectedRowEnd == null) return null;
+    final min = _selectedRowStart!;
+    final max = _selectedRowEnd!;
+    return min <= max ? (min, max) : (max, min);
+  }
   CellBoxSelection? _boxSelection;
   bool _isBoxSelecting = false;
   CellBoxSelection? get boxSelection => _boxSelection;
@@ -185,8 +205,8 @@ class AppState extends ChangeNotifier {
     return rows * cols;
   }
 
-  TrackerCell? _rowClipboard;
-  bool get hasRowClipboard => _rowClipboard != null;
+  List<TrackerCell>? _rowClipboard;
+  bool get hasRowClipboard => _rowClipboard != null && _rowClipboard!.isNotEmpty;
 
   // Playback carry state for IN column per track.
   List<int> _carryInstrumentByTrack = const [];
@@ -483,7 +503,8 @@ class AppState extends ChangeNotifier {
     _currentPatternIndex = index.clamp(0, song.patterns.length - 1);
     _currentTrackIndex = 0;
     selectedCell = null;
-    _selectedRow = null;
+    _selectedRowStart = null;
+    _selectedRowEnd = null;
     _clampSelectionToPattern();
     _restartPlayheadTimerIfNeeded();
     notifyListeners();
@@ -522,7 +543,8 @@ class AppState extends ChangeNotifier {
   void selectTrack(int index) {
     _currentTrackIndex = index.clamp(0, currentPattern.tracks.length - 1);
     selectedCell = null;
-    _selectedRow = null;
+    _selectedRowStart = null;
+    _selectedRowEnd = null;
     _boxSelection = null;
     _isBoxSelecting = false;
     notifyListeners();
@@ -875,13 +897,13 @@ class AppState extends ChangeNotifier {
             );
             await AudioEngine.instance.setMasterInsertMix(
               slot,
-              d('dry', 0.0),
+              d('dry', 0.5),
               wet,
             );
             await AudioEngine.instance.setMasterChorusParams(
               slot,
               d('rate', 0.3),
-              d('depth', 0.5),
+              d('depth', 0.22),
               d('delay', 0.3),
               i('stereo', 0),
             );
@@ -895,14 +917,14 @@ class AppState extends ChangeNotifier {
             await AudioEngine.instance.setTrackInsertMix(
               trackIdx,
               slot,
-              d('dry', 0.0),
+              d('dry', 0.5),
               wet,
             );
             await AudioEngine.instance.setTrackChorusParams(
               trackIdx,
               slot,
               d('rate', 0.3),
-              d('depth', 0.5),
+              d('depth', 0.22),
               d('delay', 0.3),
               i('stereo', 0),
             );
@@ -1225,8 +1247,8 @@ class AppState extends ChangeNotifier {
 
   void setTrackSendChannel(int trackIndex, int sendChannel) {
     if (trackIndex < 0 || trackIndex >= currentPattern.tracks.length) return;
-    // Clamp to valid range: 0=master, 1..kMaxVoices
-    final ch = sendChannel.clamp(0, 8);
+    // Clamp to valid range: 0=master, 1..16 track channels.
+    final ch = sendChannel.clamp(0, kMaxTracks);
     // Disallow self-send
     if (ch == trackIndex + 1) return;
     // Send routing is project-wide: update the same track on every pattern.
@@ -1259,7 +1281,8 @@ class AppState extends ChangeNotifier {
   void selectCell(int row, CellColumn column) {
     final pos = CellPosition(row, column);
     selectedCell = (selectedCell == pos) ? null : pos;
-    _selectedRow = null;
+    _selectedRowStart = null;
+    _selectedRowEnd = null;
     _boxSelection = null;
     _isBoxSelecting = false;
     notifyListeners();
@@ -1267,7 +1290,8 @@ class AppState extends ChangeNotifier {
 
   void clearSelection() {
     selectedCell = null;
-    _selectedRow = null;
+    _selectedRowStart = null;
+    _selectedRowEnd = null;
     _boxSelection = null;
     _isBoxSelecting = false;
     notifyListeners();
@@ -1275,25 +1299,66 @@ class AppState extends ChangeNotifier {
 
   // ── Row selection ────────────────────────────────────────────────────────
 
+  /// Handle row selection with multi-line range support:
+  /// - No selection: click selects a single line.
+  /// - Single-line selection: click same line deselects, click another line
+  ///   expands to the inclusive range between them.
+  /// - Multi-line selection: click inside deselects all, click outside clears
+  ///   the old range and selects only the new line.
   void selectRow(int row) {
     if (row < 0 || row >= rowCount) return;
-    _selectedRow = (_selectedRow == row) ? null : row;
+
     selectedCell = null;
     _boxSelection = null;
     _isBoxSelecting = false;
+
+    final start = _selectedRowStart;
+    final end = _selectedRowEnd;
+
+    if (start == null || end == null) {
+      _selectedRowStart = row;
+      _selectedRowEnd = row;
+      notifyListeners();
+      return;
+    }
+
+    final minRow = start < end ? start : end;
+    final maxRow = start < end ? end : start;
+    final isSingleSelection = minRow == maxRow;
+
+    final isInSelection = isRowInSelection(row);
+
+    if (isInSelection) {
+      _selectedRowStart = null;
+      _selectedRowEnd = null;
+      notifyListeners();
+      return;
+    }
+
+    if (isSingleSelection) {
+      _selectedRowStart = minRow < row ? minRow : row;
+      _selectedRowEnd = maxRow > row ? maxRow : row;
+      notifyListeners();
+      return;
+    }
+
+    _selectedRowStart = row;
+    _selectedRowEnd = row;
     notifyListeners();
   }
 
   void clearRowSelection() {
-    if (_selectedRow == null) return;
-    _selectedRow = null;
+    if (_selectedRowStart == null && _selectedRowEnd == null) return;
+    _selectedRowStart = null;
+    _selectedRowEnd = null;
     notifyListeners();
   }
 
   void beginBoxSelection(int trackIndex, int row, CellColumn column) {
     _currentTrackIndex = trackIndex.clamp(0, currentPattern.tracks.length - 1);
     selectedCell = null;
-    _selectedRow = null;
+    _selectedRowStart = null;
+    _selectedRowEnd = null;
     _isBoxSelecting = true;
     _boxSelection = CellBoxSelection(
       trackIndex: _currentTrackIndex,
@@ -1333,18 +1398,43 @@ class AppState extends ChangeNotifier {
     return sel.contains(trackIndex, row, column);
   }
 
-  /// Move the currently selected row up/down by [delta] in the current track,
-  /// swapping content with the neighbouring row. Selection follows the row.
+  /// Move the currently selected row range up/down by [delta] in the current track,
+  /// swapping content with the neighbouring rows. Selection follows the rows.
   void moveSelectedRowBy(int delta) {
-    final row = _selectedRow;
-    if (row == null) return;
-    final newRow = (row + delta).clamp(0, rowCount - 1);
-    if (newRow == row) return;
+    final start = _selectedRowStart;
+    final end = _selectedRowEnd;
+    if (start == null || end == null) return;
+    
+    final min = start < end ? start : end;
+    final max = start < end ? end : start;
+    final rangeSize = max - min + 1;
+    
+    final newMin = (min + delta).clamp(0, rowCount - rangeSize);
+    if (newMin == min) return;
+    
     final cells = currentTrack.cells;
-    final tmp = cells[row];
-    cells[row] = cells[newRow];
-    cells[newRow] = tmp;
-    _selectedRow = newRow;
+    if (delta > 0) {
+      // Moving down: swap from right to left
+      for (int i = 0; i < delta; i++) {
+        for (int r = max; r >= min; r--) {
+          final tmp = cells[r];
+          cells[r] = cells[r + 1];
+          cells[r + 1] = tmp;
+        }
+      }
+    } else {
+      // Moving up: swap from left to right
+      for (int i = 0; i < -delta; i++) {
+        for (int r = min; r <= max; r++) {
+          final tmp = cells[r];
+          cells[r] = cells[r - 1];
+          cells[r - 1] = tmp;
+        }
+      }
+    }
+    
+    _selectedRowStart = newMin;
+    _selectedRowEnd = newMin + rangeSize - 1;
     notifyListeners();
   }
 
@@ -1352,6 +1442,7 @@ class AppState extends ChangeNotifier {
   void cutRow(int row) {
     copyRow(row);
     deleteRow(row);
+    clearRowSelection();
   }
 
   // ── Cell editing ─────────────────────────────────────────────────────────
@@ -1679,19 +1770,90 @@ class AppState extends ChangeNotifier {
   }
 
   void copyRow(int row) {
-    _rowClipboard = currentTrack.cells[row].copy();
+    _rowClipboard = [currentTrack.cells[row].copy()];
     notifyListeners();
   }
 
   void pasteRow(int row) {
-    if (_rowClipboard == null) return;
-    currentTrack.cells[row] = _rowClipboard!.copy();
+    if (_rowClipboard == null || _rowClipboard!.isEmpty) return;
+    // Paste at the specified row, using first row from clipboard
+    currentTrack.cells[row] = _rowClipboard!.first.copy();
+    // Select the pasted row
+    _selectedRowStart = row;
+    _selectedRowEnd = row;
     notifyListeners();
   }
 
   void deleteRow(int row) {
     currentTrack.cells[row] = TrackerCell.empty();
     notifyListeners();
+  }
+
+  /// Copy multiple rows (inclusive range).
+  void copyRows(int startRow, int endRow) {
+    if (startRow < 0 || endRow >= rowCount) return;
+    final min = startRow < endRow ? startRow : endRow;
+    final max = startRow < endRow ? endRow : startRow;
+    _rowClipboard = [];
+    for (int r = min; r <= max; r++) {
+      _rowClipboard!.add(currentTrack.cells[r].copy());
+    }
+    notifyListeners();
+  }
+
+  /// Cut multiple rows = copy + clear.
+  void cutRows(int startRow, int endRow) {
+    copyRows(startRow, endRow);
+    deleteRows(startRow, endRow);
+    clearRowSelection();
+  }
+
+  /// Delete multiple rows (inclusive range) by clearing them to empty.
+  void deleteRows(int startRow, int endRow) {
+    if (startRow < 0 || endRow >= rowCount) return;
+    final min = startRow < endRow ? startRow : endRow;
+    final max = startRow < endRow ? endRow : startRow;
+    for (int r = min; r <= max; r++) {
+      currentTrack.cells[r] = TrackerCell.empty();
+    }
+    notifyListeners();
+  }
+
+  /// Paste multiple rows starting at [insertRow].
+  /// If rows go beyond pattern end, they are silently truncated.
+  /// Selected rows become the newly pasted range.
+  void pasteRows(int insertRow) {
+    if (_rowClipboard == null || _rowClipboard!.isEmpty) return;
+    if (insertRow < 0 || insertRow >= rowCount) return;
+
+    final cells = currentTrack.cells;
+    final pastedCount = (_rowClipboard!.length).clamp(0, rowCount - insertRow);
+    
+    for (int i = 0; i < pastedCount; i++) {
+      cells[insertRow + i] = _rowClipboard![i].copy();
+    }
+
+    // Select the newly pasted range
+    _selectedRowStart = insertRow;
+    _selectedRowEnd = insertRow + pastedCount - 1;
+    clearBoxSelection();
+    notifyListeners();
+  }
+
+  /// Duplicate the selected row block immediately below itself.
+  /// This is equivalent to copy + paste at the next available row.
+  /// If the duplicated block would exceed the pattern length, it is truncated.
+  void duplicateSelectedRows() {
+    final range = selectedRowRange;
+    if (range == null) return;
+
+    final startRow = range.$1;
+    final endRow = range.$2;
+    final insertRow = endRow + 1;
+    if (insertRow >= rowCount) return;
+
+    copyRows(startRow, endRow);
+    pasteRows(insertRow);
   }
 
   void deleteBoxSelection() {
@@ -1970,7 +2132,8 @@ class AppState extends ChangeNotifier {
     final ins = instruments[safe];
     // For sampler instruments we encode the instrument slot index here.
     // Native interprets this as sample-slot id when instrumentType=1.
-    if (ins.type != InstrumentType.simpleSynth) return safe;
+    if (ins.type == InstrumentType.sampler) return safe;
+    if (ins.type == InstrumentType.karplusStrong) return 0;
     switch (ins.synth.wave) {
       case SynthWave.sine:
         return 0;
@@ -1991,6 +2154,7 @@ class AppState extends ChangeNotifier {
     final safe = slot.clamp(0, instruments.length - 1);
     final ins = instruments[safe];
     if (ins.type == InstrumentType.sampler) return 1;
+    if (ins.type == InstrumentType.karplusStrong) return 2;
     return 0;
   }
 
@@ -2012,7 +2176,7 @@ class AppState extends ChangeNotifier {
   }) {
     final safe = slot.clamp(0, instruments.length - 1);
     final ins = instruments[safe];
-    if (ins.type != InstrumentType.simpleSynth) {
+    if (ins.type == InstrumentType.sampler) {
       final sp = ins.sampler;
       final detuneNorm = ((sp.pitch + 1.0) / 2.0).clamp(0.0, 1.0);
       double startNorm = (samplerStartNorm ?? sp.start).clamp(0.0, 1.0);
@@ -2058,6 +2222,31 @@ class AppState extends ChangeNotifier {
         samplerReverse ? 1 : 0, // reverse flag (REV FX)
       ];
     }
+    if (ins.type == InstrumentType.karplusStrong) {
+      final kp = ins.karplus;
+      return <int>[
+        _norm01ToAudio255(kp.decay),
+        _norm01ToAudio255(kp.damping),
+        _norm01ToAudio255(kp.tone),
+        _norm01ToAudio255(kp.stretch),
+        _norm01ToAudio255(kp.pickPosition),
+        _norm01ToAudio255(kp.attackColor),
+        _norm01ToAudio255(kp.body),
+        _norm01ToAudio255(kp.drive),
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        _norm01ToAudio255(0.95),
+        0,
+        0,
+        0,
+        0,
+        0,
+      ];
+    }
     final p = ins.synth;
     return <int>[
       _norm01ToAudio255((p.detune + 1.0) / 2.0), // map -1..1 → 0..1
@@ -2101,12 +2290,11 @@ class AppState extends ChangeNotifier {
     if (t >= _carryInstrumentParamsByTrack.length) return waveCmd;
     final carry = _carryInstrumentParamsByTrack[t];
     if (carry.isEmpty) return waveCmd;
-    final isSampler =
-        instruments[slot.clamp(0, instruments.length - 1)].type !=
-        InstrumentType.simpleSynth;
+    final instrumentType =
+        instruments[slot.clamp(0, instruments.length - 1)].type;
     int overriddenWave = waveCmd;
     carry.forEach((paramIdx, rawVal) {
-      if (isSampler) {
+      if (instrumentType == InstrumentType.sampler) {
         switch (paramIdx) {
           case 1:
             synthParams[15] = _ui99ToAudio255(rawVal); // start
@@ -2122,6 +2310,25 @@ class AppState extends ChangeNotifier {
             synthParams[12] = _ui99ToAudio255(rawVal); // release
           case 7:
             synthParams[18] = rawVal.clamp(0, 2); // loop mode (direct)
+        }
+      } else if (instrumentType == InstrumentType.karplusStrong) {
+        switch (paramIdx) {
+          case 1:
+            synthParams[0] = _ui99ToAudio255(rawVal); // decay
+          case 2:
+            synthParams[1] = _ui99ToAudio255(rawVal); // damping
+          case 3:
+            synthParams[2] = _ui99ToAudio255(rawVal); // tone
+          case 4:
+            synthParams[3] = _ui99ToAudio255(rawVal); // stretch
+          case 5:
+            synthParams[4] = _ui99ToAudio255(rawVal); // pick position
+          case 6:
+            synthParams[5] = _ui99ToAudio255(rawVal); // attack color
+          case 7:
+            synthParams[6] = _ui99ToAudio255(rawVal); // body
+          case 8:
+            synthParams[7] = _ui99ToAudio255(rawVal); // drive
         }
       } else {
         switch (paramIdx) {
@@ -2448,10 +2655,6 @@ class AppState extends ChangeNotifier {
     return Duration(microseconds: microsPerLine);
   }
 
-  /// Duration of the current playhead row (used by FX schedulers).
-  Duration _lineDuration() =>
-      _lineDurationForPatternRow(currentPattern, playheadRow);
-
   Future<void> _loadNativePatternPlaybackQueue({required int startRow}) async {
     final originalSong = song;
     final originalPlayheadRow = playheadRow;
@@ -2663,9 +2866,7 @@ class AppState extends ChangeNotifier {
   /// pattern boundary. Called from the poller at a boundary crossing.
   Future<void> _rebuildNativeSongQueueFromSlot(int targetSlot) async {
     if (!isPlaying || song.patterns.isEmpty) return;
-    if (targetSlot < 0 ||
-        targetSlot >= song.patterns.length ||
-        song.patterns[targetSlot].isEmpty) {
+    if (targetSlot < 0 || targetSlot >= song.patterns.length) {
       stop();
       return;
     }
@@ -2705,6 +2906,13 @@ class AppState extends ChangeNotifier {
     }
     if (selectedCell != null && selectedCell!.row >= rowCount) {
       selectedCell = null;
+    }
+    // Clamp row range selection to pattern bounds
+    if (_selectedRowStart != null && _selectedRowStart! >= rowCount) {
+      _selectedRowStart = null;
+    }
+    if (_selectedRowEnd != null && _selectedRowEnd! >= rowCount) {
+      _selectedRowEnd = null;
     }
     final boxSel = _boxSelection;
     if (boxSel != null) {
@@ -2776,7 +2984,7 @@ class AppState extends ChangeNotifier {
     // queued natively for sample-accurate firing.
     final List<int> sliceCommandQueue = [];
     // Pending mixer FX events: [channel, controller, value, unused, ...]
-    // channel: 0=master, 1-15=mixer channels
+    // channel: 0=master, 1-16=mixer channels
     // controller: 1-4 for implemented (pan/mute/solo/volume), 5-9 reserved
     // value: 0-99
     final List<int> mixerCommandQueue = [];
@@ -3182,7 +3390,9 @@ class AppState extends ChangeNotifier {
     // 48000 Hz matches the Oboe stream sample rate.
     const int kSampleRate = 48000;
     final int lineSamples =
-        (_lineDuration().inMicroseconds * kSampleRate) ~/ 1000000;
+      (_lineDurationForPatternRow(pattern, playheadRow).inMicroseconds *
+        kSampleRate) ~/
+          1000000;
 
     if (pendingArp.isNotEmpty) {
       pendingArp.forEach((trackIdx, cfg) {
@@ -3840,6 +4050,85 @@ class AppState extends ChangeNotifier {
     }
   }
 
+  Future<String?> previewCurrentKarplusOneShot({
+    int midiNote = 60,
+    int durationMs = 420,
+  }) async {
+    try {
+      if (isPlaying) {
+        return 'Stop playback before Karplus preview';
+      }
+
+      final slot = currentInstrumentIndex.clamp(0, instruments.length - 1);
+      final ins = instruments[slot];
+      if (ins.type != InstrumentType.karplusStrong) {
+        return 'Current instrument is not Karplus';
+      }
+
+      if (_previewSamplerSlot >= 0) {
+        await stopPreviewCurrentSampler();
+      }
+
+      final waveCmd = _waveCodeForInstrumentSlot(slot);
+      final instrumentTypeCmd = _instrumentTypeCodeForSlot(slot);
+      final synthParams = _synthParamsForInstrumentSlot(slot);
+
+      final previewVoice = _previewVoiceIndexForInstrumentSlot(slot);
+      if (_previewBypassVoice >= 0 && _previewBypassVoice != previewVoice) {
+        await _setPreviewDryBypass(_previewBypassVoice, false);
+      }
+      final noteOff = _buildPreviewRowData(
+        voiceIdx: previewVoice,
+        note: -2,
+        waveCmd: waveCmd,
+        instrumentTypeCmd: instrumentTypeCmd,
+        synthParams: synthParams,
+      );
+      final noteOn = _buildPreviewRowData(
+        voiceIdx: previewVoice,
+        note: midiNote.clamp(0, 127),
+        waveCmd: waveCmd,
+        instrumentTypeCmd: instrumentTypeCmd,
+        synthParams: synthParams,
+      );
+
+      await _primeAudioForPreview();
+      await _setPreviewDryBypass(previewVoice, true);
+      await AudioEngine.instance.setRowData(noteOff);
+      await AudioEngine.instance.setRowData(noteOn);
+
+      _synthPreviewStopTimer?.cancel();
+      final clampedDurationMs = durationMs.clamp(80, 4000);
+      final startTime = DateTime.now();
+      bool noteOffSent = false;
+      _synthPreviewStopTimer = Timer.periodic(
+        const Duration(milliseconds: 50),
+        (_) async {
+          if (_disposed) return;
+          final elapsed = DateTime.now().difference(startTime).inMilliseconds;
+          if (!noteOffSent && elapsed >= clampedDurationMs) {
+            noteOffSent = true;
+            await AudioEngine.instance.setRowData(noteOff);
+          }
+          final stillPlaying = await AudioEngine.instance.isVoicePlaying(
+            previewVoice,
+          );
+          if (!stillPlaying && elapsed >= clampedDurationMs) {
+            _synthPreviewStopTimer?.cancel();
+            _synthPreviewStopTimer = null;
+            if (_previewBypassVoice == previewVoice) {
+              await _setPreviewDryBypass(previewVoice, false);
+            }
+          }
+        },
+      );
+
+      return null;
+    } catch (e) {
+      return e.toString();
+    }
+  }
+
   Future<void> stopPreviewCurrentSampler() async {
     _previewAutoStopTimer?.cancel();
     _previewAutoStopTimer = null;
@@ -4193,7 +4482,8 @@ class AppState extends ChangeNotifier {
     _currentInstrumentIndex = 0;
     _currentArrangementSlotIndex = 0;
     selectedCell = null;
-    _selectedRow = null;
+    _selectedRowStart = null;
+    _selectedRowEnd = null;
     _songStateVersion++;
     _notifyListenersSafe();
     return saved;
@@ -4477,7 +4767,7 @@ class AppState extends ChangeNotifier {
 
       // Restore insert snapshot from the loaded JSON (reset cleared it).
       try {
-        final fullJson = jsonDecode(raw!) as Map<String, dynamic>;
+        final fullJson = jsonDecode(raw) as Map<String, dynamic>;
         _insertSnapshot = (fullJson['inserts'] as Map<String, dynamic>?) ?? {};
       } catch (_) {
         _insertSnapshot = {};
@@ -4489,7 +4779,8 @@ class AppState extends ChangeNotifier {
       _currentInstrumentIndex = 0;
       _currentArrangementSlotIndex = 0;
       selectedCell = null;
-      _selectedRow = null;
+      _selectedRowStart = null;
+      _selectedRowEnd = null;
       _songStateVersion++;
       _notifyListenersSafe();
       return true;

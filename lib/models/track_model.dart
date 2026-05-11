@@ -13,7 +13,7 @@ class TrackModel {
   double mixerPan; // -1..1
   bool mixerMute;
   bool mixerSolo;
-  int sendChannel; // 0=master, 1-8=send to that channel number (1-based)
+  int sendChannel; // 0=master, 1-16=send to that channel number (1-based)
   List<TrackerCell> cells;
 
   TrackModel({
@@ -84,7 +84,7 @@ class TrackModel {
     mixerPan: ((j['mixPan'] as num?)?.toDouble() ?? 0.0).clamp(-1.0, 1.0),
     mixerMute: (j['mixMute'] as bool?) ?? false,
     mixerSolo: (j['mixSolo'] as bool?) ?? false,
-    sendChannel: ((j['sendCh'] as int?) ?? 0).clamp(0, 8),
+    sendChannel: ((j['sendCh'] as int?) ?? 0).clamp(0, kMaxTracks),
     cells: (j['cells'] as List<dynamic>)
         .map((e) => TrackerCell.fromJson(e as Map<String, dynamic>))
         .toList(),

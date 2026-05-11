@@ -1,8 +1,15 @@
+import 'dart:async';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import '../audio/audio_engine.dart';
 import '../state/app_state.dart';
 import '../theme/app_theme.dart';
+
+Color get kMixerChromeColor => Color.lerp(kColInactive, kColHeader, 0.45)!;
+Color get kMixerBorderColor => kMixerChromeColor.withAlpha(210);
+Color get kMixerSecondaryTextColor =>
+  Color.lerp(kColInactive, kColHeader, 0.6)!;
+Color get kMixerLabelColor => Color.lerp(kColHeader, kColAccent, 0.12)!;
 
 class _ReverbUiState {
   final double roomSize;
@@ -191,10 +198,10 @@ class _ChorusUiState {
 
   const _ChorusUiState({
     this.rate = 0.3,
-    this.depth = 0.5,
+    this.depth = 0.22,
     this.delay = 0.3,
     this.stereo = 0,
-    this.dry = 0.0,
+    this.dry = 0.5,
     this.wet = 1.0,
   });
 
@@ -367,10 +374,22 @@ class _MixerScreenState extends State<MixerScreen> {
   );
   bool _insertsInitialized = false;
   int _seenSongStateVersion = -1;
+  Timer? _meterTimer;
+  List<double> _meterValues = List<double>.filled(34, 0.0);
 
   static const int kInsertSlots = 6;
 
   AppState? _boundAppState;
+
+  @override
+  void initState() {
+    super.initState();
+    _refreshMeters();
+    _meterTimer = Timer.periodic(
+      const Duration(milliseconds: 42),
+      (_) => _refreshMeters(),
+    );
+  }
 
   @override
   void didChangeDependencies() {
@@ -387,8 +406,15 @@ class _MixerScreenState extends State<MixerScreen> {
 
   @override
   void dispose() {
+    _meterTimer?.cancel();
     _boundAppState?.removeListener(_handleInsertResets);
     super.dispose();
+  }
+
+  Future<void> _refreshMeters() async {
+    final values = await AudioEngine.instance.getMeterValues();
+    if (!mounted) return;
+    setState(() => _meterValues = values);
   }
 
   /// Called whenever AppState notifies. Drains pending F[S]0 reset requests
@@ -980,20 +1006,6 @@ class _MixerScreenState extends State<MixerScreen> {
     _trackCompressorStates[trackIdx][slotIdx] = const _CompressorUiState();
   }
 
-  void _resetMasterInsertSlotState(int slot) {
-    _masterInserts[slot] = null;
-    _masterBypassed[slot] = false;
-    _masterReverbStates[slot] = const _ReverbUiState();
-    _masterDelayStates[slot] = const _DelayUiState();
-    _masterFilterStates[slot] = const _FilterUiState();
-    _masterDistortionStates[slot] = const _DistortionUiState();
-    _masterBitcrusherStates[slot] = const _BitcrusherUiState();
-    _masterLimiterStates[slot] = const _LimiterUiState();
-    _masterChorusStates[slot] = const _ChorusUiState();
-    _masterEqStates[slot] = const _EqUiState();
-    _masterCompressorStates[slot] = const _CompressorUiState();
-  }
-
   void _resetMasterInsertState() {
     for (int slot = 0; slot < kInsertSlots; slot++) {
       _masterInserts[slot] = null;
@@ -1015,7 +1027,7 @@ class _MixerScreenState extends State<MixerScreen> {
   Map<String, dynamic> _buildInsertSnapshot() {
     if (!_insertsInitialized) return {};
 
-    Map<String, dynamic>? _serSlot(
+    Map<String, dynamic>? serSlot(
       String? type,
       bool bypass, {
       required bool onMaster,
@@ -1060,13 +1072,13 @@ class _MixerScreenState extends State<MixerScreen> {
 
     final master = List<Map<String, dynamic>?>.generate(
       kInsertSlots,
-      (s) => _serSlot(_masterInserts[s], _masterBypassed[s], onMaster: true, s: s),
+      (s) => serSlot(_masterInserts[s], _masterBypassed[s], onMaster: true, s: s),
     );
     final tracks = List<List<Map<String, dynamic>?>>.generate(
       _inserts.length,
       (t) => List<Map<String, dynamic>?>.generate(
         kInsertSlots,
-        (s) => _serSlot(_inserts[t][s], _trackBypassed[t][s], onMaster: false, t: t, s: s),
+        (s) => serSlot(_inserts[t][s], _trackBypassed[t][s], onMaster: false, t: t, s: s),
       ),
     );
     return {'master': master, 'tracks': tracks};
@@ -1097,31 +1109,67 @@ class _MixerScreenState extends State<MixerScreen> {
       switch (type) {
         case 'REVERB':
           final r = _ReverbUiState(roomSize: d(data,'roomSize',0.5), damp: d(data,'damp',0.5), width: d(data,'width',1.0), dry: d(data,'dry',1.0), wet: d(data,'wet',0.3), freeze: b(data,'freeze',false));
-          if (onMaster) _masterReverbStates[s] = r; else _trackReverbStates[t!][s] = r;
+          if (onMaster) {
+            _masterReverbStates[s] = r;
+          } else {
+            _trackReverbStates[t!][s] = r;
+          }
         case 'DELAY':
           final dl = _DelayUiState(timeMs: d(data,'timeMs',375.0), feedback: d(data,'feedback',0.4), hpCutoff: d(data,'hpCutoff',0.0), dry: d(data,'dry',1.0), wet: d(data,'wet',0.35), sync: b(data,'sync',false));
-          if (onMaster) _masterDelayStates[s] = dl; else _trackDelayStates[t!][s] = dl;
+          if (onMaster) {
+            _masterDelayStates[s] = dl;
+          } else {
+            _trackDelayStates[t!][s] = dl;
+          }
         case 'FILTER':
           final f = _FilterUiState(cutoff: d(data,'cutoff',0.5), resonance: d(data,'resonance',0.2), mode: iv(data,'mode',0), dry: d(data,'dry',1.0), wet: d(data,'wet',1.0));
-          if (onMaster) _masterFilterStates[s] = f; else _trackFilterStates[t!][s] = f;
+          if (onMaster) {
+            _masterFilterStates[s] = f;
+          } else {
+            _trackFilterStates[t!][s] = f;
+          }
         case 'DISTORTION':
           final ds = _DistortionUiState(drive: d(data,'drive',0.5), tone: d(data,'tone',0.5), distType: iv(data,'distType',0), dry: d(data,'dry',1.0), wet: d(data,'wet',1.0));
-          if (onMaster) _masterDistortionStates[s] = ds; else _trackDistortionStates[t!][s] = ds;
+          if (onMaster) {
+            _masterDistortionStates[s] = ds;
+          } else {
+            _trackDistortionStates[t!][s] = ds;
+          }
         case 'BITCRUSHER':
           final bc = _BitcrusherUiState(bits: d(data,'bits',1.0), rate: d(data,'rate',1.0), dry: d(data,'dry',1.0), wet: d(data,'wet',1.0));
-          if (onMaster) _masterBitcrusherStates[s] = bc; else _trackBitcrusherStates[t!][s] = bc;
+          if (onMaster) {
+            _masterBitcrusherStates[s] = bc;
+          } else {
+            _trackBitcrusherStates[t!][s] = bc;
+          }
         case 'LIMITER':
           final lm = _LimiterUiState(gain: d(data,'gain',0.0), dry: d(data,'dry',0.0), wet: d(data,'wet',1.0));
-          if (onMaster) _masterLimiterStates[s] = lm; else _trackLimiterStates[t!][s] = lm;
+          if (onMaster) {
+            _masterLimiterStates[s] = lm;
+          } else {
+            _trackLimiterStates[t!][s] = lm;
+          }
         case 'CHORUS':
-          final ch = _ChorusUiState(rate: d(data,'rate',0.3), depth: d(data,'depth',0.5), delay: d(data,'delay',0.3), stereo: iv(data,'stereo',0), dry: d(data,'dry',0.0), wet: d(data,'wet',1.0));
-          if (onMaster) _masterChorusStates[s] = ch; else _trackChorusStates[t!][s] = ch;
+          final ch = _ChorusUiState(rate: d(data,'rate',0.3), depth: d(data,'depth',0.22), delay: d(data,'delay',0.3), stereo: iv(data,'stereo',0), dry: d(data,'dry',0.5), wet: d(data,'wet',1.0));
+          if (onMaster) {
+            _masterChorusStates[s] = ch;
+          } else {
+            _trackChorusStates[t!][s] = ch;
+          }
         case 'EQ':
           final eq = _EqUiState(lowGain: d(data,'lowGain',0.0), lowFreq: d(data,'lowFreq',0.2), midGain: d(data,'midGain',0.0), midFreq: d(data,'midFreq',0.3), midQ: d(data,'midQ',0.3), highGain: d(data,'highGain',0.0), highFreq: d(data,'highFreq',0.5), dry: d(data,'dry',0.0), wet: d(data,'wet',1.0));
-          if (onMaster) _masterEqStates[s] = eq; else _trackEqStates[t!][s] = eq;
+          if (onMaster) {
+            _masterEqStates[s] = eq;
+          } else {
+            _trackEqStates[t!][s] = eq;
+          }
         case 'COMPRESSOR':
           final cp = _CompressorUiState(threshold: d(data,'threshold',0.7), ratio: d(data,'ratio',0.2), attack: d(data,'attack',0.1), release: d(data,'release',0.2), makeup: d(data,'makeup',0.0), knee: iv(data,'knee',0), dry: d(data,'dry',0.0), wet: d(data,'wet',1.0));
-          if (onMaster) _masterCompressorStates[s] = cp; else _trackCompressorStates[t!][s] = cp;
+          if (onMaster) {
+            _masterCompressorStates[s] = cp;
+          } else {
+            _trackCompressorStates[t!][s] = cp;
+          }
       }
     }
 
@@ -1190,6 +1238,8 @@ class _MixerScreenState extends State<MixerScreen> {
             _MasterStrip(
               volume: state.masterVolume,
               muted: state.masterMute,
+              meterLeft: _meterValues[32],
+              meterRight: _meterValues[33],
               inserts: _masterInserts,
               bypassed: _masterBypassed,
               onVolume: state.setMasterVolume,
@@ -1221,6 +1271,8 @@ class _MixerScreenState extends State<MixerScreen> {
                 name: tracks[i].name,
                 volume: tracks[i].mixerVolume,
                 pan: tracks[i].mixerPan,
+                meterLeft: _meterValues[i],
+                meterRight: _meterValues[16 + i],
                 muted: tracks[i].mixerMute,
                 soloed: tracks[i].mixerSolo,
                 inserts: _inserts[i],
@@ -1250,7 +1302,7 @@ class _MixerScreenState extends State<MixerScreen> {
   }
 
   void _onSendTap(int trackIdx, AppState state) async {
-    // Build choices: 0=Master, 1-8 valid channels excluding self and send buses
+    // Build choices: 0=Master, 1-16 valid channels excluding self.
     final tracks = state.currentPattern.tracks;
     final numTracks = tracks.length;
     final choices = <int>[0]; // 0 = Master
@@ -1850,6 +1902,8 @@ class _FxPicker extends StatelessWidget {
 class _MasterStrip extends StatelessWidget {
   final double volume;
   final bool muted;
+  final double meterLeft;
+  final double meterRight;
   final List<String?> inserts;
   final List<bool> bypassed;
   final ValueChanged<double> onVolume;
@@ -1860,6 +1914,8 @@ class _MasterStrip extends StatelessWidget {
   const _MasterStrip({
     required this.volume,
     required this.muted,
+    required this.meterLeft,
+    required this.meterRight,
     required this.inserts,
     required this.bypassed,
     required this.onVolume,
@@ -1875,11 +1931,11 @@ class _MasterStrip extends StatelessWidget {
         : (20 * (math.log(volume) / math.ln10)).toStringAsFixed(1);
 
     return Container(
-      width: 76,
+      width: 114,
       margin: const EdgeInsets.symmetric(horizontal: 3),
       decoration: BoxDecoration(
         color: kBgTrackHeader,
-        border: Border.all(color: kColInactive.withAlpha(80), width: 1),
+        border: Border.all(color: kMixerBorderColor, width: 1),
         borderRadius: BorderRadius.circular(4),
       ),
       child: Column(
@@ -1918,27 +1974,64 @@ class _MasterStrip extends StatelessWidget {
                   ),
                   const SizedBox(height: 6),
                   Expanded(
-                    child: RotatedBox(
-                      quarterTurns: 3,
-                      child: SliderTheme(
-                        data: SliderTheme.of(context).copyWith(
-                          trackHeight: 4,
-                          thumbShape: const RoundSliderThumbShape(
-                            enabledThumbRadius: 8,
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        const _MasterMeterScale(),
+                        const SizedBox(width: 4),
+                        _LevelMeter(value: meterLeft, width: 8),
+                        const SizedBox(width: 4),
+                        Expanded(
+                          child: RotatedBox(
+                            quarterTurns: 3,
+                            child: SliderTheme(
+                              data: SliderTheme.of(context).copyWith(
+                                trackHeight: 4,
+                                thumbShape: const RoundSliderThumbShape(
+                                  enabledThumbRadius: 8,
+                                ),
+                                overlayShape: SliderComponentShape.noOverlay,
+                                activeTrackColor: kColComplement,
+                                inactiveTrackColor: kColInactive,
+                                thumbColor: kColComplement,
+                              ),
+                              child: Slider(value: volume, onChanged: onVolume),
+                            ),
                           ),
-                          overlayShape: SliderComponentShape.noOverlay,
-                          activeTrackColor: kColComplement,
-                          inactiveTrackColor: kColInactive,
-                          thumbColor: kColComplement,
                         ),
-                        child: Slider(value: volume, onChanged: onVolume),
-                      ),
+                        const SizedBox(width: 4),
+                        _LevelMeter(value: meterRight, width: 8),
+                      ],
                     ),
+                  ),
+                  const SizedBox(height: 4),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Text(
+                        'L',
+                        style: kStyleBase.copyWith(
+                          fontSize: 8,
+                          color: kMixerSecondaryTextColor,
+                        ),
+                      ),
+                      const SizedBox(width: 28),
+                      Text(
+                        'R',
+                        style: kStyleBase.copyWith(
+                          fontSize: 8,
+                          color: kMixerSecondaryTextColor,
+                        ),
+                      ),
+                    ],
                   ),
                   const SizedBox(height: 4),
                   Text(
                     '${db}dB',
-                    style: kStyleBase.copyWith(fontSize: 9, color: kColHeader),
+                    style: kStyleBase.copyWith(
+                      fontSize: 9,
+                      color: kMixerLabelColor,
+                    ),
                   ),
                 ],
               ),
@@ -1989,11 +2082,13 @@ class _ChannelStrip extends StatelessWidget {
   final String name;
   final double volume;
   final double pan;
+  final double meterLeft;
+  final double meterRight;
   final bool muted;
   final bool soloed;
   final List<String?> inserts;
   final List<bool> bypassed;
-  final int sendChannel; // 0=master, 1-8=channel number
+  final int sendChannel; // 0=master, 1-16=channel number
   final bool isSendBus;
   final ValueChanged<double> onVolume;
   final ValueChanged<double> onPan;
@@ -2008,6 +2103,8 @@ class _ChannelStrip extends StatelessWidget {
     required this.name,
     required this.volume,
     required this.pan,
+    required this.meterLeft,
+    required this.meterRight,
     required this.muted,
     required this.soloed,
     required this.inserts,
@@ -2031,11 +2128,11 @@ class _ChannelStrip extends StatelessWidget {
               .toStringAsFixed(1);
 
     return Container(
-      width: 70,
+      width: 84,
       margin: const EdgeInsets.symmetric(horizontal: 3),
       decoration: BoxDecoration(
         color: kBgTrackHeader,
-        border: Border.all(color: kColInactive.withAlpha(80), width: 1),
+        border: Border.all(color: kMixerBorderColor, width: 1),
         borderRadius: BorderRadius.circular(4),
       ),
       child: Column(
@@ -2048,14 +2145,17 @@ class _ChannelStrip extends StatelessWidget {
                 children: [
                   Text(
                     'T${(index + 1).toString().padLeft(2, '0')}',
-                    style: kStyleHeader.copyWith(color: kColHeader),
+                    style: kStyleHeader.copyWith(color: kMixerLabelColor),
                   ),
                   const SizedBox(height: 2),
                   Text(
                     name,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: kStyleBase.copyWith(fontSize: 10, color: kColHeader),
+                    style: kStyleBase.copyWith(
+                      fontSize: 10,
+                      color: kMixerLabelColor,
+                    ),
                   ),
                   const SizedBox(height: 6),
                   _PanKnob(value: pan, onChanged: onPan),
@@ -2080,27 +2180,62 @@ class _ChannelStrip extends StatelessWidget {
                   ),
                   const SizedBox(height: 6),
                   Expanded(
-                    child: RotatedBox(
-                      quarterTurns: 3,
-                      child: SliderTheme(
-                        data: SliderTheme.of(context).copyWith(
-                          trackHeight: 3,
-                          thumbShape: const RoundSliderThumbShape(
-                            enabledThumbRadius: 7,
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        _LevelMeter(value: meterLeft, width: 6),
+                        const SizedBox(width: 4),
+                        Expanded(
+                          child: RotatedBox(
+                            quarterTurns: 3,
+                            child: SliderTheme(
+                              data: SliderTheme.of(context).copyWith(
+                                trackHeight: 3,
+                                thumbShape: const RoundSliderThumbShape(
+                                  enabledThumbRadius: 7,
+                                ),
+                                overlayShape: SliderComponentShape.noOverlay,
+                                activeTrackColor: kColComplement,
+                                inactiveTrackColor: kMixerChromeColor,
+                                thumbColor: kColComplement,
+                              ),
+                              child: Slider(value: volume, onChanged: onVolume),
+                            ),
                           ),
-                          overlayShape: SliderComponentShape.noOverlay,
-                          activeTrackColor: kColComplement,
-                          inactiveTrackColor: kColInactive,
-                          thumbColor: kColComplement,
                         ),
-                        child: Slider(value: volume, onChanged: onVolume),
-                      ),
+                        const SizedBox(width: 4),
+                        _LevelMeter(value: meterRight, width: 6),
+                      ],
                     ),
+                  ),
+                  const SizedBox(height: 2),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Text(
+                        'L',
+                        style: kStyleBase.copyWith(
+                          fontSize: 7,
+                          color: kMixerSecondaryTextColor,
+                        ),
+                      ),
+                      const SizedBox(width: 24),
+                      Text(
+                        'R',
+                        style: kStyleBase.copyWith(
+                          fontSize: 7,
+                          color: kMixerSecondaryTextColor,
+                        ),
+                      ),
+                    ],
                   ),
                   const SizedBox(height: 4),
                   Text(
                     '${db}dB',
-                    style: kStyleBase.copyWith(fontSize: 9, color: kColHeader),
+                    style: kStyleBase.copyWith(
+                      fontSize: 9,
+                      color: kMixerLabelColor,
+                    ),
                   ),
                 ],
               ),
@@ -2108,7 +2243,7 @@ class _ChannelStrip extends StatelessWidget {
           ),
 
           // ── Divider ──────────────────────────────────────────────
-          Container(height: 1, color: kColInactive.withAlpha(120)),
+          Container(height: 1, color: kMixerChromeColor.withAlpha(170)),
 
           // ── Bottom half: per-strip FX insert slots ───────────────
           Expanded(
@@ -2143,7 +2278,7 @@ class _ChannelStrip extends StatelessWidget {
                   GestureDetector(
                     onTap: isSendBus ? null : onSendTap,
                     child: Container(
-                      height: 22,
+                      height: 40,
                       alignment: Alignment.center,
                       decoration: BoxDecoration(
                         color: sendChannel > 0
@@ -2151,10 +2286,10 @@ class _ChannelStrip extends StatelessWidget {
                             : Colors.transparent,
                         border: Border.all(
                           color: isSendBus
-                              ? kColInactive.withAlpha(60)
+                            ? kMixerChromeColor.withAlpha(170)
                               : sendChannel > 0
                                   ? kColComplement
-                                  : kColInactive.withAlpha(120),
+                              : kMixerBorderColor,
                         ),
                         borderRadius: BorderRadius.circular(2),
                       ),
@@ -2166,10 +2301,10 @@ class _ChannelStrip extends StatelessWidget {
                           fontSize: 9,
                           letterSpacing: 0.5,
                           color: isSendBus
-                              ? kColInactive.withAlpha(80)
+                              ? kMixerSecondaryTextColor
                               : sendChannel > 0
                                   ? kColComplement
-                                  : kColInactive,
+                                  : kMixerSecondaryTextColor,
                         ),
                       ),
                     ),
@@ -2216,8 +2351,8 @@ class _StripInsertSlot extends StatelessWidget {
             color: active
                 ? kColAccent
                 : filled
-                ? kColInactive.withAlpha(80)
-                : kColInactive.withAlpha(120),
+                ? kMixerBorderColor
+                : kMixerChromeColor.withAlpha(180),
           ),
           borderRadius: BorderRadius.circular(2),
         ),
@@ -2232,13 +2367,95 @@ class _StripInsertSlot extends StatelessWidget {
             color: active
                 ? kColAccent
                 : filled
-                ? kColInactive
-                : kColInactive,
+                ? kMixerSecondaryTextColor
+                : kMixerSecondaryTextColor,
             fontWeight: filled ? FontWeight.w700 : FontWeight.normal,
             decoration: bypassed && filled ? TextDecoration.lineThrough : null,
-            decorationColor: kColInactive,
+            decorationColor: kMixerSecondaryTextColor,
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _LevelMeter extends StatelessWidget {
+  final double value;
+  final double width;
+
+  const _LevelMeter({
+    required this.value,
+    required this.width,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final peak = value <= 0.000001 ? -60.0 : 20.0 * (math.log(value) / math.ln10);
+    const segments = 12;
+    const maxDb = 3.0;
+    const minDb = -50.0;
+    const stepDb = (maxDb - minDb) / segments;
+    return SizedBox(
+      width: width,
+      child: Column(
+        children: List.generate(segments, (index) {
+          final segmentTopDb = maxDb - (index * stepDb);
+          final segmentBottomDb = segmentTopDb - stepDb;
+          final lit = peak >= segmentBottomDb;
+          final color = segmentTopDb > 0.0
+              ? kColRecBtn
+              : segmentTopDb > -6.0
+                  ? const Color(0xFFD8B400)
+                  : const Color(0xFF33C060);
+          return Expanded(
+            child: Container(
+              width: width,
+              margin: const EdgeInsets.symmetric(vertical: 0.8),
+              decoration: BoxDecoration(
+                color: lit ? color : color.withAlpha(28),
+                borderRadius: BorderRadius.circular(1.5),
+              ),
+            ),
+          );
+        }),
+      ),
+    );
+  }
+}
+
+class _MasterMeterScale extends StatelessWidget {
+  const _MasterMeterScale();
+
+  static const _labels = <int, String>{
+    0: '+3',
+    1: '0',
+    2: '-6',
+    3: '-12',
+    6: '-24',
+    9: '-36',
+    11: '-48',
+  };
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 18,
+      child: Column(
+        children: List.generate(12, (index) {
+          return Expanded(
+            child: Align(
+              alignment: Alignment.centerRight,
+              child: Text(
+                _labels[index] ?? '',
+                style: kStyleBase.copyWith(
+                  fontSize: 7,
+                  color: kMixerSecondaryTextColor,
+                  height: 1.0,
+                ),
+              ),
+            ),
+          );
+        }),
       ),
     );
   }
@@ -2271,14 +2488,14 @@ class _PanKnob extends StatelessWidget {
             decoration: BoxDecoration(
               shape: BoxShape.circle,
               color: kBgColor,
-              border: Border.all(color: kColInactive),
+              border: Border.all(color: kMixerBorderColor),
             ),
             child: CustomPaint(painter: _PanIndicator(value)),
           ),
           const SizedBox(height: 2),
           Text(
             label,
-            style: kStyleBase.copyWith(fontSize: 9, color: kColHeader),
+            style: kStyleBase.copyWith(fontSize: 9, color: kMixerLabelColor),
           ),
         ],
       ),
@@ -2294,8 +2511,8 @@ class _PanIndicator extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     final center = size.center(Offset.zero);
     final radius = size.shortestSide / 2 - 2;
-    // angle: -135deg (full L) .. +135deg (full R)
-    final angle = (-math.pi * 3 / 4) + ((value + 1) / 2) * (math.pi * 3 / 2);
+    // Keep the same 270deg sweep, but rotate it so center pan points up.
+    final angle = (-math.pi / 2) + (value * (math.pi * 3 / 4));
     final p = Offset(
       center.dx + radius * math.cos(angle),
       center.dy + radius * math.sin(angle),
@@ -2333,14 +2550,16 @@ class _MiniBtn extends StatelessWidget {
         alignment: Alignment.center,
         decoration: BoxDecoration(
           color: active ? activeColor.withAlpha(60) : Colors.transparent,
-          border: Border.all(color: active ? activeColor : kColInactive),
+          border: Border.all(
+            color: active ? activeColor : kMixerBorderColor,
+          ),
           borderRadius: BorderRadius.circular(2),
         ),
         child: Text(
           label,
           style: kStyleBase.copyWith(
             fontSize: 10,
-            color: active ? activeColor : kColHeader,
+            color: active ? activeColor : kMixerLabelColor,
             fontWeight: FontWeight.w700,
           ),
         ),

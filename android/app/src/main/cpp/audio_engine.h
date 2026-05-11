@@ -10,7 +10,7 @@
 #include <string>
 #include "freeverb.h"
 
-static constexpr int kMaxVoices = 8; // one per track
+static constexpr int kMaxVoices = 16; // one per track
 
 enum class EnvelopeStage : int {
     Idle = 0,
@@ -64,6 +64,23 @@ struct Voice {
     int    lfoTarget         = 0;    // 0=pitch, 1=filter, 2=amp
     // Drive / saturation
     float  drive             = 0.0f; // 0..1
+
+    // Karplus-Strong plucked-string state
+    bool   karplusMode       = false;
+    bool   karplusActive     = false;
+    float  karplusDecayNorm  = 0.55f;
+    float  karplusDampingNorm = 0.62f;
+    float  karplusToneNorm   = 0.50f;
+    float  karplusStretchNorm = 0.22f;
+    float  karplusPickPositionNorm = 0.30f;
+    float  karplusAttackColorNorm = 0.48f;
+    float  karplusBodyNorm = 0.35f;
+    float  karplusDriveNorm = 0.10f;
+    std::vector<float> karplusBuf;
+    int    karplusPos        = 0;
+    float  karplusDispersionState = 0.0f;
+    float  karplusBodyState = 0.0f;
+    float  karplusBodyState2 = 0.0f;
 
     // Sampler playback state
     bool   samplerMode       = false;
@@ -128,7 +145,7 @@ struct SliceCommandEvent {
 /// Controls master/channel parameters like pan, mute, solo, volume.
 struct MixerCommandEvent {
     int32_t sampleTarget; ///< fire when mSubRowSampleCounter >= this value (currently 0 = immediate)
-    int     channel;      ///< 0=master, 1-15=mixer channels
+    int     channel;      ///< 0=master, 1-16=mixer channels
     int     controller;   ///< 1-4 for pan/mute/solo/volume, 5-9 reserved
     int     value;        ///< 0-99 parameter value
 };
@@ -215,7 +232,7 @@ struct InsertEffect {
 
     // Chorus-specific parameters (type == 6)
     float chorusRate    = 0.3f;  // 0..1 → 0.1..8 Hz LFO speed
-    float chorusDepth   = 0.5f;  // 0..1 → 0..15 ms modulation depth
+    float chorusDepth   = 0.22f; // 0..1 → 0..15 ms modulation depth
     float chorusDelay   = 0.3f;  // 0..1 → 1..30 ms base delay
     int   chorusStereo  = 0;     // 0=mono LFO, 1=stereo (R lfo 90° offset)
     float chorusLfoPhL  = 0.0f;  // LFO phase accumulator left (radians)
@@ -284,6 +301,7 @@ public:
     /// volume: 0-255 sets voice level, -1 = no change.
     /// pan: 0-255 sets stereo position, -1 = no change.
     /// wave: 0=sine,1=tri,2=saw,3=square,4=pulse,5=noise.
+    /// instrumentType: 0=simple synth, 1=sampler, 2=Karplus-Strong.
     /// cutoff/resonance/filterAttack/filterDecay/filterSustain/filterRelease/
     /// filterEnvAmt/attack/decay/sustain/release/glide/instVol:
     /// 0-255 mapped from instrument params.
@@ -344,7 +362,7 @@ public:
 
     /// Queue mixer control commands (M01-M99).
     /// [data] is packed in groups of 4: [channel, controller, value, unused].
-    /// channel: 0=master, 1-15=mixer channels
+    /// channel: 0=master, 1-16=mixer channels
     /// controller: 1-4 (pan, mute, solo, volume), 5-9 reserved
     /// value: 0-99 parameter value
     void queueMixerCommands(const std::vector<int>& data);
@@ -365,8 +383,8 @@ public:
     /// slotIdx: 0-5, roomSize: 0.0-1.0, damp: 0.0-1.0, width: 0.0-1.0
     void setMasterReverbParams(int slotIdx, float roomSize, float damp, float width, bool freeze);
 
-    /// Configure an insert effect on a track (1-8).
-    /// trackIdx: 0-7 (track index), slotIdx: 0-5
+    /// Configure an insert effect on a track (1-16).
+    /// trackIdx: 0-15 (track index), slotIdx: 0-5
     /// effectType: -1=empty, 0=reverb
     void setTrackInsertEffect(int trackIdx, int slotIdx, int effectType, float initialWetLevel);
     void setTrackInsertMix(int trackIdx, int slotIdx, float dryLevel, float wetLevel);
@@ -459,8 +477,12 @@ public:
     std::vector<float> stopExportTap(int& outSampleRate);
 
     /// Set per-track send routing. [routing] has one entry per track:
-    /// 0 = route to master, 1-8 = route audio into that channel's bus (1-based).
+    /// 0 = route to master, 1-16 = route audio into that channel's bus (1-based).
     void setSendRouting(const std::vector<int>& routing);
+
+    /// Return packed stereo peak meter values as linear amplitudes.
+    /// Layout: [track0L..track15L, track0R..track15R, masterL, masterR].
+    std::array<float, kMaxVoices * 2 + 2> getMeterValues() const;
 
 private:
     // Oboe callback shim for the recording (input) stream.
@@ -540,6 +562,11 @@ private:
     std::vector<float>               mMasterBusR;
     std::vector<float>               mFxWetL;
     std::vector<float>               mFxWetR;
+    mutable std::mutex               mMeterMutex;
+    std::array<float, kMaxVoices>    mTrackMeterPeakL{};
+    std::array<float, kMaxVoices>    mTrackMeterPeakR{};
+    float                            mMasterMeterPeakL = 0.0f;
+    float                            mMasterMeterPeakR = 0.0f;
 
     void processEffects(float* outL, float* outR, int numFrames, InsertEffect* effects);
 

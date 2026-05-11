@@ -434,6 +434,13 @@ class AudioEnginePlugin : FlutterPlugin, MethodCallHandler {
                     result.success(0)
                 }
             }
+            "getMeterValues" -> {
+                if (enginePtr != 0L) {
+                    result.success(nativeGetMeterValues(enginePtr).toList())
+                } else {
+                    result.success(List(34) { 0.0f })
+                }
+            }
             "startExportTap" -> {
                 if (enginePtr != 0L) nativeStartExportTap(enginePtr)
                 result.success(null)
@@ -536,6 +543,7 @@ class AudioEnginePlugin : FlutterPlugin, MethodCallHandler {
     private external fun nativeStopRecording(ptr: Long, outSampleRate: IntArray): FloatArray?
     private external fun nativeIsVoicePlaying(ptr: Long, trackIdx: Int): Boolean
     private external fun nativeGetVoiceEnvelopeStage(ptr: Long, trackIdx: Int): Int
+    private external fun nativeGetMeterValues(ptr: Long): FloatArray
     private external fun nativeStartExportTap(ptr: Long)
     private external fun nativeStopExportTap(ptr: Long, outSampleRate: IntArray): FloatArray?
     private external fun nativeSetSendRouting(ptr: Long, routing: IntArray)

@@ -6,7 +6,8 @@ const int kMaxSongPatterns = 99;
 class SongModel {
   String name;
   /// Ordered list of patterns. This IS the arrangement — pattern[0] plays
-  /// first, pattern[1] second, etc. Playback stops at the first empty pattern.
+  /// first, pattern[1] second, etc. Sequential song playback stops at the
+  /// first empty pattern.
   List<PatternModel> patterns;
   /// Master output level: 0..1 (default 1.0 = 0 dB).
   double masterVolume;

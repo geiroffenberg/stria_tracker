@@ -1107,8 +1107,16 @@ class _SongTimelinePainter extends CustomPainter {
   static const double _padBottom = 4;
   static const double _laneGap = 1;
 
+  int? get _firstEmptySlot {
+    for (int i = 0; i < patterns.length; i++) {
+      if (patterns[i].isEmpty) return i;
+    }
+    return null;
+  }
+
   @override
   void paint(Canvas canvas, Size size) {
+    final endOfSongSlot = _firstEmptySlot;
     final laneCount = kMaxTracks;
     final laneAreaW = size.width - 8;
     final laneW = (laneAreaW - (laneCount - 1) * _laneGap) / laneCount;
@@ -1156,6 +1164,37 @@ class _SongTimelinePainter extends CustomPainter {
         Offset(size.width, yTop + blockH + _padBottom - 0.5),
         dividerPaint,
       );
+
+      if (s == endOfSongSlot) {
+        final overlayRect = Rect.fromLTWH(4, yTop, size.width - 8, blockH);
+        final tp = TextPainter(
+          text: TextSpan(
+            text: 'END OF SONG',
+            style: kStyleBase.copyWith(
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+              color: kColAccent,
+              letterSpacing: 1.2,
+              shadows: const [
+                Shadow(
+                  color: Color(0xCC000000),
+                  blurRadius: 3,
+                  offset: Offset(0, 1),
+                ),
+              ],
+            ),
+          ),
+          textDirection: TextDirection.ltr,
+          textAlign: TextAlign.center,
+        )..layout(maxWidth: overlayRect.width - 12);
+        tp.paint(
+          canvas,
+          Offset(
+            overlayRect.left + (overlayRect.width - tp.width) / 2,
+            overlayRect.top + (overlayRect.height - tp.height) / 2,
+          ),
+        );
+      }
     }
 
     // Playhead line.

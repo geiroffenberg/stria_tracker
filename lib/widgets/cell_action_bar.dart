@@ -153,25 +153,65 @@ class _RowActions extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final selectedRange = state.selectedRowRange;
+    final hasMultiLineSelection = selectedRange != null && (selectedRange.$2 - selectedRange.$1) > 0;
+
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
       child: Row(
         children: [
-          _ActionBtn(label: '↑', onTap: () => state.moveSelectedRowBy(-1)),
-          _ActionBtn(label: '↓', onTap: () => state.moveSelectedRowBy(1)),
+          // Move buttons work with ranges
+          _ActionBtn(
+            label: '↑',
+            onTap: () => state.moveSelectedRowBy(-1),
+          ),
+          _ActionBtn(
+            label: '↓',
+            onTap: () => state.moveSelectedRowBy(1),
+          ),
+          _ActionBtn(
+            label: '2X',
+            onTap: () => state.duplicateSelectedRows(),
+          ),
           const SizedBox(width: 4),
-          _ActionBtn(label: 'COPY', onTap: () => state.copyRow(row)),
-          _ActionBtn(label: 'CUT', onTap: () => state.cutRow(row)),
+          // Copy/cut on range if multi-line selected, else single row
+          _ActionBtn(
+            label: 'COPY',
+            onTap: () {
+              if (hasMultiLineSelection) {
+                state.copyRows(selectedRange.$1, selectedRange.$2);
+              } else {
+                state.copyRow(row);
+              }
+            },
+          ),
+          _ActionBtn(
+            label: 'CUT',
+            onTap: () {
+              if (hasMultiLineSelection) {
+                state.cutRows(selectedRange.$1, selectedRange.$2);
+              } else {
+                state.cutRow(row);
+              }
+            },
+          ),
           _ActionBtn(
             label: 'PASTE',
-            onTap: () => state.pasteRow(row),
+            onTap: () => state.pasteRows(row),
             enabled: state.hasRowClipboard,
           ),
           const Spacer(),
           _ActionBtn(
             label: 'CLR',
             color: kColStopBtn,
-            onTap: () => state.deleteRow(row),
+            onTap: () {
+              if (hasMultiLineSelection) {
+                state.deleteRows(selectedRange.$1, selectedRange.$2);
+                state.clearRowSelection();
+              } else {
+                state.deleteRow(row);
+              }
+            },
           ),
           _ActionBtn(label: '✕', onTap: () => state.clearRowSelection()),
         ],
@@ -745,21 +785,30 @@ class _FxCmdActions extends StatelessWidget {
   /// Get the Pxx command indices for the instrument in the current cell.
   List<int> _getPParamCommands(InstrumentType type) {
     if (type == InstrumentType.empty) return [];
-    final maxIdx = type == InstrumentType.sampler
-        ? SamplerParams.maxParamIndex
-        : SimpleSynthParams.maxParamIndex;
+    final maxIdx = switch (type) {
+      InstrumentType.sampler => SamplerParams.maxParamIndex,
+      InstrumentType.simpleSynth => SimpleSynthParams.maxParamIndex,
+      InstrumentType.karplusStrong => KarplusStrongParams.maxParamIndex,
+      InstrumentType.empty => 0,
+    };
     return List<int>.generate(maxIdx + 1, (i) => kFxPParamStart + i);
   }
 
   String _pParamName(int cmd, InstrumentType type) {
     final idx = pParamIndex(cmd);
     if (type == InstrumentType.sampler) return SamplerParams.paramName(idx);
+    if (type == InstrumentType.karplusStrong) {
+      return KarplusStrongParams.paramName(idx);
+    }
     return SimpleSynthParams.paramName(idx);
   }
 
   String _pParamDesc(int cmd, InstrumentType type) {
     final idx = pParamIndex(cmd);
     if (type == InstrumentType.sampler) return SamplerParams.paramDescription(idx);
+    if (type == InstrumentType.karplusStrong) {
+      return KarplusStrongParams.paramDescription(idx);
+    }
     return SimpleSynthParams.paramDescription(idx);
   }
 
@@ -926,9 +975,12 @@ class _FxCmdActions extends StatelessWidget {
                   ...() {
                     final pCmds = _getPParamCommands(instrType);
                     if (pCmds.isEmpty) return <Widget>[];
-                    final label = instrType == InstrumentType.sampler
-                        ? 'Sampler Params'
-                        : 'Synth Params';
+                    final label = switch (instrType) {
+                      InstrumentType.sampler => 'Sampler Params',
+                      InstrumentType.karplusStrong => 'Karplus Params',
+                      InstrumentType.simpleSynth => 'Synth Params',
+                      InstrumentType.empty => 'Instrument Params',
+                    };
                     return [
                       const SizedBox(height: 5),
                       _sectionLabel(label),

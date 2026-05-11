@@ -1,9 +1,10 @@
-package com.example.tracker
+package com.metamind.stria
 
 import android.app.Activity
 import android.content.Intent
 import android.net.Uri
 import androidx.documentfile.provider.DocumentFile
+import com.example.tracker.AudioEnginePlugin
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
