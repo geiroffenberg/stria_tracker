@@ -246,23 +246,35 @@ class _NoteActions extends StatelessWidget {
           const SizedBox(width: 4),
           _ActionBtn(
             label: '−OCT',
-            onTap: () => state.nudgeCell(row, CellColumn.note, -12),
+            onTap: () {
+              state.nudgeCell(row, CellColumn.note, -12);
+              state.previewCellNoteOneShot(row);
+            },
             enabled: note.isNote,
           ),
           _ActionBtn(
             label: '+OCT',
-            onTap: () => state.nudgeCell(row, CellColumn.note, 12),
+            onTap: () {
+              state.nudgeCell(row, CellColumn.note, 12);
+              state.previewCellNoteOneShot(row);
+            },
             enabled: note.isNote,
           ),
           const SizedBox(width: 4),
           _ActionBtn(
             label: '−',
-            onTap: () => state.nudgeCell(row, CellColumn.note, -1),
+            onTap: () {
+              state.nudgeCell(row, CellColumn.note, -1);
+              state.previewCellNoteOneShot(row);
+            },
             enabled: note.isNote,
           ),
           _ActionBtn(
             label: '+',
-            onTap: () => state.nudgeCell(row, CellColumn.note, 1),
+            onTap: () {
+              state.nudgeCell(row, CellColumn.note, 1);
+              state.previewCellNoteOneShot(row);
+            },
             enabled: note.isNote,
           ),
           const Spacer(),

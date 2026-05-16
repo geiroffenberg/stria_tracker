@@ -103,6 +103,9 @@ class _CellWidgetState extends State<CellWidget> {
       state.insertDefaultValue(widget.row, widget.column);
     }
     state.selectCell(widget.row, widget.column);
+    if (widget.column == CellColumn.note) {
+      state.previewCellNoteOneShot(widget.row);
+    }
   }
 
   @override
@@ -136,6 +139,9 @@ class _CellWidgetState extends State<CellWidget> {
         if (steps != 0) {
           _dragAccum -= steps * _pixelsPerStep;
           state.nudgeCell(widget.row, widget.column, steps);
+          if (widget.column == CellColumn.note) {
+            state.previewCellNoteOneShot(widget.row);
+          }
         }
       } : null,
       child: Container(

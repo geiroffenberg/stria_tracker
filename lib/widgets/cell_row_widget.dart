@@ -12,7 +12,7 @@ class CellRowWidget extends StatelessWidget {
   final int trackIndex;
   final int row;
   final TrackerCell cell;
-  final bool isSelected;   // true if ANY column in this row is selected
+  final bool isSelected; // true if ANY column in this row is selected
   final bool isPlayhead;
   final CellPosition? selectedCell;
   final bool collapsed; // if true, show only NOTE and INST columns
@@ -46,15 +46,17 @@ class CellRowWidget extends StatelessWidget {
 
     // Beat subdivision long-press is suppressed when any row in the beat has
     // data (avoids trampling notes, FX, or envelope anchors).
-    final beatHasData = isBeatStart && (() {
-      final beatRowCount = state.linesForBeat(beat);
-      for (int r = row; r < row + beatRowCount; r++) {
-        for (final t in state.currentPattern.tracks) {
-          if (r < t.cells.length && !t.cells[r].isEmpty) return true;
-        }
-      }
-      return false;
-    })();
+    final beatHasData =
+        isBeatStart &&
+        (() {
+          final beatRowCount = state.linesForBeat(beat);
+          for (int r = row; r < row + beatRowCount; r++) {
+            for (final t in state.currentPattern.tracks) {
+              if (r < t.cells.length && !t.cells[r].isEmpty) return true;
+            }
+          }
+          return false;
+        })();
 
     return Container(
       height: kRowHeight,
@@ -139,8 +141,7 @@ class CellRowWidget extends StatelessWidget {
             row: row,
             column: col,
             cell: cell,
-            isSelected:
-                selectedCell?.row == row && selectedCell?.column == col,
+            isSelected: selectedCell?.row == row && selectedCell?.column == col,
           ),
         );
         final valWidget = SizedBox(
@@ -167,9 +168,7 @@ class CellRowWidget extends StatelessWidget {
           // so t=0 is the very top of startRow and t=1 is the very bottom of
           // endRow, making the curve span the full box height.
           final denom = totalRows + 1;
-          final t0 = denom == 0
-              ? 0.0
-              : (row - run.startRow) / denom;
+          final t0 = denom == 0 ? 0.0 : (row - run.startRow) / denom;
           final t1 = denom == 0
               ? 1.0
               : ((row + 1 - run.startRow) / denom).clamp(0.0, 1.0);
@@ -194,11 +193,13 @@ class CellRowWidget extends StatelessWidget {
                 decoration: BoxDecoration(border: border),
                 child: Stack(
                   children: [
-                    Row(children: [
-                      cmdWidget,
-                      const SizedBox(width: 2),
-                      valWidget,
-                    ]),
+                    Row(
+                      children: [
+                        cmdWidget,
+                        const SizedBox(width: 2),
+                        valWidget,
+                      ],
+                    ),
                     Positioned.fill(
                       child: CustomPaint(
                         painter: _EnvelopeCurvePainter(
@@ -240,18 +241,19 @@ class CellRowWidget extends StatelessWidget {
       }
 
       // Default: single column (note, inst, vol, or an fxval without its cmd).
-      widgets.add(SizedBox(
-        width: _colWidth(col),
-        height: kRowHeight,
-        child: CellWidget(
-          trackIndex: trackIndex,
-          row: row,
-          column: col,
-          cell: cell,
-          isSelected:
-              selectedCell?.row == row && selectedCell?.column == col,
+      widgets.add(
+        SizedBox(
+          width: _colWidth(col),
+          height: kRowHeight,
+          child: CellWidget(
+            trackIndex: trackIndex,
+            row: row,
+            column: col,
+            cell: cell,
+            isSelected: selectedCell?.row == row && selectedCell?.column == col,
+          ),
         ),
-      ));
+      );
       widgets.add(SizedBox(width: _gapAfter(col)));
     }
 
@@ -288,7 +290,7 @@ class CellRowWidget extends StatelessWidget {
                   Row(
                     children: [
                       Text(
-                        'ENVELOPE  rows ${run.startRow + 1}–${run.endRow + 1}'  
+                        'ENVELOPE  rows ${run.startRow + 1}–${run.endRow + 1}'
                         '  ($rows steps)  '
                         '${run.startValue}→${run.endValue}',
                         style: kStyleBase.copyWith(
@@ -338,9 +340,11 @@ class CellRowWidget extends StatelessWidget {
                             thumbColor: envelopeColor,
                             overlayColor: envelopeColor.withAlpha(34),
                             thumbShape: const RoundSliderThumbShape(
-                                enabledThumbRadius: 10),
+                              enabledThumbRadius: 10,
+                            ),
                             overlayShape: const RoundSliderOverlayShape(
-                                overlayRadius: 20),
+                              overlayRadius: 20,
+                            ),
                           ),
                           child: Slider(
                             value: run.gamma.clamp(0.1, 4.0),
@@ -363,8 +367,8 @@ class CellRowWidget extends StatelessWidget {
                       run.gamma < 0.95
                           ? 'Fast start → slow end'
                           : run.gamma > 1.05
-                              ? 'Slow start → fast end'
-                              : 'Linear',
+                          ? 'Slow start → fast end'
+                          : 'Linear',
                       style: kStyleBase.copyWith(
                         color: kColInactive,
                         fontSize: 11,
@@ -381,12 +385,13 @@ class CellRowWidget extends StatelessWidget {
                     },
                     child: Container(
                       padding: const EdgeInsets.symmetric(
-                          horizontal: 12, vertical: 10),
+                        horizontal: 12,
+                        vertical: 10,
+                      ),
                       decoration: BoxDecoration(
                         color: kColStopBtn.withAlpha(30),
                         borderRadius: BorderRadius.circular(6),
-                        border:
-                            Border.all(color: kColStopBtn.withAlpha(100)),
+                        border: Border.all(color: kColStopBtn.withAlpha(100)),
                       ),
                       child: Text(
                         'REMOVE ENVELOPE',
@@ -411,29 +416,43 @@ class CellRowWidget extends StatelessWidget {
 
   static double _colWidth(CellColumn col) {
     switch (col) {
-      case CellColumn.note:       return kWNote;
-      case CellColumn.instrument: return kWInst;
-      case CellColumn.volume:     return kWVol;
+      case CellColumn.note:
+        return kWNote;
+      case CellColumn.instrument:
+        return kWInst;
+      case CellColumn.volume:
+        return kWVol;
       case CellColumn.fx0cmd:
       case CellColumn.fx1cmd:
-      case CellColumn.fx2cmd:     return kWFxCmd;
+      case CellColumn.fx2cmd:
+        return kWFxCmd;
       case CellColumn.fx0val:
       case CellColumn.fx1val:
-      case CellColumn.fx2val:     return kWFxVal;
+      case CellColumn.fx2val:
+        return kWFxVal;
     }
   }
 
   static double _gapAfter(CellColumn col) {
     switch (col) {
-      case CellColumn.note:       return kWGap;
-      case CellColumn.instrument: return kWGap;
-      case CellColumn.volume:     return kWGap;
-      case CellColumn.fx0cmd:     return 2;
-      case CellColumn.fx0val:     return kWGap;
-      case CellColumn.fx1cmd:     return 2;
-      case CellColumn.fx1val:     return kWGap;
-      case CellColumn.fx2cmd:     return 2;
-      case CellColumn.fx2val:     return 0;
+      case CellColumn.note:
+        return kWGap;
+      case CellColumn.instrument:
+        return kWGap;
+      case CellColumn.volume:
+        return kWGap;
+      case CellColumn.fx0cmd:
+        return 2;
+      case CellColumn.fx0val:
+        return kWGap;
+      case CellColumn.fx1cmd:
+        return 2;
+      case CellColumn.fx1val:
+        return kWGap;
+      case CellColumn.fx2cmd:
+        return 2;
+      case CellColumn.fx2val:
+        return 0;
     }
   }
 
@@ -516,8 +535,8 @@ class _EnvelopeCurvePainter extends CustomPainter {
   final bool ascending;
   final double gamma;
   final Color color;
-  final double t0;         // normalised run position at top of this row
-  final double t1;         // normalised run position at bottom of this row
+  final double t0; // normalised run position at top of this row
+  final double t1; // normalised run position at bottom of this row
   final double totalWidth; // kWFxCmd + 2 + kWFxVal
 
   const _EnvelopeCurvePainter({

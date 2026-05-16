@@ -1,14 +1,6 @@
 import 'instrument_model.dart';
 
-enum SynthPresetCategory {
-  melody,
-  keyboard,
-  bass,
-  leads,
-  drums,
-  pads,
-  fx,
-}
+enum SynthPresetCategory { melody, keyboard, bass, leads, drums, pads, fx }
 
 extension SynthPresetCategoryLabel on SynthPresetCategory {
   String get label {
@@ -526,7 +518,6 @@ final List<SynthPreset> kFactorySynthPresets = <SynthPreset>[
   ),
 
   // ── Bass ─────────────────────────────────────────────────────────────────
-
   SynthPreset(
     name: 'Sub Bass',
     category: SynthPresetCategory.bass,
@@ -608,17 +599,18 @@ final List<SynthPreset> kFactorySynthPresets = <SynthPreset>[
   SynthPreset(
     name: 'FM Bass',
     category: SynthPresetCategory.bass,
-    description: 'Punchy FM bass — sine carrier with exact 2:1 modulator via octave. DX-style thump.',
+    description:
+        'Punchy FM bass — sine carrier with exact 2:1 modulator via octave. DX-style thump.',
     build: () => SimpleSynthParams(
       wave: SynthWave.sine,
       detune: 0.0,
       osc1Gain: 1.0,
       osc2On: true,
       osc2Wave: SynthWave.sine,
-      osc2Detune: 0.0,       // 2:1 ratio via osc2Oct, detune free for fine-tuning
-      osc2Gain: 0.0,         // pure FM modulator
+      osc2Detune: 0.0, // 2:1 ratio via osc2Oct, detune free for fine-tuning
+      osc2Gain: 0.0, // pure FM modulator
       osc2FmDepth: 0.28,
-      osc2Oct: 1,            // modulator one octave up = exact 2:1 ratio
+      osc2Oct: 1, // modulator one octave up = exact 2:1 ratio
       osc3On: false,
       osc3Wave: SynthWave.sine,
       osc3Detune: 0.0,
@@ -648,17 +640,19 @@ final List<SynthPreset> kFactorySynthPresets = <SynthPreset>[
   SynthPreset(
     name: 'Growl Bass',
     category: SynthPresetCategory.bass,
-    description: 'Octave-split saw bass — upper and lower saws one octave apart for weight and grit.',
+    description:
+        'Octave-split saw bass — upper and lower saws one octave apart for weight and grit.',
     build: () => SimpleSynthParams(
       wave: SynthWave.saw,
       detune: 0.02,
       osc1Gain: 0.85,
       osc2On: true,
       osc2Wave: SynthWave.saw,
-      osc2Detune: 0.02,      // slight positive detune for beating against the lower octave
+      osc2Detune:
+          0.02, // slight positive detune for beating against the lower octave
       osc2Gain: 0.75,
       osc2FmDepth: 0.0,
-      osc2Oct: -1,           // OSC 2 one octave below for classic octave bass layering
+      osc2Oct: -1, // OSC 2 one octave below for classic octave bass layering
       osc3On: false,
       osc3Wave: SynthWave.saw,
       osc3Detune: 0.0,
@@ -688,7 +682,8 @@ final List<SynthPreset> kFactorySynthPresets = <SynthPreset>[
   SynthPreset(
     name: 'Wobble Bass',
     category: SynthPresetCategory.bass,
-    description: 'LFO-filtered saw with sub sine layer — wobble plus low-end depth.',
+    description:
+        'LFO-filtered saw with sub sine layer — wobble plus low-end depth.',
     build: () => SimpleSynthParams(
       wave: SynthWave.saw,
       detune: 0.01,
@@ -696,9 +691,9 @@ final List<SynthPreset> kFactorySynthPresets = <SynthPreset>[
       osc2On: true,
       osc2Wave: SynthWave.sine,
       osc2Detune: 0.0,
-      osc2Gain: 0.45,        // sine sub layer below the wobble
+      osc2Gain: 0.45, // sine sub layer below the wobble
       osc2FmDepth: 0.0,
-      osc2Oct: -1,           // sub one octave below the main saw
+      osc2Oct: -1, // sub one octave below the main saw
       osc3On: false,
       osc3Wave: SynthWave.saw,
       osc3Detune: 0.0,
@@ -726,7 +721,6 @@ final List<SynthPreset> kFactorySynthPresets = <SynthPreset>[
   ),
 
   // ── Leads ─────────────────────────────────────────────────────────────────
-
   SynthPreset(
     name: 'Saw Lead',
     category: SynthPresetCategory.leads,
@@ -769,15 +763,16 @@ final List<SynthPreset> kFactorySynthPresets = <SynthPreset>[
   SynthPreset(
     name: 'FM Bell Lead',
     category: SynthPresetCategory.leads,
-    description: 'Plucked FM bell — sine carrier with 1:1 modulator. DX7 style.',
+    description:
+        'Plucked FM bell — sine carrier with 1:1 modulator. DX7 style.',
     build: () => SimpleSynthParams(
       wave: SynthWave.sine,
       detune: 0.0,
       osc1Gain: 1.0,
       osc2On: true,
       osc2Wave: SynthWave.sine,
-      osc2Detune: 0.0,       // 1:1 ratio — classic bell spectrum
-      osc2Gain: 0.0,         // pure FM modulator
+      osc2Detune: 0.0, // 1:1 ratio — classic bell spectrum
+      osc2Gain: 0.0, // pure FM modulator
       osc2FmDepth: 0.52,
       osc3On: false,
       osc3Wave: SynthWave.sine,
@@ -923,7 +918,6 @@ final List<SynthPreset> kFactorySynthPresets = <SynthPreset>[
   ),
 
   // ── Drums additions ───────────────────────────────────────────────────────
-
   SynthPreset(
     name: '808 Kick',
     category: SynthPresetCategory.drums,
@@ -973,7 +967,7 @@ final List<SynthPreset> kFactorySynthPresets = <SynthPreset>[
       osc1Gain: 0.80,
       osc2On: true,
       osc2Wave: SynthWave.sine,
-      osc2Detune: -0.42,     // lower sine for body tone
+      osc2Detune: -0.42, // lower sine for body tone
       osc2Gain: 0.55,
       osc2FmDepth: 0.0,
       osc3On: false,
@@ -1005,7 +999,8 @@ final List<SynthPreset> kFactorySynthPresets = <SynthPreset>[
   SynthPreset(
     name: 'Rim Shot',
     category: SynthPresetCategory.drums,
-    description: 'Sharp percussive crack — tight noise for rim and accent hits.',
+    description:
+        'Sharp percussive crack — tight noise for rim and accent hits.',
     build: () => SimpleSynthParams(
       wave: SynthWave.noise,
       detune: 0.00,
@@ -1083,14 +1078,15 @@ final List<SynthPreset> kFactorySynthPresets = <SynthPreset>[
   SynthPreset(
     name: 'FM Cowbell',
     category: SynthPresetCategory.drums,
-    description: 'Metallic FM cowbell — square + inharmonic modulator at 3:2 ratio.',
+    description:
+        'Metallic FM cowbell — square + inharmonic modulator at 3:2 ratio.',
     build: () => SimpleSynthParams(
       wave: SynthWave.square,
       detune: 0.40,
       osc1Gain: 0.80,
       osc2On: true,
       osc2Wave: SynthWave.square,
-      osc2Detune: 0.58,      // ~7 semitones ≈ 3:2 (inharmonic bell character)
+      osc2Detune: 0.58, // ~7 semitones ≈ 3:2 (inharmonic bell character)
       osc2Gain: 0.30,
       osc2FmDepth: 0.62,
       osc3On: false,
@@ -1159,18 +1155,18 @@ final List<SynthPreset> kFactorySynthPresets = <SynthPreset>[
   ),
 
   // ── Pads additions ────────────────────────────────────────────────────────
-
   SynthPreset(
     name: 'FM Glass',
     category: SynthPresetCategory.pads,
-    description: 'Glassy pad — sine carrier with subtle FM shimmer, slow bloom.',
+    description:
+        'Glassy pad — sine carrier with subtle FM shimmer, slow bloom.',
     build: () => SimpleSynthParams(
       wave: SynthWave.sine,
       detune: 0.00,
       osc1Gain: 1.0,
       osc2On: true,
       osc2Wave: SynthWave.sine,
-      osc2Detune: 0.0,       // 1:1 ratio adds upper partials
+      osc2Detune: 0.0, // 1:1 ratio adds upper partials
       osc2Gain: 0.25,
       osc2FmDepth: 0.12,
       osc3On: false,
@@ -1209,7 +1205,7 @@ final List<SynthPreset> kFactorySynthPresets = <SynthPreset>[
       osc1Gain: 0.75,
       osc2On: true,
       osc2Wave: SynthWave.saw,
-      osc2Detune: -0.05,     // slight spread below carrier
+      osc2Detune: -0.05, // slight spread below carrier
       osc2Gain: 0.70,
       osc2FmDepth: 0.0,
       osc3On: false,
@@ -1278,7 +1274,6 @@ final List<SynthPreset> kFactorySynthPresets = <SynthPreset>[
   ),
 
   // ── FX ────────────────────────────────────────────────────────────────────
-
   SynthPreset(
     name: 'Laser',
     category: SynthPresetCategory.fx,
@@ -1321,14 +1316,15 @@ final List<SynthPreset> kFactorySynthPresets = <SynthPreset>[
   SynthPreset(
     name: 'FM Metal',
     category: SynthPresetCategory.fx,
-    description: 'Inharmonic FM metallic hit — triangle + heavy FM, percussive.',
+    description:
+        'Inharmonic FM metallic hit — triangle + heavy FM, percussive.',
     build: () => SimpleSynthParams(
       wave: SynthWave.triangle,
       detune: 0.30,
       osc1Gain: 0.90,
       osc2On: true,
       osc2Wave: SynthWave.triangle,
-      osc2Detune: 0.58,      // ~7 semitones ≈ 3:2 inharmonic ratio
+      osc2Detune: 0.58, // ~7 semitones ≈ 3:2 inharmonic ratio
       osc2Gain: 0.30,
       osc2FmDepth: 0.78,
       osc3On: false,
@@ -1407,7 +1403,7 @@ final List<SynthPreset> kFactorySynthPresets = <SynthPreset>[
       osc2On: true,
       osc2Wave: SynthWave.triangle,
       osc2Detune: 0.50,
-      osc2Gain: 0.0,         // pure FM modulator
+      osc2Gain: 0.0, // pure FM modulator
       osc2FmDepth: 0.55,
       osc3On: false,
       osc3Wave: SynthWave.triangle,
@@ -1438,17 +1434,19 @@ final List<SynthPreset> kFactorySynthPresets = <SynthPreset>[
   SynthPreset(
     name: 'Drone',
     category: SynthPresetCategory.fx,
-    description: 'Slow LFO octave-split saw drone — two saws an octave apart for deep ambient texture.',
+    description:
+        'Slow LFO octave-split saw drone — two saws an octave apart for deep ambient texture.',
     build: () => SimpleSynthParams(
       wave: SynthWave.saw,
       detune: 0.02,
       osc1Gain: 0.80,
       osc2On: true,
       osc2Wave: SynthWave.saw,
-      osc2Detune: 0.01,      // very slight detune for subtle beating at the lower octave
+      osc2Detune:
+          0.01, // very slight detune for subtle beating at the lower octave
       osc2Gain: 0.65,
       osc2FmDepth: 0.0,
-      osc2Oct: -1,           // OSC 2 one octave below — opens the drone texture wide
+      osc2Oct: -1, // OSC 2 one octave below — opens the drone texture wide
       osc3On: false,
       osc3Wave: SynthWave.saw,
       osc3Detune: 0.0,

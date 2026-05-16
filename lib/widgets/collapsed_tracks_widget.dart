@@ -20,10 +20,7 @@ import 'cell_widget.dart';
 class CollapsedTracksWidget extends StatefulWidget {
   final ValueChanged<int> onTrackTap;
 
-  const CollapsedTracksWidget({
-    super.key,
-    required this.onTrackTap,
-  });
+  const CollapsedTracksWidget({super.key, required this.onTrackTap});
 
   static const double wNote = 38.0;
   static const double wInst = 34.0;
@@ -211,7 +208,7 @@ class _CollapsedTracksWidgetState extends State<CollapsedTracksWidget> {
     final isBeatStart = row % linesPerBeat == 0;
     final rowNumStyle = isBeatStart
         ? kStyleRowNum.copyWith(color: kColAccent)
-      : kStyleRowNum.copyWith(color: kColRowNum);
+        : kStyleRowNum.copyWith(color: kColRowNum);
 
     return Container(
       color: bg,
@@ -334,7 +331,10 @@ class _MiniCellState extends State<_MiniCell> {
       state.selectTrack(widget.trackIndex);
     }
     if (widget.column == CellColumn.note && widget.cell.note.isEmpty) {
-      state.setNote(widget.row, NoteValue.fromScrollIndex(_defaultNoteScrollIndex));
+      state.setNote(
+        widget.row,
+        NoteValue.fromScrollIndex(_defaultNoteScrollIndex),
+      );
     }
     if (widget.column == CellColumn.instrument &&
         cellIsEmpty(widget.column, widget.cell)) {

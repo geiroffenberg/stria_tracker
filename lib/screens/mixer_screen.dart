@@ -8,7 +8,7 @@ import '../theme/app_theme.dart';
 Color get kMixerChromeColor => Color.lerp(kColInactive, kColHeader, 0.45)!;
 Color get kMixerBorderColor => kMixerChromeColor.withAlpha(210);
 Color get kMixerSecondaryTextColor =>
-  Color.lerp(kColInactive, kColHeader, 0.6)!;
+    Color.lerp(kColInactive, kColHeader, 0.6)!;
 Color get kMixerLabelColor => Color.lerp(kColHeader, kColAccent, 0.12)!;
 
 class _ReverbUiState {
@@ -1038,32 +1038,98 @@ class _MixerScreenState extends State<MixerScreen> {
       final Map<String, dynamic> p;
       switch (type) {
         case 'REVERB':
-          final r = onMaster ? _masterReverbStates[s] : _trackReverbStates[t!][s];
-          p = {'roomSize': r.roomSize, 'damp': r.damp, 'width': r.width, 'dry': r.dry, 'wet': r.wet, 'freeze': r.freeze};
+          final r = onMaster
+              ? _masterReverbStates[s]
+              : _trackReverbStates[t!][s];
+          p = {
+            'roomSize': r.roomSize,
+            'damp': r.damp,
+            'width': r.width,
+            'dry': r.dry,
+            'wet': r.wet,
+            'freeze': r.freeze,
+          };
         case 'DELAY':
           final d = onMaster ? _masterDelayStates[s] : _trackDelayStates[t!][s];
-          p = {'timeMs': d.timeMs, 'feedback': d.feedback, 'hpCutoff': d.hpCutoff, 'dry': d.dry, 'wet': d.wet, 'sync': d.sync};
+          p = {
+            'timeMs': d.timeMs,
+            'feedback': d.feedback,
+            'hpCutoff': d.hpCutoff,
+            'dry': d.dry,
+            'wet': d.wet,
+            'sync': d.sync,
+          };
         case 'FILTER':
-          final f = onMaster ? _masterFilterStates[s] : _trackFilterStates[t!][s];
-          p = {'cutoff': f.cutoff, 'resonance': f.resonance, 'mode': f.mode, 'dry': f.dry, 'wet': f.wet};
+          final f = onMaster
+              ? _masterFilterStates[s]
+              : _trackFilterStates[t!][s];
+          p = {
+            'cutoff': f.cutoff,
+            'resonance': f.resonance,
+            'mode': f.mode,
+            'dry': f.dry,
+            'wet': f.wet,
+          };
         case 'DISTORTION':
-          final d = onMaster ? _masterDistortionStates[s] : _trackDistortionStates[t!][s];
-          p = {'drive': d.drive, 'tone': d.tone, 'distType': d.distType, 'dry': d.dry, 'wet': d.wet};
+          final d = onMaster
+              ? _masterDistortionStates[s]
+              : _trackDistortionStates[t!][s];
+          p = {
+            'drive': d.drive,
+            'tone': d.tone,
+            'distType': d.distType,
+            'dry': d.dry,
+            'wet': d.wet,
+          };
         case 'BITCRUSHER':
-          final b = onMaster ? _masterBitcrusherStates[s] : _trackBitcrusherStates[t!][s];
+          final b = onMaster
+              ? _masterBitcrusherStates[s]
+              : _trackBitcrusherStates[t!][s];
           p = {'bits': b.bits, 'rate': b.rate, 'dry': b.dry, 'wet': b.wet};
         case 'LIMITER':
-          final l = onMaster ? _masterLimiterStates[s] : _trackLimiterStates[t!][s];
+          final l = onMaster
+              ? _masterLimiterStates[s]
+              : _trackLimiterStates[t!][s];
           p = {'gain': l.gain, 'dry': l.dry, 'wet': l.wet};
         case 'CHORUS':
-          final c = onMaster ? _masterChorusStates[s] : _trackChorusStates[t!][s];
-          p = {'rate': c.rate, 'depth': c.depth, 'delay': c.delay, 'stereo': c.stereo, 'dry': c.dry, 'wet': c.wet};
+          final c = onMaster
+              ? _masterChorusStates[s]
+              : _trackChorusStates[t!][s];
+          p = {
+            'rate': c.rate,
+            'depth': c.depth,
+            'delay': c.delay,
+            'stereo': c.stereo,
+            'dry': c.dry,
+            'wet': c.wet,
+          };
         case 'EQ':
           final e = onMaster ? _masterEqStates[s] : _trackEqStates[t!][s];
-          p = {'lowGain': e.lowGain, 'lowFreq': e.lowFreq, 'midGain': e.midGain, 'midFreq': e.midFreq, 'midQ': e.midQ, 'highGain': e.highGain, 'highFreq': e.highFreq, 'dry': e.dry, 'wet': e.wet};
+          p = {
+            'lowGain': e.lowGain,
+            'lowFreq': e.lowFreq,
+            'midGain': e.midGain,
+            'midFreq': e.midFreq,
+            'midQ': e.midQ,
+            'highGain': e.highGain,
+            'highFreq': e.highFreq,
+            'dry': e.dry,
+            'wet': e.wet,
+          };
         case 'COMPRESSOR':
-          final c = onMaster ? _masterCompressorStates[s] : _trackCompressorStates[t!][s];
-          p = {'threshold': c.threshold, 'ratio': c.ratio, 'attack': c.attack, 'release': c.release, 'makeup': c.makeup, 'knee': c.knee, 'dry': c.dry, 'wet': c.wet};
+          final c = onMaster
+              ? _masterCompressorStates[s]
+              : _trackCompressorStates[t!][s];
+          p = {
+            'threshold': c.threshold,
+            'ratio': c.ratio,
+            'attack': c.attack,
+            'release': c.release,
+            'makeup': c.makeup,
+            'knee': c.knee,
+            'dry': c.dry,
+            'wet': c.wet,
+          };
         default:
           p = {};
       }
@@ -1072,13 +1138,20 @@ class _MixerScreenState extends State<MixerScreen> {
 
     final master = List<Map<String, dynamic>?>.generate(
       kInsertSlots,
-      (s) => serSlot(_masterInserts[s], _masterBypassed[s], onMaster: true, s: s),
+      (s) =>
+          serSlot(_masterInserts[s], _masterBypassed[s], onMaster: true, s: s),
     );
     final tracks = List<List<Map<String, dynamic>?>>.generate(
       _inserts.length,
       (t) => List<Map<String, dynamic>?>.generate(
         kInsertSlots,
-        (s) => serSlot(_inserts[t][s], _trackBypassed[t][s], onMaster: false, t: t, s: s),
+        (s) => serSlot(
+          _inserts[t][s],
+          _trackBypassed[t][s],
+          onMaster: false,
+          t: t,
+          s: s,
+        ),
       ),
     );
     return {'master': master, 'tracks': tracks};
@@ -1091,11 +1164,19 @@ class _MixerScreenState extends State<MixerScreen> {
     final snapshot = state.insertSnapshot;
     if (snapshot.isEmpty) return;
 
-    double d(Map<String, dynamic> m, String k, double def) => (m[k] as num?)?.toDouble() ?? def;
-    bool b(Map<String, dynamic> m, String k, bool def) => (m[k] as bool?) ?? def;
-    int iv(Map<String, dynamic> m, String k, int def) => (m[k] as num?)?.toInt() ?? def;
+    double d(Map<String, dynamic> m, String k, double def) =>
+        (m[k] as num?)?.toDouble() ?? def;
+    bool b(Map<String, dynamic> m, String k, bool def) =>
+        (m[k] as bool?) ?? def;
+    int iv(Map<String, dynamic> m, String k, int def) =>
+        (m[k] as num?)?.toInt() ?? def;
 
-    void applySlot(Map<String, dynamic> data, {required bool onMaster, int? t, required int s}) {
+    void applySlot(
+      Map<String, dynamic> data, {
+      required bool onMaster,
+      int? t,
+      required int s,
+    }) {
       final type = data['type'] as String?;
       if (type == null) return;
       final bypass = b(data, 'bypass', false);
@@ -1108,63 +1189,124 @@ class _MixerScreenState extends State<MixerScreen> {
       }
       switch (type) {
         case 'REVERB':
-          final r = _ReverbUiState(roomSize: d(data,'roomSize',0.5), damp: d(data,'damp',0.5), width: d(data,'width',1.0), dry: d(data,'dry',1.0), wet: d(data,'wet',0.3), freeze: b(data,'freeze',false));
+          final r = _ReverbUiState(
+            roomSize: d(data, 'roomSize', 0.5),
+            damp: d(data, 'damp', 0.5),
+            width: d(data, 'width', 1.0),
+            dry: d(data, 'dry', 1.0),
+            wet: d(data, 'wet', 0.3),
+            freeze: b(data, 'freeze', false),
+          );
           if (onMaster) {
             _masterReverbStates[s] = r;
           } else {
             _trackReverbStates[t!][s] = r;
           }
         case 'DELAY':
-          final dl = _DelayUiState(timeMs: d(data,'timeMs',375.0), feedback: d(data,'feedback',0.4), hpCutoff: d(data,'hpCutoff',0.0), dry: d(data,'dry',1.0), wet: d(data,'wet',0.35), sync: b(data,'sync',false));
+          final dl = _DelayUiState(
+            timeMs: d(data, 'timeMs', 375.0),
+            feedback: d(data, 'feedback', 0.4),
+            hpCutoff: d(data, 'hpCutoff', 0.0),
+            dry: d(data, 'dry', 1.0),
+            wet: d(data, 'wet', 0.35),
+            sync: b(data, 'sync', false),
+          );
           if (onMaster) {
             _masterDelayStates[s] = dl;
           } else {
             _trackDelayStates[t!][s] = dl;
           }
         case 'FILTER':
-          final f = _FilterUiState(cutoff: d(data,'cutoff',0.5), resonance: d(data,'resonance',0.2), mode: iv(data,'mode',0), dry: d(data,'dry',1.0), wet: d(data,'wet',1.0));
+          final f = _FilterUiState(
+            cutoff: d(data, 'cutoff', 0.5),
+            resonance: d(data, 'resonance', 0.2),
+            mode: iv(data, 'mode', 0),
+            dry: d(data, 'dry', 1.0),
+            wet: d(data, 'wet', 1.0),
+          );
           if (onMaster) {
             _masterFilterStates[s] = f;
           } else {
             _trackFilterStates[t!][s] = f;
           }
         case 'DISTORTION':
-          final ds = _DistortionUiState(drive: d(data,'drive',0.5), tone: d(data,'tone',0.5), distType: iv(data,'distType',0), dry: d(data,'dry',1.0), wet: d(data,'wet',1.0));
+          final ds = _DistortionUiState(
+            drive: d(data, 'drive', 0.5),
+            tone: d(data, 'tone', 0.5),
+            distType: iv(data, 'distType', 0),
+            dry: d(data, 'dry', 1.0),
+            wet: d(data, 'wet', 1.0),
+          );
           if (onMaster) {
             _masterDistortionStates[s] = ds;
           } else {
             _trackDistortionStates[t!][s] = ds;
           }
         case 'BITCRUSHER':
-          final bc = _BitcrusherUiState(bits: d(data,'bits',1.0), rate: d(data,'rate',1.0), dry: d(data,'dry',1.0), wet: d(data,'wet',1.0));
+          final bc = _BitcrusherUiState(
+            bits: d(data, 'bits', 1.0),
+            rate: d(data, 'rate', 1.0),
+            dry: d(data, 'dry', 1.0),
+            wet: d(data, 'wet', 1.0),
+          );
           if (onMaster) {
             _masterBitcrusherStates[s] = bc;
           } else {
             _trackBitcrusherStates[t!][s] = bc;
           }
         case 'LIMITER':
-          final lm = _LimiterUiState(gain: d(data,'gain',0.0), dry: d(data,'dry',0.0), wet: d(data,'wet',1.0));
+          final lm = _LimiterUiState(
+            gain: d(data, 'gain', 0.0),
+            dry: d(data, 'dry', 0.0),
+            wet: d(data, 'wet', 1.0),
+          );
           if (onMaster) {
             _masterLimiterStates[s] = lm;
           } else {
             _trackLimiterStates[t!][s] = lm;
           }
         case 'CHORUS':
-          final ch = _ChorusUiState(rate: d(data,'rate',0.3), depth: d(data,'depth',0.22), delay: d(data,'delay',0.3), stereo: iv(data,'stereo',0), dry: d(data,'dry',0.5), wet: d(data,'wet',1.0));
+          final ch = _ChorusUiState(
+            rate: d(data, 'rate', 0.3),
+            depth: d(data, 'depth', 0.22),
+            delay: d(data, 'delay', 0.3),
+            stereo: iv(data, 'stereo', 0),
+            dry: d(data, 'dry', 0.5),
+            wet: d(data, 'wet', 1.0),
+          );
           if (onMaster) {
             _masterChorusStates[s] = ch;
           } else {
             _trackChorusStates[t!][s] = ch;
           }
         case 'EQ':
-          final eq = _EqUiState(lowGain: d(data,'lowGain',0.0), lowFreq: d(data,'lowFreq',0.2), midGain: d(data,'midGain',0.0), midFreq: d(data,'midFreq',0.3), midQ: d(data,'midQ',0.3), highGain: d(data,'highGain',0.0), highFreq: d(data,'highFreq',0.5), dry: d(data,'dry',0.0), wet: d(data,'wet',1.0));
+          final eq = _EqUiState(
+            lowGain: d(data, 'lowGain', 0.0),
+            lowFreq: d(data, 'lowFreq', 0.2),
+            midGain: d(data, 'midGain', 0.0),
+            midFreq: d(data, 'midFreq', 0.3),
+            midQ: d(data, 'midQ', 0.3),
+            highGain: d(data, 'highGain', 0.0),
+            highFreq: d(data, 'highFreq', 0.5),
+            dry: d(data, 'dry', 0.0),
+            wet: d(data, 'wet', 1.0),
+          );
           if (onMaster) {
             _masterEqStates[s] = eq;
           } else {
             _trackEqStates[t!][s] = eq;
           }
         case 'COMPRESSOR':
-          final cp = _CompressorUiState(threshold: d(data,'threshold',0.7), ratio: d(data,'ratio',0.2), attack: d(data,'attack',0.1), release: d(data,'release',0.2), makeup: d(data,'makeup',0.0), knee: iv(data,'knee',0), dry: d(data,'dry',0.0), wet: d(data,'wet',1.0));
+          final cp = _CompressorUiState(
+            threshold: d(data, 'threshold', 0.7),
+            ratio: d(data, 'ratio', 0.2),
+            attack: d(data, 'attack', 0.1),
+            release: d(data, 'release', 0.2),
+            makeup: d(data, 'makeup', 0.0),
+            knee: iv(data, 'knee', 0),
+            dry: d(data, 'dry', 0.0),
+            wet: d(data, 'wet', 1.0),
+          );
           if (onMaster) {
             _masterCompressorStates[s] = cp;
           } else {
@@ -1177,7 +1319,9 @@ class _MixerScreenState extends State<MixerScreen> {
     if (masterData is List) {
       for (int s = 0; s < kInsertSlots && s < masterData.length; s++) {
         final slotData = masterData[s];
-        if (slotData is Map<String, dynamic>) applySlot(slotData, onMaster: true, s: s);
+        if (slotData is Map<String, dynamic>) {
+          applySlot(slotData, onMaster: true, s: s);
+        }
       }
     }
     final trackData = snapshot['tracks'];
@@ -1187,7 +1331,9 @@ class _MixerScreenState extends State<MixerScreen> {
         if (rowData is! List) continue;
         for (int s = 0; s < kInsertSlots && s < rowData.length; s++) {
           final slotData = rowData[s];
-          if (slotData is Map<String, dynamic>) applySlot(slotData, onMaster: false, t: t, s: s);
+          if (slotData is Map<String, dynamic>) {
+            applySlot(slotData, onMaster: false, t: t, s: s);
+          }
         }
       }
     }
@@ -1260,8 +1406,8 @@ class _MixerScreenState extends State<MixerScreen> {
                   _masterCompressorStates[slot] = const _CompressorUiState();
                 });
                 AudioEngine.instance.setMasterInsertEffect(slot, -1, 0.0);
-              state.setInsertSnapshot(_buildInsertSnapshot());
-            },
+                state.setInsertSnapshot(_buildInsertSnapshot());
+              },
             ),
             const SizedBox(width: 6),
             // ── Channel strips ─────────────────────────────────────────
@@ -1322,7 +1468,9 @@ class _MixerScreenState extends State<MixerScreen> {
           style: kStyleHeader.copyWith(color: kColAccent, fontSize: 13),
         ),
         children: choices.map((ch) {
-          final label = ch == 0 ? 'MASTER' : 'CH ${ch.toString().padLeft(2, '0')}';
+          final label = ch == 0
+              ? 'MASTER'
+              : 'CH ${ch.toString().padLeft(2, '0')}';
           final isCurrent = ch == currentSend;
           return SimpleDialogOption(
             onPressed: () => Navigator.of(ctx).pop(ch),
@@ -1347,340 +1495,340 @@ class _MixerScreenState extends State<MixerScreen> {
     final state = AppStateScope.of(context);
     try {
       final currentFx = _inserts[trackIdx][slotIdx];
-    if (currentFx == 'REVERB') {
-      await _openReverbEditor(
-        onMaster: false,
-        trackIdx: trackIdx,
-        slotIdx: slotIdx,
-      );
-      return;
-    }
-    if (currentFx == 'DELAY') {
-      await _openDelayEditor(
-        onMaster: false,
-        trackIdx: trackIdx,
-        slotIdx: slotIdx,
-      );
-      return;
-    }
-    if (currentFx == 'FILTER') {
-      await _openFilterEditor(
-        onMaster: false,
-        trackIdx: trackIdx,
-        slotIdx: slotIdx,
-      );
-      return;
-    }
-    if (currentFx == 'DISTORTION') {
-      await _openDistortionEditor(
-        onMaster: false,
-        trackIdx: trackIdx,
-        slotIdx: slotIdx,
-      );
-      return;
-    }
-    if (currentFx == 'BITCRUSHER') {
-      await _openBitcrusherEditor(
-        onMaster: false,
-        trackIdx: trackIdx,
-        slotIdx: slotIdx,
-      );
-      return;
-    }
-    if (currentFx == 'LIMITER') {
-      await _openLimiterEditor(
-        onMaster: false,
-        trackIdx: trackIdx,
-        slotIdx: slotIdx,
-      );
-      return;
-    }
-    if (currentFx == 'CHORUS') {
-      await _openChorusEditor(
-        onMaster: false,
-        trackIdx: trackIdx,
-        slotIdx: slotIdx,
-      );
-      return;
-    }
-    if (currentFx == 'EQ') {
-      await _openEqEditor(
-        onMaster: false,
-        trackIdx: trackIdx,
-        slotIdx: slotIdx,
-      );
-      return;
-    }
-    if (currentFx == 'COMPRESSOR') {
-      await _openCompressorEditor(
-        onMaster: false,
-        trackIdx: trackIdx,
-        slotIdx: slotIdx,
-      );
-      return;
-    }
-
-    final picked = await showModalBottomSheet<String>(
-      context: context,
-      backgroundColor: kBgTrackHeader,
-      builder: (_) => const _FxPicker(),
-    );
-
-    if (picked != null) {
-      setState(() => _inserts[trackIdx][slotIdx] = picked);
-      state.setTrackInsertEffectName(trackIdx, slotIdx, picked);
-
-      if (picked == 'REVERB') {
-        final rs = _trackReverbStates[trackIdx][slotIdx];
-        await AudioEngine.instance.setTrackInsertEffect(
-          trackIdx,
-          slotIdx,
-          0,
-          rs.wet,
-        );
-        await AudioEngine.instance.setTrackInsertMix(
-          trackIdx,
-          slotIdx,
-          rs.dry,
-          rs.wet,
-        );
-        await AudioEngine.instance.setTrackReverbParams(
-          trackIdx,
-          slotIdx,
-          rs.roomSize,
-          rs.damp,
-          rs.width,
-          rs.freeze,
-        );
+      if (currentFx == 'REVERB') {
         await _openReverbEditor(
           onMaster: false,
           trackIdx: trackIdx,
           slotIdx: slotIdx,
         );
-      } else if (picked == 'DELAY') {
-        final ds = _trackDelayStates[trackIdx][slotIdx];
-        await AudioEngine.instance.setTrackInsertEffect(
-          trackIdx,
-          slotIdx,
-          1,
-          ds.wet,
-        );
-        await AudioEngine.instance.setTrackInsertMix(
-          trackIdx,
-          slotIdx,
-          ds.dry,
-          ds.wet,
-        );
-        await AudioEngine.instance.setTrackDelayParams(
-          trackIdx,
-          slotIdx,
-          ds.timeMs,
-          ds.feedback,
-          ds.hpCutoff,
-          ds.sync,
-        );
+        return;
+      }
+      if (currentFx == 'DELAY') {
         await _openDelayEditor(
           onMaster: false,
           trackIdx: trackIdx,
           slotIdx: slotIdx,
         );
-      } else if (picked == 'FILTER') {
-        final fs = _trackFilterStates[trackIdx][slotIdx];
-        await AudioEngine.instance.setTrackInsertEffect(
-          trackIdx,
-          slotIdx,
-          2,
-          fs.wet,
-        );
-        await AudioEngine.instance.setTrackInsertMix(
-          trackIdx,
-          slotIdx,
-          fs.dry,
-          fs.wet,
-        );
-        await AudioEngine.instance.setTrackFilterParams(
-          trackIdx,
-          slotIdx,
-          fs.cutoff,
-          fs.resonance,
-          fs.mode,
-        );
+        return;
+      }
+      if (currentFx == 'FILTER') {
         await _openFilterEditor(
           onMaster: false,
           trackIdx: trackIdx,
           slotIdx: slotIdx,
         );
-      } else if (picked == 'DISTORTION') {
-        final ds = _trackDistortionStates[trackIdx][slotIdx];
-        await AudioEngine.instance.setTrackInsertEffect(
-          trackIdx,
-          slotIdx,
-          3,
-          ds.wet,
-        );
-        await AudioEngine.instance.setTrackInsertMix(
-          trackIdx,
-          slotIdx,
-          ds.dry,
-          ds.wet,
-        );
-        await AudioEngine.instance.setTrackDistortionParams(
-          trackIdx,
-          slotIdx,
-          ds.drive,
-          ds.tone,
-          ds.distType,
-        );
+        return;
+      }
+      if (currentFx == 'DISTORTION') {
         await _openDistortionEditor(
           onMaster: false,
           trackIdx: trackIdx,
           slotIdx: slotIdx,
         );
-      } else if (picked == 'BITCRUSHER') {
-        final bs = _trackBitcrusherStates[trackIdx][slotIdx];
-        await AudioEngine.instance.setTrackInsertEffect(
-          trackIdx,
-          slotIdx,
-          4,
-          bs.wet,
-        );
-        await AudioEngine.instance.setTrackInsertMix(
-          trackIdx,
-          slotIdx,
-          bs.dry,
-          bs.wet,
-        );
-        await AudioEngine.instance.setTrackBitcrusherParams(
-          trackIdx,
-          slotIdx,
-          bs.bits,
-          bs.rate,
-        );
+        return;
+      }
+      if (currentFx == 'BITCRUSHER') {
         await _openBitcrusherEditor(
           onMaster: false,
           trackIdx: trackIdx,
           slotIdx: slotIdx,
         );
-      } else if (picked == 'LIMITER') {
-        final ls = _trackLimiterStates[trackIdx][slotIdx];
-        await AudioEngine.instance.setTrackInsertEffect(
-          trackIdx,
-          slotIdx,
-          5,
-          ls.wet,
-        );
-        await AudioEngine.instance.setTrackInsertMix(
-          trackIdx,
-          slotIdx,
-          ls.dry,
-          ls.wet,
-        );
-        await AudioEngine.instance.setTrackLimiterParams(
-          trackIdx,
-          slotIdx,
-          ls.gain,
-        );
+        return;
+      }
+      if (currentFx == 'LIMITER') {
         await _openLimiterEditor(
           onMaster: false,
           trackIdx: trackIdx,
           slotIdx: slotIdx,
         );
-      } else if (picked == 'CHORUS') {
-        final cs = _trackChorusStates[trackIdx][slotIdx];
-        await AudioEngine.instance.setTrackInsertEffect(
-          trackIdx,
-          slotIdx,
-          6,
-          cs.wet,
-        );
-        await AudioEngine.instance.setTrackInsertMix(
-          trackIdx,
-          slotIdx,
-          cs.dry,
-          cs.wet,
-        );
-        await AudioEngine.instance.setTrackChorusParams(
-          trackIdx,
-          slotIdx,
-          cs.rate,
-          cs.depth,
-          cs.delay,
-          cs.stereo,
-        );
+        return;
+      }
+      if (currentFx == 'CHORUS') {
         await _openChorusEditor(
           onMaster: false,
           trackIdx: trackIdx,
           slotIdx: slotIdx,
         );
-      } else if (picked == 'EQ') {
-        final es = _trackEqStates[trackIdx][slotIdx];
-        await AudioEngine.instance.setTrackInsertEffect(
-          trackIdx,
-          slotIdx,
-          7,
-          es.wet,
-        );
-        await AudioEngine.instance.setTrackInsertMix(
-          trackIdx,
-          slotIdx,
-          es.dry,
-          es.wet,
-        );
-        await AudioEngine.instance.setTrackEqParams(
-          trackIdx,
-          slotIdx,
-          es.lowGain,
-          es.lowFreq,
-          es.midGain,
-          es.midFreq,
-          es.midQ,
-          es.highGain,
-          es.highFreq,
-        );
+        return;
+      }
+      if (currentFx == 'EQ') {
         await _openEqEditor(
           onMaster: false,
           trackIdx: trackIdx,
           slotIdx: slotIdx,
         );
-      } else if (picked == 'COMPRESSOR') {
-        final cs = _trackCompressorStates[trackIdx][slotIdx];
-        await AudioEngine.instance.setTrackInsertEffect(
-          trackIdx,
-          slotIdx,
-          8,
-          cs.wet,
-        );
-        await AudioEngine.instance.setTrackInsertMix(
-          trackIdx,
-          slotIdx,
-          cs.dry,
-          cs.wet,
-        );
-        await AudioEngine.instance.setTrackCompressorParams(
-          trackIdx,
-          slotIdx,
-          cs.threshold,
-          cs.ratio,
-          cs.attack,
-          cs.release,
-          cs.makeup,
-          cs.knee,
-        );
+        return;
+      }
+      if (currentFx == 'COMPRESSOR') {
         await _openCompressorEditor(
           onMaster: false,
           trackIdx: trackIdx,
           slotIdx: slotIdx,
         );
-      } else {
-        // Non-implemented inserts are UI-only for now.
-        await AudioEngine.instance.setTrackInsertEffect(
-          trackIdx,
-          slotIdx,
-          -1,
-          0.0,
-        );
+        return;
       }
-    }
+
+      final picked = await showDialog<String>(
+        context: context,
+        barrierColor: Colors.black54,
+        builder: (_) => const _FxPicker(),
+      );
+
+      if (picked != null) {
+        setState(() => _inserts[trackIdx][slotIdx] = picked);
+        state.setTrackInsertEffectName(trackIdx, slotIdx, picked);
+
+        if (picked == 'REVERB') {
+          final rs = _trackReverbStates[trackIdx][slotIdx];
+          await AudioEngine.instance.setTrackInsertEffect(
+            trackIdx,
+            slotIdx,
+            0,
+            rs.wet,
+          );
+          await AudioEngine.instance.setTrackInsertMix(
+            trackIdx,
+            slotIdx,
+            rs.dry,
+            rs.wet,
+          );
+          await AudioEngine.instance.setTrackReverbParams(
+            trackIdx,
+            slotIdx,
+            rs.roomSize,
+            rs.damp,
+            rs.width,
+            rs.freeze,
+          );
+          await _openReverbEditor(
+            onMaster: false,
+            trackIdx: trackIdx,
+            slotIdx: slotIdx,
+          );
+        } else if (picked == 'DELAY') {
+          final ds = _trackDelayStates[trackIdx][slotIdx];
+          await AudioEngine.instance.setTrackInsertEffect(
+            trackIdx,
+            slotIdx,
+            1,
+            ds.wet,
+          );
+          await AudioEngine.instance.setTrackInsertMix(
+            trackIdx,
+            slotIdx,
+            ds.dry,
+            ds.wet,
+          );
+          await AudioEngine.instance.setTrackDelayParams(
+            trackIdx,
+            slotIdx,
+            ds.timeMs,
+            ds.feedback,
+            ds.hpCutoff,
+            ds.sync,
+          );
+          await _openDelayEditor(
+            onMaster: false,
+            trackIdx: trackIdx,
+            slotIdx: slotIdx,
+          );
+        } else if (picked == 'FILTER') {
+          final fs = _trackFilterStates[trackIdx][slotIdx];
+          await AudioEngine.instance.setTrackInsertEffect(
+            trackIdx,
+            slotIdx,
+            2,
+            fs.wet,
+          );
+          await AudioEngine.instance.setTrackInsertMix(
+            trackIdx,
+            slotIdx,
+            fs.dry,
+            fs.wet,
+          );
+          await AudioEngine.instance.setTrackFilterParams(
+            trackIdx,
+            slotIdx,
+            fs.cutoff,
+            fs.resonance,
+            fs.mode,
+          );
+          await _openFilterEditor(
+            onMaster: false,
+            trackIdx: trackIdx,
+            slotIdx: slotIdx,
+          );
+        } else if (picked == 'DISTORTION') {
+          final ds = _trackDistortionStates[trackIdx][slotIdx];
+          await AudioEngine.instance.setTrackInsertEffect(
+            trackIdx,
+            slotIdx,
+            3,
+            ds.wet,
+          );
+          await AudioEngine.instance.setTrackInsertMix(
+            trackIdx,
+            slotIdx,
+            ds.dry,
+            ds.wet,
+          );
+          await AudioEngine.instance.setTrackDistortionParams(
+            trackIdx,
+            slotIdx,
+            ds.drive,
+            ds.tone,
+            ds.distType,
+          );
+          await _openDistortionEditor(
+            onMaster: false,
+            trackIdx: trackIdx,
+            slotIdx: slotIdx,
+          );
+        } else if (picked == 'BITCRUSHER') {
+          final bs = _trackBitcrusherStates[trackIdx][slotIdx];
+          await AudioEngine.instance.setTrackInsertEffect(
+            trackIdx,
+            slotIdx,
+            4,
+            bs.wet,
+          );
+          await AudioEngine.instance.setTrackInsertMix(
+            trackIdx,
+            slotIdx,
+            bs.dry,
+            bs.wet,
+          );
+          await AudioEngine.instance.setTrackBitcrusherParams(
+            trackIdx,
+            slotIdx,
+            bs.bits,
+            bs.rate,
+          );
+          await _openBitcrusherEditor(
+            onMaster: false,
+            trackIdx: trackIdx,
+            slotIdx: slotIdx,
+          );
+        } else if (picked == 'LIMITER') {
+          final ls = _trackLimiterStates[trackIdx][slotIdx];
+          await AudioEngine.instance.setTrackInsertEffect(
+            trackIdx,
+            slotIdx,
+            5,
+            ls.wet,
+          );
+          await AudioEngine.instance.setTrackInsertMix(
+            trackIdx,
+            slotIdx,
+            ls.dry,
+            ls.wet,
+          );
+          await AudioEngine.instance.setTrackLimiterParams(
+            trackIdx,
+            slotIdx,
+            ls.gain,
+          );
+          await _openLimiterEditor(
+            onMaster: false,
+            trackIdx: trackIdx,
+            slotIdx: slotIdx,
+          );
+        } else if (picked == 'CHORUS') {
+          final cs = _trackChorusStates[trackIdx][slotIdx];
+          await AudioEngine.instance.setTrackInsertEffect(
+            trackIdx,
+            slotIdx,
+            6,
+            cs.wet,
+          );
+          await AudioEngine.instance.setTrackInsertMix(
+            trackIdx,
+            slotIdx,
+            cs.dry,
+            cs.wet,
+          );
+          await AudioEngine.instance.setTrackChorusParams(
+            trackIdx,
+            slotIdx,
+            cs.rate,
+            cs.depth,
+            cs.delay,
+            cs.stereo,
+          );
+          await _openChorusEditor(
+            onMaster: false,
+            trackIdx: trackIdx,
+            slotIdx: slotIdx,
+          );
+        } else if (picked == 'EQ') {
+          final es = _trackEqStates[trackIdx][slotIdx];
+          await AudioEngine.instance.setTrackInsertEffect(
+            trackIdx,
+            slotIdx,
+            7,
+            es.wet,
+          );
+          await AudioEngine.instance.setTrackInsertMix(
+            trackIdx,
+            slotIdx,
+            es.dry,
+            es.wet,
+          );
+          await AudioEngine.instance.setTrackEqParams(
+            trackIdx,
+            slotIdx,
+            es.lowGain,
+            es.lowFreq,
+            es.midGain,
+            es.midFreq,
+            es.midQ,
+            es.highGain,
+            es.highFreq,
+          );
+          await _openEqEditor(
+            onMaster: false,
+            trackIdx: trackIdx,
+            slotIdx: slotIdx,
+          );
+        } else if (picked == 'COMPRESSOR') {
+          final cs = _trackCompressorStates[trackIdx][slotIdx];
+          await AudioEngine.instance.setTrackInsertEffect(
+            trackIdx,
+            slotIdx,
+            8,
+            cs.wet,
+          );
+          await AudioEngine.instance.setTrackInsertMix(
+            trackIdx,
+            slotIdx,
+            cs.dry,
+            cs.wet,
+          );
+          await AudioEngine.instance.setTrackCompressorParams(
+            trackIdx,
+            slotIdx,
+            cs.threshold,
+            cs.ratio,
+            cs.attack,
+            cs.release,
+            cs.makeup,
+            cs.knee,
+          );
+          await _openCompressorEditor(
+            onMaster: false,
+            trackIdx: trackIdx,
+            slotIdx: slotIdx,
+          );
+        } else {
+          // Non-implemented inserts are UI-only for now.
+          await AudioEngine.instance.setTrackInsertEffect(
+            trackIdx,
+            slotIdx,
+            -1,
+            0.0,
+          );
+        }
+      }
     } finally {
       if (mounted) state.setInsertSnapshot(_buildInsertSnapshot());
     }
@@ -1689,160 +1837,196 @@ class _MixerScreenState extends State<MixerScreen> {
   void _onMasterInsertTap(int slotIdx) async {
     final state = AppStateScope.of(context);
     try {
-    final currentFx = _masterInserts[slotIdx];
-    if (currentFx == 'REVERB') {
-      await _openReverbEditor(onMaster: true, slotIdx: slotIdx);
-      return;
-    }
-    if (currentFx == 'DELAY') {
-      await _openDelayEditor(onMaster: true, slotIdx: slotIdx);
-      return;
-    }
-    if (currentFx == 'FILTER') {
-      await _openFilterEditor(onMaster: true, slotIdx: slotIdx);
-      return;
-    }
-    if (currentFx == 'DISTORTION') {
-      await _openDistortionEditor(onMaster: true, slotIdx: slotIdx);
-      return;
-    }
-    if (currentFx == 'BITCRUSHER') {
-      await _openBitcrusherEditor(onMaster: true, slotIdx: slotIdx);
-      return;
-    }
-    if (currentFx == 'LIMITER') {
-      await _openLimiterEditor(onMaster: true, slotIdx: slotIdx);
-      return;
-    }
-    if (currentFx == 'CHORUS') {
-      await _openChorusEditor(onMaster: true, slotIdx: slotIdx);
-      return;
-    }
-    if (currentFx == 'EQ') {
-      await _openEqEditor(onMaster: true, slotIdx: slotIdx);
-      return;
-    }
-    if (currentFx == 'COMPRESSOR') {
-      await _openCompressorEditor(onMaster: true, slotIdx: slotIdx);
-      return;
-    }
-
-    final picked = await showModalBottomSheet<String>(
-      context: context,
-      backgroundColor: kBgTrackHeader,
-      builder: (_) => const _FxPicker(),
-    );
-
-    if (picked != null) {
-      setState(() => _masterInserts[slotIdx] = picked);
-
-      if (picked == 'REVERB') {
-        final rs = _masterReverbStates[slotIdx];
-        await AudioEngine.instance.setMasterInsertEffect(slotIdx, 0, rs.wet);
-        await AudioEngine.instance.setMasterInsertMix(slotIdx, rs.dry, rs.wet);
-        await AudioEngine.instance.setMasterReverbParams(
-          slotIdx,
-          rs.roomSize,
-          rs.damp,
-          rs.width,
-          rs.freeze,
-        );
+      final currentFx = _masterInserts[slotIdx];
+      if (currentFx == 'REVERB') {
         await _openReverbEditor(onMaster: true, slotIdx: slotIdx);
-      } else if (picked == 'DELAY') {
-        final ds = _masterDelayStates[slotIdx];
-        await AudioEngine.instance.setMasterInsertEffect(slotIdx, 1, ds.wet);
-        await AudioEngine.instance.setMasterInsertMix(slotIdx, ds.dry, ds.wet);
-        await AudioEngine.instance.setMasterDelayParams(
-          slotIdx,
-          ds.timeMs,
-          ds.feedback,
-          ds.hpCutoff,
-          ds.sync,
-        );
-        await _openDelayEditor(onMaster: true, slotIdx: slotIdx);
-      } else if (picked == 'FILTER') {
-        final fs = _masterFilterStates[slotIdx];
-        await AudioEngine.instance.setMasterInsertEffect(slotIdx, 2, fs.wet);
-        await AudioEngine.instance.setMasterInsertMix(slotIdx, fs.dry, fs.wet);
-        await AudioEngine.instance.setMasterFilterParams(
-          slotIdx,
-          fs.cutoff,
-          fs.resonance,
-          fs.mode,
-        );
-        await _openFilterEditor(onMaster: true, slotIdx: slotIdx);
-      } else if (picked == 'DISTORTION') {
-        final ds = _masterDistortionStates[slotIdx];
-        await AudioEngine.instance.setMasterInsertEffect(slotIdx, 3, ds.wet);
-        await AudioEngine.instance.setMasterInsertMix(slotIdx, ds.dry, ds.wet);
-        await AudioEngine.instance.setMasterDistortionParams(
-          slotIdx,
-          ds.drive,
-          ds.tone,
-          ds.distType,
-        );
-        await _openDistortionEditor(onMaster: true, slotIdx: slotIdx);
-      } else if (picked == 'BITCRUSHER') {
-        final bs = _masterBitcrusherStates[slotIdx];
-        await AudioEngine.instance.setMasterInsertEffect(slotIdx, 4, bs.wet);
-        await AudioEngine.instance.setMasterInsertMix(slotIdx, bs.dry, bs.wet);
-        await AudioEngine.instance.setMasterBitcrusherParams(
-          slotIdx,
-          bs.bits,
-          bs.rate,
-        );
-        await _openBitcrusherEditor(onMaster: true, slotIdx: slotIdx);
-      } else if (picked == 'LIMITER') {
-        final ls = _masterLimiterStates[slotIdx];
-        await AudioEngine.instance.setMasterInsertEffect(slotIdx, 5, ls.wet);
-        await AudioEngine.instance.setMasterInsertMix(slotIdx, ls.dry, ls.wet);
-        await AudioEngine.instance.setMasterLimiterParams(slotIdx, ls.gain);
-        await _openLimiterEditor(onMaster: true, slotIdx: slotIdx);
-      } else if (picked == 'CHORUS') {
-        final cs = _masterChorusStates[slotIdx];
-        await AudioEngine.instance.setMasterInsertEffect(slotIdx, 6, cs.wet);
-        await AudioEngine.instance.setMasterInsertMix(slotIdx, cs.dry, cs.wet);
-        await AudioEngine.instance.setMasterChorusParams(
-          slotIdx,
-          cs.rate,
-          cs.depth,
-          cs.delay,
-          cs.stereo,
-        );
-        await _openChorusEditor(onMaster: true, slotIdx: slotIdx);
-      } else if (picked == 'EQ') {
-        final es = _masterEqStates[slotIdx];
-        await AudioEngine.instance.setMasterInsertEffect(slotIdx, 7, es.wet);
-        await AudioEngine.instance.setMasterInsertMix(slotIdx, es.dry, es.wet);
-        await AudioEngine.instance.setMasterEqParams(
-          slotIdx,
-          es.lowGain,
-          es.lowFreq,
-          es.midGain,
-          es.midFreq,
-          es.midQ,
-          es.highGain,
-          es.highFreq,
-        );
-        await _openEqEditor(onMaster: true, slotIdx: slotIdx);
-      } else if (picked == 'COMPRESSOR') {
-        final cs = _masterCompressorStates[slotIdx];
-        await AudioEngine.instance.setMasterInsertEffect(slotIdx, 8, cs.wet);
-        await AudioEngine.instance.setMasterInsertMix(slotIdx, cs.dry, cs.wet);
-        await AudioEngine.instance.setMasterCompressorParams(
-          slotIdx,
-          cs.threshold,
-          cs.ratio,
-          cs.attack,
-          cs.release,
-          cs.makeup,
-          cs.knee,
-        );
-        await _openCompressorEditor(onMaster: true, slotIdx: slotIdx);
-      } else {
-        await AudioEngine.instance.setMasterInsertEffect(slotIdx, -1, 0.0);
+        return;
       }
-    }
+      if (currentFx == 'DELAY') {
+        await _openDelayEditor(onMaster: true, slotIdx: slotIdx);
+        return;
+      }
+      if (currentFx == 'FILTER') {
+        await _openFilterEditor(onMaster: true, slotIdx: slotIdx);
+        return;
+      }
+      if (currentFx == 'DISTORTION') {
+        await _openDistortionEditor(onMaster: true, slotIdx: slotIdx);
+        return;
+      }
+      if (currentFx == 'BITCRUSHER') {
+        await _openBitcrusherEditor(onMaster: true, slotIdx: slotIdx);
+        return;
+      }
+      if (currentFx == 'LIMITER') {
+        await _openLimiterEditor(onMaster: true, slotIdx: slotIdx);
+        return;
+      }
+      if (currentFx == 'CHORUS') {
+        await _openChorusEditor(onMaster: true, slotIdx: slotIdx);
+        return;
+      }
+      if (currentFx == 'EQ') {
+        await _openEqEditor(onMaster: true, slotIdx: slotIdx);
+        return;
+      }
+      if (currentFx == 'COMPRESSOR') {
+        await _openCompressorEditor(onMaster: true, slotIdx: slotIdx);
+        return;
+      }
+
+      final picked = await showDialog<String>(
+        context: context,
+        barrierColor: Colors.black54,
+        builder: (_) => const _FxPicker(),
+      );
+
+      if (picked != null) {
+        setState(() => _masterInserts[slotIdx] = picked);
+
+        if (picked == 'REVERB') {
+          final rs = _masterReverbStates[slotIdx];
+          await AudioEngine.instance.setMasterInsertEffect(slotIdx, 0, rs.wet);
+          await AudioEngine.instance.setMasterInsertMix(
+            slotIdx,
+            rs.dry,
+            rs.wet,
+          );
+          await AudioEngine.instance.setMasterReverbParams(
+            slotIdx,
+            rs.roomSize,
+            rs.damp,
+            rs.width,
+            rs.freeze,
+          );
+          await _openReverbEditor(onMaster: true, slotIdx: slotIdx);
+        } else if (picked == 'DELAY') {
+          final ds = _masterDelayStates[slotIdx];
+          await AudioEngine.instance.setMasterInsertEffect(slotIdx, 1, ds.wet);
+          await AudioEngine.instance.setMasterInsertMix(
+            slotIdx,
+            ds.dry,
+            ds.wet,
+          );
+          await AudioEngine.instance.setMasterDelayParams(
+            slotIdx,
+            ds.timeMs,
+            ds.feedback,
+            ds.hpCutoff,
+            ds.sync,
+          );
+          await _openDelayEditor(onMaster: true, slotIdx: slotIdx);
+        } else if (picked == 'FILTER') {
+          final fs = _masterFilterStates[slotIdx];
+          await AudioEngine.instance.setMasterInsertEffect(slotIdx, 2, fs.wet);
+          await AudioEngine.instance.setMasterInsertMix(
+            slotIdx,
+            fs.dry,
+            fs.wet,
+          );
+          await AudioEngine.instance.setMasterFilterParams(
+            slotIdx,
+            fs.cutoff,
+            fs.resonance,
+            fs.mode,
+          );
+          await _openFilterEditor(onMaster: true, slotIdx: slotIdx);
+        } else if (picked == 'DISTORTION') {
+          final ds = _masterDistortionStates[slotIdx];
+          await AudioEngine.instance.setMasterInsertEffect(slotIdx, 3, ds.wet);
+          await AudioEngine.instance.setMasterInsertMix(
+            slotIdx,
+            ds.dry,
+            ds.wet,
+          );
+          await AudioEngine.instance.setMasterDistortionParams(
+            slotIdx,
+            ds.drive,
+            ds.tone,
+            ds.distType,
+          );
+          await _openDistortionEditor(onMaster: true, slotIdx: slotIdx);
+        } else if (picked == 'BITCRUSHER') {
+          final bs = _masterBitcrusherStates[slotIdx];
+          await AudioEngine.instance.setMasterInsertEffect(slotIdx, 4, bs.wet);
+          await AudioEngine.instance.setMasterInsertMix(
+            slotIdx,
+            bs.dry,
+            bs.wet,
+          );
+          await AudioEngine.instance.setMasterBitcrusherParams(
+            slotIdx,
+            bs.bits,
+            bs.rate,
+          );
+          await _openBitcrusherEditor(onMaster: true, slotIdx: slotIdx);
+        } else if (picked == 'LIMITER') {
+          final ls = _masterLimiterStates[slotIdx];
+          await AudioEngine.instance.setMasterInsertEffect(slotIdx, 5, ls.wet);
+          await AudioEngine.instance.setMasterInsertMix(
+            slotIdx,
+            ls.dry,
+            ls.wet,
+          );
+          await AudioEngine.instance.setMasterLimiterParams(slotIdx, ls.gain);
+          await _openLimiterEditor(onMaster: true, slotIdx: slotIdx);
+        } else if (picked == 'CHORUS') {
+          final cs = _masterChorusStates[slotIdx];
+          await AudioEngine.instance.setMasterInsertEffect(slotIdx, 6, cs.wet);
+          await AudioEngine.instance.setMasterInsertMix(
+            slotIdx,
+            cs.dry,
+            cs.wet,
+          );
+          await AudioEngine.instance.setMasterChorusParams(
+            slotIdx,
+            cs.rate,
+            cs.depth,
+            cs.delay,
+            cs.stereo,
+          );
+          await _openChorusEditor(onMaster: true, slotIdx: slotIdx);
+        } else if (picked == 'EQ') {
+          final es = _masterEqStates[slotIdx];
+          await AudioEngine.instance.setMasterInsertEffect(slotIdx, 7, es.wet);
+          await AudioEngine.instance.setMasterInsertMix(
+            slotIdx,
+            es.dry,
+            es.wet,
+          );
+          await AudioEngine.instance.setMasterEqParams(
+            slotIdx,
+            es.lowGain,
+            es.lowFreq,
+            es.midGain,
+            es.midFreq,
+            es.midQ,
+            es.highGain,
+            es.highFreq,
+          );
+          await _openEqEditor(onMaster: true, slotIdx: slotIdx);
+        } else if (picked == 'COMPRESSOR') {
+          final cs = _masterCompressorStates[slotIdx];
+          await AudioEngine.instance.setMasterInsertEffect(slotIdx, 8, cs.wet);
+          await AudioEngine.instance.setMasterInsertMix(
+            slotIdx,
+            cs.dry,
+            cs.wet,
+          );
+          await AudioEngine.instance.setMasterCompressorParams(
+            slotIdx,
+            cs.threshold,
+            cs.ratio,
+            cs.attack,
+            cs.release,
+            cs.makeup,
+            cs.knee,
+          );
+          await _openCompressorEditor(onMaster: true, slotIdx: slotIdx);
+        } else {
+          await AudioEngine.instance.setMasterInsertEffect(slotIdx, -1, 0.0);
+        }
+      }
     } finally {
       if (mounted) state.setInsertSnapshot(_buildInsertSnapshot());
     }
@@ -1866,15 +2050,16 @@ class _FxPicker extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SafeArea(
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 8),
+    return Align(
+      alignment: Alignment.bottomCenter,
+      child: Material(
+        color: kBgTrackHeader,
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
               child: Text(
                 'SELECT FX',
                 style: kStyleHeader.copyWith(color: kColAccent),
@@ -2286,9 +2471,9 @@ class _ChannelStrip extends StatelessWidget {
                             : Colors.transparent,
                         border: Border.all(
                           color: isSendBus
-                            ? kMixerChromeColor.withAlpha(170)
+                              ? kMixerChromeColor.withAlpha(170)
                               : sendChannel > 0
-                                  ? kColComplement
+                              ? kColComplement
                               : kMixerBorderColor,
                         ),
                         borderRadius: BorderRadius.circular(2),
@@ -2303,8 +2488,8 @@ class _ChannelStrip extends StatelessWidget {
                           color: isSendBus
                               ? kMixerSecondaryTextColor
                               : sendChannel > 0
-                                  ? kColComplement
-                                  : kMixerSecondaryTextColor,
+                              ? kColComplement
+                              : kMixerSecondaryTextColor,
                         ),
                       ),
                     ),
@@ -2383,14 +2568,13 @@ class _LevelMeter extends StatelessWidget {
   final double value;
   final double width;
 
-  const _LevelMeter({
-    required this.value,
-    required this.width,
-  });
+  const _LevelMeter({required this.value, required this.width});
 
   @override
   Widget build(BuildContext context) {
-    final peak = value <= 0.000001 ? -60.0 : 20.0 * (math.log(value) / math.ln10);
+    final peak = value <= 0.000001
+        ? -60.0
+        : 20.0 * (math.log(value) / math.ln10);
     const segments = 12;
     const maxDb = 3.0;
     const minDb = -50.0;
@@ -2405,8 +2589,8 @@ class _LevelMeter extends StatelessWidget {
           final color = segmentTopDb > 0.0
               ? kColRecBtn
               : segmentTopDb > -6.0
-                  ? const Color(0xFFD8B400)
-                  : const Color(0xFF33C060);
+              ? const Color(0xFFD8B400)
+              : const Color(0xFF33C060);
           return Expanded(
             child: Container(
               width: width,
@@ -2550,9 +2734,7 @@ class _MiniBtn extends StatelessWidget {
         alignment: Alignment.center,
         decoration: BoxDecoration(
           color: active ? activeColor.withAlpha(60) : Colors.transparent,
-          border: Border.all(
-            color: active ? activeColor : kMixerBorderColor,
-          ),
+          border: Border.all(color: active ? activeColor : kMixerBorderColor),
           borderRadius: BorderRadius.circular(2),
         ),
         child: Text(

@@ -34,8 +34,9 @@ class InstrumentScreen extends StatelessWidget {
           Expanded(
             child: switch (ins.type) {
               InstrumentType.simpleSynth => _SimpleSynthEditor(state: state),
-              InstrumentType.karplusStrong =>
-                _KarplusStrongEditor(state: state),
+              InstrumentType.karplusStrong => _KarplusStrongEditor(
+                state: state,
+              ),
               InstrumentType.sampler => _SamplerEditor(state: state),
               InstrumentType.empty => _EmptyInstrumentPlaceholder(
                 onPick: (t) =>
@@ -528,7 +529,8 @@ class _SimpleSynthEditor extends StatelessWidget {
                           child: _Knob(
                             label: 'DETUNE',
                             value: (p.osc2Detune + 1) / 2,
-                            display: '${(p.osc2Detune * 12).toStringAsFixed(1)} st',
+                            display:
+                                '${(p.osc2Detune * 12).toStringAsFixed(1)} st',
                             onChanged: (v) {
                               p.osc2Detune = (v * 2) - 1;
                               state.instrumentParamsChanged();
@@ -604,7 +606,8 @@ class _SimpleSynthEditor extends StatelessWidget {
                           child: _Knob(
                             label: 'DETUNE',
                             value: (p.osc3Detune + 1) / 2,
-                            display: '${(p.osc3Detune * 12).toStringAsFixed(1)} st',
+                            display:
+                                '${(p.osc3Detune * 12).toStringAsFixed(1)} st',
                             onChanged: (v) {
                               p.osc3Detune = (v * 2) - 1;
                               state.instrumentParamsChanged();
@@ -1084,10 +1087,7 @@ class _KarplusStrongEditor extends StatelessWidget {
                 const SizedBox(height: 6),
                 Text(
                   'Karplus params are live in the native audio engine.',
-                  style: kStyleBase.copyWith(
-                    color: kColInactive,
-                    fontSize: 11,
-                  ),
+                  style: kStyleBase.copyWith(color: kColInactive, fontSize: 11),
                 ),
               ],
             ),
@@ -2845,7 +2845,7 @@ class _OscOnOffButton extends StatelessWidget {
 
 /// Compact row of OCT chips: -2 -1 0 +1 +2.
 class _OctChips extends StatelessWidget {
-  final int value;   // -2..+2
+  final int value; // -2..+2
   final ValueChanged<int> onChanged;
   const _OctChips({required this.value, required this.onChanged});
 
@@ -2879,8 +2879,9 @@ class _OctChips extends StatelessWidget {
                 style: kStyleBase.copyWith(
                   fontSize: 11,
                   color: oct == value ? kColAccent : kColHeader,
-                  fontWeight:
-                      oct == value ? FontWeight.w700 : FontWeight.normal,
+                  fontWeight: oct == value
+                      ? FontWeight.w700
+                      : FontWeight.normal,
                 ),
               ),
             ),

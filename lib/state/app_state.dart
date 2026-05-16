@@ -172,19 +172,22 @@ class AppState extends ChangeNotifier {
   CellPosition? selectedCell;
   int? _selectedRowStart;
   int? _selectedRowEnd;
-  int? get selectedRow => _selectedRowStart; // For backward compat with single-row ops
+  int? get selectedRow =>
+      _selectedRowStart; // For backward compat with single-row ops
   bool isRowInSelection(int row) {
     if (_selectedRowStart == null || _selectedRowEnd == null) return false;
     final min = _selectedRowStart!;
     final max = _selectedRowEnd!;
     return row >= (min <= max ? min : max) && row <= (min <= max ? max : min);
   }
+
   int get selectedRowCount {
     if (_selectedRowStart == null || _selectedRowEnd == null) return 0;
     final min = _selectedRowStart!;
     final max = _selectedRowEnd!;
     return (min <= max ? max - min : min - max) + 1;
   }
+
   /// Returns (minRow, maxRow) tuple of selected range, or null if nothing selected.
   (int, int)? get selectedRowRange {
     if (_selectedRowStart == null || _selectedRowEnd == null) return null;
@@ -192,6 +195,7 @@ class AppState extends ChangeNotifier {
     final max = _selectedRowEnd!;
     return min <= max ? (min, max) : (max, min);
   }
+
   CellBoxSelection? _boxSelection;
   bool _isBoxSelecting = false;
   CellBoxSelection? get boxSelection => _boxSelection;
@@ -206,7 +210,8 @@ class AppState extends ChangeNotifier {
   }
 
   List<TrackerCell>? _rowClipboard;
-  bool get hasRowClipboard => _rowClipboard != null && _rowClipboard!.isNotEmpty;
+  bool get hasRowClipboard =>
+      _rowClipboard != null && _rowClipboard!.isNotEmpty;
 
   // Playback carry state for IN column per track.
   List<int> _carryInstrumentByTrack = const [];
@@ -1404,14 +1409,14 @@ class AppState extends ChangeNotifier {
     final start = _selectedRowStart;
     final end = _selectedRowEnd;
     if (start == null || end == null) return;
-    
+
     final min = start < end ? start : end;
     final max = start < end ? end : start;
     final rangeSize = max - min + 1;
-    
+
     final newMin = (min + delta).clamp(0, rowCount - rangeSize);
     if (newMin == min) return;
-    
+
     final cells = currentTrack.cells;
     if (delta > 0) {
       // Moving down: swap from right to left
@@ -1432,7 +1437,7 @@ class AppState extends ChangeNotifier {
         }
       }
     }
-    
+
     _selectedRowStart = newMin;
     _selectedRowEnd = newMin + rangeSize - 1;
     notifyListeners();
@@ -1703,15 +1708,17 @@ class AppState extends ChangeNotifier {
             e.startRow == fromRow &&
             e.endRow == toRow,
       );
-      currentPattern.fxEnvelopes.add(FxEnvelopeRun(
-        trackIndex: _currentTrackIndex,
-        fxSlotIndex: slotIndex,
-        startRow: fromRow,
-        endRow: toRow,
-        startValue: startVal,
-        endValue: endVal,
-        gamma: gamma,
-      ));
+      currentPattern.fxEnvelopes.add(
+        FxEnvelopeRun(
+          trackIndex: _currentTrackIndex,
+          fxSlotIndex: slotIndex,
+          startRow: fromRow,
+          endRow: toRow,
+          startValue: startVal,
+          endValue: endVal,
+          gamma: gamma,
+        ),
+      );
     }
 
     notifyListeners();
@@ -1828,7 +1835,7 @@ class AppState extends ChangeNotifier {
 
     final cells = currentTrack.cells;
     final pastedCount = (_rowClipboard!.length).clamp(0, rowCount - insertRow);
-    
+
     for (int i = 0; i < pastedCount; i++) {
       cells[insertRow + i] = _rowClipboard![i].copy();
     }
@@ -2222,19 +2229,19 @@ class AppState extends ChangeNotifier {
         samplerReverse ? 1 : 0, // reverse flag (REV FX)
         // OSC fields — not applicable for sampler, use safe defaults
         255, // osc1Gain (full)
-        0,   // osc2On
-        0,   // osc2Wave
+        0, // osc2On
+        0, // osc2Wave
         128, // osc2Detune (0 semitones)
-        0,   // osc2Gain
-        0,   // osc3On
-        0,   // osc3Wave
+        0, // osc2Gain
+        0, // osc3On
+        0, // osc3Wave
         128, // osc3Detune
-        0,   // osc3Gain
-        0,   // osc2FmDepth
-        0,   // osc3FmDepth
-        2,   // osc1Oct (0=−2..4=+2; 2=0)
-        2,   // osc2Oct
-        2,   // osc3Oct
+        0, // osc3Gain
+        0, // osc2FmDepth
+        0, // osc3FmDepth
+        2, // osc1Oct (0=−2..4=+2; 2=0)
+        2, // osc2Oct
+        2, // osc3Oct
       ];
     }
     if (ins.type == InstrumentType.karplusStrong) {
@@ -2262,19 +2269,19 @@ class AppState extends ChangeNotifier {
         0,
         // OSC fields — not applicable for Karplus, use safe defaults
         255, // osc1Gain (full)
-        0,   // osc2On
-        0,   // osc2Wave
+        0, // osc2On
+        0, // osc2Wave
         128, // osc2Detune
-        0,   // osc2Gain
-        0,   // osc3On
-        0,   // osc3Wave
+        0, // osc2Gain
+        0, // osc3On
+        0, // osc3Wave
         128, // osc3Detune
-        0,   // osc3Gain
-        0,   // osc2FmDepth
-        0,   // osc3FmDepth
-        2,   // osc1Oct (0=−2..4=+2; 2=0)
-        2,   // osc2Oct
-        2,   // osc3Oct
+        0, // osc3Gain
+        0, // osc2FmDepth
+        0, // osc3FmDepth
+        2, // osc1Oct (0=−2..4=+2; 2=0)
+        2, // osc2Oct
+        2, // osc3Oct
       ];
     }
     final p = ins.synth;
@@ -2304,11 +2311,11 @@ class AppState extends ChangeNotifier {
       // Multi-oscillator
       _norm01ToAudio255(p.osc1Gain),
       p.osc2On ? 255 : 0, // osc2On
-      p.osc2Wave.index,   // osc2Wave (raw enum index, 0-5)
+      p.osc2Wave.index, // osc2Wave (raw enum index, 0-5)
       _norm01ToAudio255((p.osc2Detune + 1.0) / 2.0), // map -1..1 → 0..1
       _norm01ToAudio255(p.osc2Gain),
       p.osc3On ? 255 : 0, // osc3On
-      p.osc3Wave.index,   // osc3Wave
+      p.osc3Wave.index, // osc3Wave
       _norm01ToAudio255((p.osc3Detune + 1.0) / 2.0),
       _norm01ToAudio255(p.osc3Gain),
       _norm01ToAudio255(p.osc2FmDepth),
@@ -3459,9 +3466,9 @@ class AppState extends ChangeNotifier {
     // 48000 Hz matches the Oboe stream sample rate.
     const int kSampleRate = 48000;
     final int lineSamples =
-      (_lineDurationForPatternRow(pattern, playheadRow).inMicroseconds *
-        kSampleRate) ~/
-          1000000;
+        (_lineDurationForPatternRow(pattern, playheadRow).inMicroseconds *
+            kSampleRate) ~/
+        1000000;
 
     if (pendingArp.isNotEmpty) {
       pendingArp.forEach((trackIdx, cfg) {
@@ -3829,8 +3836,9 @@ class AppState extends ChangeNotifier {
     }
     if (activeSlices.isEmpty) return 'No slices set (all SL1–SL9 values are 0)';
 
-    final freeCount =
-        instruments.where((ins) => ins.type == InstrumentType.empty).length;
+    final freeCount = instruments
+        .where((ins) => ins.type == InstrumentType.empty)
+        .length;
     if (freeCount < activeSlices.length) {
       return 'Not enough empty slots (need ${activeSlices.length}, have $freeCount)';
     }
@@ -3899,11 +3907,14 @@ class AppState extends ChangeNotifier {
       final startNorm = src.sliceStarts[sliceNum - 1] / 99.0;
       final endNorm = src.sliceEndNorm(sliceNum);
 
-      final startFrame =
-          (startNorm * (totalFrames - 1)).round().clamp(0, totalFrames - 1);
-      final endFrame = (endNorm * totalFrames)
-          .round()
-          .clamp(startFrame + 1, totalFrames);
+      final startFrame = (startNorm * (totalFrames - 1)).round().clamp(
+        0,
+        totalFrames - 1,
+      );
+      final endFrame = (endNorm * totalFrames).round().clamp(
+        startFrame + 1,
+        totalFrames,
+      );
       final chopFrames = endFrame - startFrame;
       if (chopFrames <= 0) continue;
 
@@ -3937,7 +3948,9 @@ class AppState extends ChangeNotifier {
       final dataBytes = chopFrames * 2;
       final wavOut = ByteData(44 + dataBytes);
       void writeFourCC(int off, String s) {
-        for (int i = 0; i < 4; i++) wavOut.setUint8(off + i, s.codeUnitAt(i));
+        for (int i = 0; i < 4; i++) {
+          wavOut.setUint8(off + i, s.codeUnitAt(i));
+        }
       }
 
       writeFourCC(0, 'RIFF');
@@ -3965,14 +3978,15 @@ class AppState extends ChangeNotifier {
         suffix++;
       }
       final outPath = '${lib.path}/$outName';
-      await File(outPath).writeAsBytes(wavOut.buffer.asUint8List(), flush: true);
+      await File(
+        outPath,
+      ).writeAsBytes(wavOut.buffer.asUint8List(), flush: true);
 
       // Find next empty slot (with wrap-around).
-      int nextEmpty =
-          instruments.indexWhere(
-            (ins) => ins.type == InstrumentType.empty,
-            searchFrom,
-          );
+      int nextEmpty = instruments.indexWhere(
+        (ins) => ins.type == InstrumentType.empty,
+        searchFrom,
+      );
       if (nextEmpty < 0 && searchFrom > 0) {
         nextEmpty = instruments.indexWhere(
           (ins) => ins.type == InstrumentType.empty,
@@ -4226,6 +4240,79 @@ class AppState extends ChangeNotifier {
     } catch (e) {
       return e.toString();
     }
+  }
+
+  /// Preview the note in the current track at [row] using the cell's instrument.
+  /// No-op when the sequencer is playing (to avoid disrupting playback).
+  Future<void> previewCellNoteOneShot(int row, {int durationMs = 280}) async {
+    if (isPlaying) return;
+    if (instruments.isEmpty) return;
+
+    final track = currentTrack;
+    if (row < 0 || row >= track.cells.length) return;
+
+    final cell = track.cells[row];
+    final note = cell.note;
+    if (!note.isNote) return;
+
+    final instNum =
+        cell.instrument ?? _defaultInstrumentForRow(track, row);
+    final slot = (instNum - 1).clamp(0, instruments.length - 1);
+
+    final waveCmd = _waveCodeForInstrumentSlot(slot);
+    final instrumentTypeCmd = _instrumentTypeCodeForSlot(slot);
+    final synthParams = _synthParamsForInstrumentSlot(slot);
+    final previewVoice = _previewVoiceIndexForInstrumentSlot(slot);
+
+    if (_previewSamplerSlot >= 0) await stopPreviewCurrentSampler();
+    if (_previewBypassVoice >= 0 && _previewBypassVoice != previewVoice) {
+      await _setPreviewDryBypass(_previewBypassVoice, false);
+    }
+
+    final noteOff = _buildPreviewRowData(
+      voiceIdx: previewVoice,
+      note: -2,
+      waveCmd: waveCmd,
+      instrumentTypeCmd: instrumentTypeCmd,
+      synthParams: synthParams,
+    );
+    final noteOn = _buildPreviewRowData(
+      voiceIdx: previewVoice,
+      note: note.midiNote.clamp(0, 127),
+      waveCmd: waveCmd,
+      instrumentTypeCmd: instrumentTypeCmd,
+      synthParams: synthParams,
+    );
+
+    await _primeAudioForPreview();
+    await _setPreviewDryBypass(previewVoice, true);
+    await AudioEngine.instance.setRowData(noteOff);
+    await AudioEngine.instance.setRowData(noteOn);
+
+    _synthPreviewStopTimer?.cancel();
+    final clampedDurationMs = durationMs.clamp(80, 4000);
+    final startTime = DateTime.now();
+    bool noteOffSent = false;
+    _synthPreviewStopTimer = Timer.periodic(
+      const Duration(milliseconds: 50),
+      (_) async {
+        if (_disposed) return;
+        final elapsed = DateTime.now().difference(startTime).inMilliseconds;
+        if (!noteOffSent && elapsed >= clampedDurationMs) {
+          noteOffSent = true;
+          await AudioEngine.instance.setRowData(noteOff);
+        }
+        final stillPlaying =
+            await AudioEngine.instance.isVoicePlaying(previewVoice);
+        if (!stillPlaying && elapsed >= clampedDurationMs) {
+          _synthPreviewStopTimer?.cancel();
+          _synthPreviewStopTimer = null;
+          if (_previewBypassVoice == previewVoice) {
+            await _setPreviewDryBypass(previewVoice, false);
+          }
+        }
+      },
+    );
   }
 
   Future<String?> previewCurrentSynthOneShot({

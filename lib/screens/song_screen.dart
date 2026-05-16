@@ -292,7 +292,8 @@ class _SongScreenState extends State<SongScreen> {
               onMoveDown: () =>
                   _moveSelectedPatternDown(state, selectedPatternIndex),
               onCopy: () => _copySelectedPattern(state, selectedPatternIndex),
-              onDouble: () => _doubleSelectedPattern(state, selectedPatternIndex),
+              onDouble: () =>
+                  _doubleSelectedPattern(state, selectedPatternIndex),
               onMerge: () => _mergeSelectedPattern(state, selectedPatternIndex),
               onNewAfter: () =>
                   _newAfterSelectedPattern(state, selectedPatternIndex),
@@ -418,10 +419,7 @@ class _SongScreenState extends State<SongScreen> {
                     PopupMenuDivider(),
                     PopupMenuItem(
                       value: _SongMenuAction.exportWav,
-                      child: Text(
-                        'Export WAV',
-                        style: TextStyle(fontSize: 16),
-                      ),
+                      child: Text('Export WAV', style: TextStyle(fontSize: 16)),
                     ),
                     PopupMenuItem(
                       enabled: false,
@@ -433,10 +431,7 @@ class _SongScreenState extends State<SongScreen> {
                     PopupMenuDivider(),
                     PopupMenuItem(
                       value: _SongMenuAction.showManual,
-                      child: Text(
-                        'How to Use',
-                        style: TextStyle(fontSize: 16),
-                      ),
+                      child: Text('How to Use', style: TextStyle(fontSize: 16)),
                     ),
                   ],
                 ),
@@ -664,9 +659,7 @@ class _SongScreenState extends State<SongScreen> {
     final navigator = Navigator.of(ctx);
     final content = await rootBundle.loadString('assets/MANUAL.md');
     await navigator.push<void>(
-      MaterialPageRoute<void>(
-        builder: (_) => _ManualPage(content: content),
-      ),
+      MaterialPageRoute<void>(builder: (_) => _ManualPage(content: content)),
     );
   }
 
@@ -1164,7 +1157,7 @@ class _SongTimelinePainter extends CustomPainter {
         final lx = originX + t * (laneW + _laneGap);
         canvas.drawRect(
           Rect.fromLTWH(lx, yTop, laneW, blockH),
-          Paint()..color = const Color(0xFF111111),
+          Paint()..color = kBgBeat,
         );
         canvas.drawRect(
           Rect.fromLTWH(lx + 0.25, yTop + 0.25, laneW - 0.5, blockH - 0.5),
@@ -1384,10 +1377,7 @@ class _ManualPage extends StatelessWidget {
       backgroundColor: const Color(0xFF1A1A2E),
       appBar: AppBar(
         backgroundColor: const Color(0xFF16213E),
-        title: const Text(
-          'How to Use',
-          style: TextStyle(color: Colors.white),
-        ),
+        title: const Text('How to Use', style: TextStyle(color: Colors.white)),
         iconTheme: const IconThemeData(color: Colors.white),
       ),
       body: Markdown(
@@ -1420,9 +1410,7 @@ class _ManualPage extends StatelessWidget {
             borderRadius: BorderRadius.circular(4),
           ),
           blockquoteDecoration: BoxDecoration(
-            border: Border(
-              left: BorderSide(color: Colors.white38, width: 3),
-            ),
+            border: Border(left: BorderSide(color: Colors.white38, width: 3)),
           ),
           tableBody: const TextStyle(color: Colors.white70, fontSize: 13),
           tableHead: const TextStyle(

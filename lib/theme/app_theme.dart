@@ -8,6 +8,7 @@ class TrackerPalette {
   const TrackerPalette({
     required this.name,
     required this.previewColor,
+    this.brightness = Brightness.dark,
     // Backgrounds
     required this.bgColor,
     required this.bgBeat,
@@ -39,6 +40,7 @@ class TrackerPalette {
 
   final String name;
   final Color previewColor; // swatch shown in picker
+  final Brightness brightness;
 
   final Color bgColor;
   final Color bgBeat;
@@ -237,6 +239,35 @@ const TrackerPalette kPaletteMono = TrackerPalette(
   colComplement: Color(0xFFAAAAAA),
 );
 
+const TrackerPalette kPaletteLight = TrackerPalette(
+  name: 'Paper',
+  previewColor: Color(0xFF1A1A1A),
+  brightness: Brightness.light,
+  bgColor: Color(0xFFFFFFFF),
+  bgBeat: Color(0xFFF4F4F4),
+  bgBar: Color(0xFFE8E8E8),
+  bgSelected: Color(0xFFD0E4F8),
+  bgPlayhead: Color(0xFFB4CFF0),
+  bgHeader: Color(0xFFF8F8F8),
+  bgTrackHeader: Color(0xFFF0F0F0),
+  bgTopNav: Color(0xFFEAEAEA),
+  colNote: Color(0xFF0A0A0A),
+  colInst: Color(0xFF1A3A7A),
+  colVol: Color(0xFF1A5A1A),
+  colPan: Color(0xFF1A5A1A),
+  colFxCmd: Color(0xFF7A1A1A),
+  colFxVal: Color(0xFF9A3030),
+  colEmpty: Color(0xFFBBBBBB),
+  colRowNum: Color(0xFF888888),
+  colHeader: Color(0xFF222222),
+  colAccent: Color(0xFF0A0A0A),
+  colActive: Color(0xFF1A4488),
+  colInactive: Color(0xFFAAAAAA),
+  colSelection: Color(0xFF1A6AFF),
+  colPlayBtn: Color(0xFF1A4488),
+  colComplement: Color(0xFFAA3300),
+);
+
 /// All available palettes in display order.
 const List<TrackerPalette> kAllPalettes = [
   kPaletteBlue,
@@ -245,6 +276,7 @@ const List<TrackerPalette> kAllPalettes = [
   kPalettePurple,
   kPaletteAmber,
   kPaletteMono,
+  kPaletteLight,
 ];
 
 // ── Active palette — set once at startup, updated by palette picker ───────────
@@ -277,11 +309,13 @@ Color get kColFxCmd => _palette.colFxCmd;
 Color get kColFxVal => _palette.colFxVal;
 Color get kColEmpty => Color.lerp(_palette.colEmpty, _palette.colHeader, 0.3)!;
 Color get kColRowNum => _palette.colRowNum;
-Color get kColHeader => Color.lerp(_palette.colHeader, _palette.colAccent, 0.18)!;
+Color get kColHeader =>
+    Color.lerp(_palette.colHeader, _palette.colAccent, 0.18)!;
 
 Color get kColAccent => _palette.colAccent;
 Color get kColActive => _palette.colActive;
-Color get kColInactive => Color.lerp(_palette.colInactive, _palette.colHeader, 0.48)!;
+Color get kColInactive =>
+    Color.lerp(_palette.colInactive, _palette.colHeader, 0.48)!;
 Color get kColSelection => _palette.colSelection;
 Color get kColPlayBtn => _palette.colPlayBtn;
 Color get kColComplement => _palette.colComplement;
@@ -364,29 +398,39 @@ Color rowBgColor(int row, bool isSelected, bool isPlayhead, int linesPerBeat) {
   return kBgColor;
 }
 
-ThemeData buildAppTheme() => ThemeData(
-  brightness: Brightness.dark,
-  scaffoldBackgroundColor: kBgColor,
-  colorScheme: ColorScheme.dark(
-    primary: kColAccent,
-    secondary: kColNote,
-    surface: kBgColor,
-  ),
-  fontFamily: kFontMono,
-  appBarTheme: AppBarTheme(
-    backgroundColor: kBgTrackHeader,
-    foregroundColor: kColAccent,
-    elevation: 0,
-    titleTextStyle: TextStyle(
-      fontFamily: kFontMono,
-      fontSize: 16,
-      color: kColAccent,
-      letterSpacing: 2,
+ThemeData buildAppTheme() {
+  final isLight = _palette.brightness == Brightness.light;
+  final scheme = isLight
+      ? ColorScheme.light(
+          primary: kColAccent,
+          secondary: kColNote,
+          surface: kBgColor,
+        )
+      : ColorScheme.dark(
+          primary: kColAccent,
+          secondary: kColNote,
+          surface: kBgColor,
+        );
+  return ThemeData(
+    brightness: _palette.brightness,
+    scaffoldBackgroundColor: kBgColor,
+    colorScheme: scheme,
+    fontFamily: kFontMono,
+    appBarTheme: AppBarTheme(
+      backgroundColor: kBgTrackHeader,
+      foregroundColor: kColAccent,
+      elevation: 0,
+      titleTextStyle: TextStyle(
+        fontFamily: kFontMono,
+        fontSize: 16,
+        color: kColAccent,
+        letterSpacing: 2,
+      ),
     ),
-  ),
-  dividerColor: _palette.bgBar,
-  iconTheme: IconThemeData(color: kColAccent, size: 24),
-  textButtonTheme: TextButtonThemeData(
-    style: TextButton.styleFrom(foregroundColor: kColAccent),
-  ),
-);
+    dividerColor: _palette.bgBar,
+    iconTheme: IconThemeData(color: kColAccent, size: 24),
+    textButtonTheme: TextButtonThemeData(
+      style: TextButton.styleFrom(foregroundColor: kColAccent),
+    ),
+  );
+}
