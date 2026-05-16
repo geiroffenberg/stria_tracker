@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show rootBundle;
+import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import '../main.dart' show switchPalette, paletteNotifier;
 import '../models/note_value.dart';
 import '../models/pattern_model.dart';
@@ -19,6 +21,7 @@ enum _SongMenuAction {
   showProjectPath,
   changePalette,
   exportWav,
+  showManual,
 }
 
 /// Song arrangement screen.
@@ -427,6 +430,14 @@ class _SongScreenState extends State<SongScreen> {
                         style: TextStyle(fontSize: 16),
                       ),
                     ),
+                    PopupMenuDivider(),
+                    PopupMenuItem(
+                      value: _SongMenuAction.showManual,
+                      child: Text(
+                        'How to Use',
+                        style: TextStyle(fontSize: 16),
+                      ),
+                    ),
                   ],
                 ),
               ],
@@ -643,7 +654,20 @@ class _SongScreenState extends State<SongScreen> {
       case _SongMenuAction.exportWav:
         _handleExportWav(ctx, state);
         break;
+      case _SongMenuAction.showManual:
+        _showManual(ctx);
+        break;
     }
+  }
+
+  Future<void> _showManual(BuildContext ctx) async {
+    final navigator = Navigator.of(ctx);
+    final content = await rootBundle.loadString('assets/MANUAL.md');
+    await navigator.push<void>(
+      MaterialPageRoute<void>(
+        builder: (_) => _ManualPage(content: content),
+      ),
+    );
   }
 
   Future<bool> _ensureProjectFolder(BuildContext ctx, AppState state) async {
@@ -1344,6 +1368,72 @@ class _SongActionBtn extends StatelessWidget {
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _ManualPage extends StatelessWidget {
+  const _ManualPage({required this.content});
+
+  final String content;
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: const Color(0xFF1A1A2E),
+      appBar: AppBar(
+        backgroundColor: const Color(0xFF16213E),
+        title: const Text(
+          'How to Use',
+          style: TextStyle(color: Colors.white),
+        ),
+        iconTheme: const IconThemeData(color: Colors.white),
+      ),
+      body: Markdown(
+        data: content,
+        styleSheet: MarkdownStyleSheet.fromTheme(Theme.of(context)).copyWith(
+          p: const TextStyle(color: Colors.white70, fontSize: 14),
+          h1: const TextStyle(
+            color: Colors.white,
+            fontSize: 22,
+            fontWeight: FontWeight.bold,
+          ),
+          h2: const TextStyle(
+            color: Colors.white,
+            fontSize: 18,
+            fontWeight: FontWeight.bold,
+          ),
+          h3: const TextStyle(
+            color: Colors.white,
+            fontSize: 15,
+            fontWeight: FontWeight.w600,
+          ),
+          code: const TextStyle(
+            color: Color(0xFFFFD700),
+            backgroundColor: Color(0xFF0D1B2A),
+            fontSize: 13,
+            fontFamily: 'monospace',
+          ),
+          codeblockDecoration: BoxDecoration(
+            color: const Color(0xFF0D1B2A),
+            borderRadius: BorderRadius.circular(4),
+          ),
+          blockquoteDecoration: BoxDecoration(
+            border: Border(
+              left: BorderSide(color: Colors.white38, width: 3),
+            ),
+          ),
+          tableBody: const TextStyle(color: Colors.white70, fontSize: 13),
+          tableHead: const TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.bold,
+            fontSize: 13,
+          ),
+          tableBorder: TableBorder.all(color: Colors.white24),
+        ),
+        selectable: true,
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       ),
     );
   }
