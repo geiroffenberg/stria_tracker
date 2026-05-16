@@ -619,11 +619,12 @@ void AudioEngine::triggerRowLocked(const std::vector<int>& rowData) {
     mPendingArp.clear();
     mPendingDelays.clear();
     mPendingKills.clear();
-    // Current canonical stride is 36:
-    // [note, vol, pan, wave, instrumentType, 31 params].
-    // Fall back to legacy stride 34 / 25 / 24 / 23 / 18 / 4 packets.
+    // Current canonical stride is 39 (as of oct feature):
+    // [note, vol, pan, wave, instrumentType, 34 params].
+    // Fall back to legacy stride 36 / 34 / 25 / 24 / 23 / 18 / 4 packets.
     int stride = 4;
-    if      (rowData.size() % 36 == 0) stride = 36;
+    if      (rowData.size() % 39 == 0) stride = 39;
+    else if (rowData.size() % 36 == 0) stride = 36;
     else if (rowData.size() % 34 == 0) stride = 34;
     else if (rowData.size() % 25 == 0) stride = 25;
     else if (rowData.size() % 24 == 0) stride = 24;
@@ -698,6 +699,9 @@ void AudioEngine::triggerRowLocked(const std::vector<int>& rowData) {
         const int osc3GnRaw   = (stride >= 34) ? rowData[pBase + 28] : 0;
         const int osc2FmRaw   = (stride >= 36) ? rowData[pBase + 29] : 0;
         const int osc3FmRaw   = (stride >= 36) ? rowData[pBase + 30] : 0;
+        const int osc1OctRaw  = (stride >= 39) ? (int)rowData[pBase + 31] - 2 : 0;
+        const int osc2OctRaw  = (stride >= 39) ? (int)rowData[pBase + 32] - 2 : 0;
+        const int osc3OctRaw  = (stride >= 39) ? (int)rowData[pBase + 33] - 2 : 0;
         auto& v = mVoices[i];
 
         // note encoding:
@@ -748,6 +752,12 @@ void AudioEngine::triggerRowLocked(const std::vector<int>& rowData) {
         v.osc3Gain       = byteToNorm(osc3GnRaw);
         v.osc2FmDepth    = byteToNorm(osc2FmRaw);
         v.osc3FmDepth    = byteToNorm(osc3FmRaw);
+        v.osc1Oct        = osc1OctRaw;
+        v.osc1OctMult    = std::pow(2.0f, (float)osc1OctRaw);
+        v.osc2Oct        = osc2OctRaw;
+        v.osc2OctMult    = std::pow(2.0f, (float)osc2OctRaw);
+        v.osc3Oct        = osc3OctRaw;
+        v.osc3OctMult    = std::pow(2.0f, (float)osc3OctRaw);
         v.karplusDecayNorm = byteToNorm(detune);
         v.karplusDampingNorm = byteToNorm(cutoff);
         v.karplusToneNorm = byteToNorm(resonance);
@@ -2446,7 +2456,7 @@ oboe::DataCallbackResult AudioEngine::onAudioReady(
             float osc3Raw = 0.0f;
             if (v.osc3On) {
                 const float det3 = (v.osc3DetuneNorm - 0.5f) * 24.0f;
-                const double freq3 = static_cast<double>(std::max(1.0f, voiceFreq)) *
+                const double freq3 = static_cast<double>(std::max(1.0f, voiceFreq * v.osc3OctMult)) *
                     std::pow(2.0, static_cast<double>(det3) / 12.0);
                 const double inc3 = twoPi * freq3 / sampleRate;
                 const float t3 = static_cast<float>(v.osc3Phase / twoPi);
@@ -2470,7 +2480,7 @@ oboe::DataCallbackResult AudioEngine::onAudioReady(
             float osc2Raw = 0.0f;
             if (v.osc2On) {
                 const float det2 = (v.osc2DetuneNorm - 0.5f) * 24.0f;
-                float freq2 = std::max(1.0f, voiceFreq) *
+                float freq2 = std::max(1.0f, voiceFreq * v.osc2OctMult) *
                     std::pow(2.0f, det2 / 12.0f);
                 if (v.osc3On && v.osc3FmDepth > 0.001f) {
                     freq2 = std::max(1.0f, freq2 + osc3Raw * v.osc3FmDepth * freq2 * 3.0f);
@@ -2494,9 +2504,10 @@ oboe::DataCallbackResult AudioEngine::onAudioReady(
             }
 
             // ── OSC 1: FM-modulated by OSC 2 ───────────────────────────────
-            float fm1Freq = voiceFreq;
+            const float oct1Freq = voiceFreq * v.osc1OctMult;
+            float fm1Freq = oct1Freq;
             if (v.osc2On && v.osc2FmDepth > 0.001f) {
-                fm1Freq = std::max(1.0f, voiceFreq + osc2Raw * v.osc2FmDepth * voiceFreq * 3.0f);
+                fm1Freq = std::max(1.0f, oct1Freq + osc2Raw * v.osc2FmDepth * oct1Freq * 3.0f);
             }
             const double phaseInc = twoPi * static_cast<double>(std::max(1.0f, fm1Freq)) / sampleRate;
             const float t = static_cast<float>(v.phase / twoPi); // [0,1)

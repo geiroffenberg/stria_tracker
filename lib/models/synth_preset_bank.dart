@@ -69,16 +69,25 @@ class SynthPreset {
     target.lfoTarget = p.lfoTarget;
     target.drive = p.drive;
     target.osc1Gain = p.osc1Gain;
+    target.osc1Oct = p.osc1Oct;
     target.osc2On = p.osc2On;
     target.osc2Wave = p.osc2Wave;
     target.osc2Detune = p.osc2Detune;
     target.osc2Gain = p.osc2Gain;
     target.osc2FmDepth = p.osc2FmDepth;
+    target.osc1Oct = p.osc1Oct;
+    target.osc2On = p.osc2On;
+    target.osc2Wave = p.osc2Wave;
+    target.osc2Detune = p.osc2Detune;
+    target.osc2Gain = p.osc2Gain;
+    target.osc2FmDepth = p.osc2FmDepth;
+    target.osc2Oct = p.osc2Oct;
     target.osc3On = p.osc3On;
     target.osc3Wave = p.osc3Wave;
     target.osc3Detune = p.osc3Detune;
     target.osc3Gain = p.osc3Gain;
     target.osc3FmDepth = p.osc3FmDepth;
+    target.osc3Oct = p.osc3Oct;
   }
 }
 
@@ -599,16 +608,17 @@ final List<SynthPreset> kFactorySynthPresets = <SynthPreset>[
   SynthPreset(
     name: 'FM Bass',
     category: SynthPresetCategory.bass,
-    description: 'Punchy FM bass — sine carrier with 2:1 modulator. DX-style thump.',
+    description: 'Punchy FM bass — sine carrier with exact 2:1 modulator via octave. DX-style thump.',
     build: () => SimpleSynthParams(
       wave: SynthWave.sine,
       detune: 0.0,
       osc1Gain: 1.0,
       osc2On: true,
       osc2Wave: SynthWave.sine,
-      osc2Detune: 1.0,       // +12 semitones = 2:1 ratio
+      osc2Detune: 0.0,       // 2:1 ratio via osc2Oct, detune free for fine-tuning
       osc2Gain: 0.0,         // pure FM modulator
       osc2FmDepth: 0.28,
+      osc2Oct: 1,            // modulator one octave up = exact 2:1 ratio
       osc3On: false,
       osc3Wave: SynthWave.sine,
       osc3Detune: 0.0,
@@ -638,16 +648,17 @@ final List<SynthPreset> kFactorySynthPresets = <SynthPreset>[
   SynthPreset(
     name: 'Growl Bass',
     category: SynthPresetCategory.bass,
-    description: 'Fat detuned saw bass with drive — two oscillators for grit.',
+    description: 'Octave-split saw bass — upper and lower saws one octave apart for weight and grit.',
     build: () => SimpleSynthParams(
       wave: SynthWave.saw,
-      detune: 0.01,
+      detune: 0.02,
       osc1Gain: 0.85,
       osc2On: true,
       osc2Wave: SynthWave.saw,
-      osc2Detune: -0.04,     // slightly below unison
+      osc2Detune: 0.02,      // slight positive detune for beating against the lower octave
       osc2Gain: 0.75,
       osc2FmDepth: 0.0,
+      osc2Oct: -1,           // OSC 2 one octave below for classic octave bass layering
       osc3On: false,
       osc3Wave: SynthWave.saw,
       osc3Detune: 0.0,
@@ -677,16 +688,17 @@ final List<SynthPreset> kFactorySynthPresets = <SynthPreset>[
   SynthPreset(
     name: 'Wobble Bass',
     category: SynthPresetCategory.bass,
-    description: 'LFO-filtered saw bass for dubstep-style wobble lines.',
+    description: 'LFO-filtered saw with sub sine layer — wobble plus low-end depth.',
     build: () => SimpleSynthParams(
       wave: SynthWave.saw,
       detune: 0.01,
       osc1Gain: 1.0,
-      osc2On: false,
-      osc2Wave: SynthWave.saw,
+      osc2On: true,
+      osc2Wave: SynthWave.sine,
       osc2Detune: 0.0,
-      osc2Gain: 0.0,
+      osc2Gain: 0.45,        // sine sub layer below the wobble
       osc2FmDepth: 0.0,
+      osc2Oct: -1,           // sub one octave below the main saw
       osc3On: false,
       osc3Wave: SynthWave.saw,
       osc3Detune: 0.0,
@@ -1426,16 +1438,17 @@ final List<SynthPreset> kFactorySynthPresets = <SynthPreset>[
   SynthPreset(
     name: 'Drone',
     category: SynthPresetCategory.fx,
-    description: 'Slow LFO detuned saw drone — sustained textural layer.',
+    description: 'Slow LFO octave-split saw drone — two saws an octave apart for deep ambient texture.',
     build: () => SimpleSynthParams(
       wave: SynthWave.saw,
       detune: 0.02,
       osc1Gain: 0.80,
       osc2On: true,
       osc2Wave: SynthWave.saw,
-      osc2Detune: -0.03,     // slight spread for thickness
-      osc2Gain: 0.70,
+      osc2Detune: 0.01,      // very slight detune for subtle beating at the lower octave
+      osc2Gain: 0.65,
       osc2FmDepth: 0.0,
+      osc2Oct: -1,           // OSC 2 one octave below — opens the drone texture wide
       osc3On: false,
       osc3Wave: SynthWave.saw,
       osc3Detune: 0.0,

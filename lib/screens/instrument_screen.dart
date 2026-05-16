@@ -450,6 +450,14 @@ class _SimpleSynthEditor extends StatelessWidget {
                     state.instrumentParamsChanged();
                   },
                 ),
+                const SizedBox(height: 6),
+                _OctChips(
+                  value: p.osc1Oct,
+                  onChanged: (oct) {
+                    p.osc1Oct = oct;
+                    state.instrumentParamsChanged();
+                  },
+                ),
                 const SizedBox(height: 8),
                 Row(
                   children: [
@@ -502,6 +510,14 @@ class _SimpleSynthEditor extends StatelessWidget {
                       value: p.osc2Wave,
                       onChanged: (w) {
                         p.osc2Wave = w;
+                        state.instrumentParamsChanged();
+                      },
+                    ),
+                    const SizedBox(height: 6),
+                    _OctChips(
+                      value: p.osc2Oct,
+                      onChanged: (oct) {
+                        p.osc2Oct = oct;
                         state.instrumentParamsChanged();
                       },
                     ),
@@ -570,6 +586,14 @@ class _SimpleSynthEditor extends StatelessWidget {
                       value: p.osc3Wave,
                       onChanged: (w) {
                         p.osc3Wave = w;
+                        state.instrumentParamsChanged();
+                      },
+                    ),
+                    const SizedBox(height: 6),
+                    _OctChips(
+                      value: p.osc3Oct,
+                      onChanged: (oct) {
+                        p.osc3Oct = oct;
                         state.instrumentParamsChanged();
                       },
                     ),
@@ -2717,7 +2741,7 @@ class _Section extends StatelessWidget {
                     ),
                   ),
                 ),
-                if (trailing != null) trailing!,
+                ?trailing,
               ],
             ),
           ),
@@ -2752,6 +2776,53 @@ class _OscOnOffButton extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// Compact row of OCT chips: -2 -1 0 +1 +2.
+class _OctChips extends StatelessWidget {
+  final int value;   // -2..+2
+  final ValueChanged<int> onChanged;
+  const _OctChips({required this.value, required this.onChanged});
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          'OCT',
+          style: kStyleBase.copyWith(fontSize: 10, color: kColHeader),
+        ),
+        const SizedBox(width: 6),
+        for (int oct = -2; oct <= 2; oct++)
+          GestureDetector(
+            onTap: () => onChanged(oct),
+            child: Container(
+              margin: const EdgeInsets.symmetric(horizontal: 2),
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+              decoration: BoxDecoration(
+                color: oct == value
+                    ? kColAccent.withAlpha(40)
+                    : Colors.transparent,
+                border: Border.all(
+                  color: oct == value ? kColAccent : kColInactive,
+                ),
+                borderRadius: BorderRadius.circular(3),
+              ),
+              child: Text(
+                oct >= 0 ? '+$oct' : '$oct',
+                style: kStyleBase.copyWith(
+                  fontSize: 11,
+                  color: oct == value ? kColAccent : kColHeader,
+                  fontWeight:
+                      oct == value ? FontWeight.w700 : FontWeight.normal,
+                ),
+              ),
+            ),
+          ),
+      ],
     );
   }
 }

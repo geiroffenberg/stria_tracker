@@ -336,6 +336,10 @@ class _MiniCellState extends State<_MiniCell> {
     if (widget.column == CellColumn.note && widget.cell.note.isEmpty) {
       state.setNote(widget.row, NoteValue.fromScrollIndex(_defaultNoteScrollIndex));
     }
+    if (widget.column == CellColumn.instrument &&
+        cellIsEmpty(widget.column, widget.cell)) {
+      state.insertDefaultValue(widget.row, widget.column);
+    }
     state.selectCell(widget.row, widget.column);
   }
 
@@ -395,7 +399,9 @@ class _MiniCellState extends State<_MiniCell> {
               )
             : null,
         alignment: Alignment.centerLeft,
-        padding: const EdgeInsets.symmetric(horizontal: 2),
+        padding: EdgeInsets.symmetric(
+          horizontal: (widget.isSelected || isBoxSelected) ? 0.5 : 2.0,
+        ),
         child: Text(text, style: style, maxLines: 1),
       ),
     );

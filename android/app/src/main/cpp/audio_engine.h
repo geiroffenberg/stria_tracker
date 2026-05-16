@@ -72,13 +72,21 @@ struct Voice {
     float  osc2DetuneNorm    = 0.5f;
     float  osc2Gain          = 0.0f;
     float  osc2FmDepth       = 0.0f;  // OSC 2 → FM-modulates OSC 1 (0..1)
+    int    osc2Oct           = 0;     // -2..+2 octave offset
+    float  osc2OctMult       = 1.0f;  // precomputed 2^osc2Oct
     double osc2Phase         = 0.0;
     bool   osc3On            = false;
     int    osc3Waveform      = 0;
     float  osc3DetuneNorm    = 0.5f;
     float  osc3Gain          = 0.0f;
     float  osc3FmDepth       = 0.0f;  // OSC 3 → FM-modulates OSC 2 (0..1)
+    int    osc3Oct           = 0;     // -2..+2 octave offset
+    float  osc3OctMult       = 1.0f;  // precomputed 2^osc3Oct
     double osc3Phase         = 0.0;
+
+    // OSC 1 octave
+    int    osc1Oct           = 0;     // -2..+2 octave offset
+    float  osc1OctMult       = 1.0f;  // precomputed 2^osc1Oct
 
     // Karplus-Strong plucked-string state
     bool   karplusMode       = false;

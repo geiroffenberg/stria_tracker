@@ -100,7 +100,7 @@ class _ScheduledPlaybackRow {
 
 class AppState extends ChangeNotifier {
   static const int _audioVoiceCount = kMaxTracks;
-  static const int _audioRowStride = 36;
+  static const int _audioRowStride = 39;
 
   AppState() {
     _loadAppSettings();
@@ -2232,6 +2232,9 @@ class AppState extends ChangeNotifier {
         0,   // osc3Gain
         0,   // osc2FmDepth
         0,   // osc3FmDepth
+        2,   // osc1Oct (0=−2..4=+2; 2=0)
+        2,   // osc2Oct
+        2,   // osc3Oct
       ];
     }
     if (ins.type == InstrumentType.karplusStrong) {
@@ -2269,6 +2272,9 @@ class AppState extends ChangeNotifier {
         0,   // osc3Gain
         0,   // osc2FmDepth
         0,   // osc3FmDepth
+        2,   // osc1Oct (0=−2..4=+2; 2=0)
+        2,   // osc2Oct
+        2,   // osc3Oct
       ];
     }
     final p = ins.synth;
@@ -2307,6 +2313,9 @@ class AppState extends ChangeNotifier {
       _norm01ToAudio255(p.osc3Gain),
       _norm01ToAudio255(p.osc2FmDepth),
       _norm01ToAudio255(p.osc3FmDepth),
+      p.osc1Oct + 2, // −2..+2 → 0..4
+      p.osc2Oct + 2,
+      p.osc3Oct + 2,
     ];
   }
 
@@ -2746,7 +2755,15 @@ class AppState extends ChangeNotifier {
     try {
       final advanced = await AudioEngine.instance.consumePendingRowAdvances();
       if (!isPlaying || advanced <= 0) return;
-      playheadRow = (playheadRow + advanced) % rowCount;
+      final newRowRaw = playheadRow + advanced;
+      final didLoop = newRowRaw >= rowCount;
+      playheadRow = newRowRaw % rowCount;
+      if (didLoop && _loopPlaybackEnabled) {
+        // Rebuild the native queue from the current live pattern so any
+        // changes made during the previous loop pass are picked up now.
+        await _loadNativePatternPlaybackQueue(startRow: 0);
+        if (isPlaying) await AudioEngine.instance.start();
+      }
       notifyListeners();
     } finally {
       _playheadPollInFlight = false;
