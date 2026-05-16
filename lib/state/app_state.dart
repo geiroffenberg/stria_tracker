@@ -3064,6 +3064,22 @@ class AppState extends ChangeNotifier {
           _carryVibDepthByTrack[t] = null;
         }
 
+        // Proxy note shorthand for samplers: C-0..G#0 trigger slices 1..9.
+        // The first 9 notes of octave 0 map to SLC 01..09 at C4 pitch.
+        //   C-0=slice1, C#0=slice2, D-0=slice3, D#0=slice4, E-0=slice5,
+        //   F-0=slice6, F#0=slice7, G-0=slice8, G#0=slice9.
+        // Use C-4 (or any note above A#0) for normal full-sample playback.
+        // An explicit SLC FX command in the same cell will override this.
+        if (noteCmd > 0 &&
+            instruments[currentSlot].type == InstrumentType.sampler) {
+          // MIDI 12 = C-0, MIDI 20 = G#0 (first 9 chromatic notes of octave 0).
+          if (noteCmd >= 12 && noteCmd <= 20) {
+            slcSliceNum = noteCmd - 11; // C-0→1, C#0→2, … G#0→9
+            slcPlayMode = 0; // slice-only
+            noteCmd = 60; // redirect pitch to C-4 (normal speed)
+          }
+        }
+
         if (cell.volume != null) {
           volCmd = ui99ToAudio255(cell.volume!);
           _carryVolumeByTrack[t] = volCmd;
