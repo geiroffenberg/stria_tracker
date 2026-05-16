@@ -283,12 +283,24 @@ The Sampler plays an audio file loaded from storage.
 | Release | 0–1 | Fade-out length |
 | Loop Mode | Off / Forward / Ping-pong | Looping behaviour |
 
+#### Chop Operations
+
+Two buttons are available to extract audio regions into new instrument slots:
+
+| Button | Description |
+|---|---|
+| CHOP TO NEW SLOT | Extracts the region between **Start** and **End** as a new mono 16-bit WAV file and places it in the next empty instrument slot as a sampler. The new slot is selected automatically. |
+| CHOP ALL SLICES TO NEW INSTRUMENTS | Extracts each active slice (SL1–SL9, i.e. any slice with a non-zero marker) into its own WAV file, filling consecutive empty slots in order. The output files are named `<source>_sl1.wav`, `_sl2.wav`, etc. The last created slot is selected when done. |
+
+Both operations convert to mono 16-bit PCM and preserve the source instrument's pitch, volume, attack, and release settings.
+
 #### Slices
 
-Up to **9 slice markers** can be placed within the sample. Each marker is a position (0–99%) that divides the sample into regions.
+Up to **9 slice markers** can be placed within the sample (opened via the SLICES section in the instrument editor). Each marker is a position (0–99) that divides the sample into regions. Markers are set with the **RESET ALL** button to clear, or adjusted individually per-slice.
 
 - Slice 1 begins at its marker and ends at slice 2's marker (or the end if slice 2 is unset).
-- Slices are addressed in the pattern using slice shorthand notes or the `SLC` FX command (see Section 7).
+- Inactive slices (value 0) are skipped; adjacent active slices form contiguous regions.
+- Slices are addressed in the pattern using slice shorthand notes or the `SLC` FX command (see Section 8).
 
 #### Slice Shorthand Notes (C-0 to G#0)
 
@@ -329,9 +341,10 @@ Each oscillator has a selectable waveform:
 | PUL | Pulse (25% duty) |
 | NSE | Noise |
 
-| Knob | Description |
+| Knob / Button | Description |
 |---|---|
-| DETUNE | Pitch offset from the root note, ±12 semitones |
+| OCT | Octave shift for this oscillator: –2, –1, 0, +1, or +2 octaves relative to the played note. Displayed as a row of five chip buttons. OSC 1 defaults to 0; OSC 2 and OSC 3 also default to 0. Shifting OSC 2 up one octave (+1) gives an exact 2:1 FM ratio with OSC 1, which is useful for classic FM bass and bell timbres. |
+| DETUNE | Fine pitch offset from the root note, ±12 semitones |
 | GAIN | Output level of this oscillator (0–100%) |
 | FM→1 / FM→2 | FM depth — how strongly this oscillator frequency-modulates the previous one (see below) |
 
@@ -555,6 +568,7 @@ The transport bar sits at the bottom of every screen.
 | BPM display | Shows current pattern tempo; tap to edit |
 | LPB display | Shows lines per beat; tap to edit |
 | Pattern follow | Toggle whether playback follows the song arrangement or loops the current pattern |
+| Loop | When active in pattern mode, the pattern loops continuously. Any changes made to notes, instruments, or settings during playback are picked up automatically at the start of the next loop iteration — no stop/restart required. |}
 
 ---
 

@@ -3814,6 +3814,195 @@ class AppState extends ChangeNotifier {
     return null;
   }
 
+  /// Chops every active slice (SL1–SL9, i.e. sliceStarts[i] > 0) into its
+  /// own new WAV file and places each in the next empty instrument slot.
+  /// Returns null on success, or an error string on failure.
+  Future<String?> chopAllSlicesToNewSlots() async {
+    final src = currentInstrument.sampler;
+    final srcPath = src.samplePath;
+    if (srcPath == null || srcPath.isEmpty) return 'No sample loaded';
+
+    // Collect active slice numbers (1-indexed) in position order.
+    final activeSlices = <int>[];
+    for (int i = 0; i < SamplerParams.sliceCount; i++) {
+      if (src.sliceStarts[i] > 0) activeSlices.add(i + 1);
+    }
+    if (activeSlices.isEmpty) return 'No slices set (all SL1–SL9 values are 0)';
+
+    final freeCount =
+        instruments.where((ins) => ins.type == InstrumentType.empty).length;
+    if (freeCount < activeSlices.length) {
+      return 'Not enough empty slots (need ${activeSlices.length}, have $freeCount)';
+    }
+
+    // Read source WAV once.
+    final srcFile = File(srcPath);
+    if (!srcFile.existsSync()) return 'Source file not found';
+    final bytes = await srcFile.readAsBytes();
+    if (bytes.length < 44) return 'Invalid WAV file';
+
+    bool matchAscii(int off, String s) {
+      if (off + s.length > bytes.length) return false;
+      for (int i = 0; i < s.length; i++) {
+        if (bytes[off + i] != s.codeUnitAt(i)) return false;
+      }
+      return true;
+    }
+
+    if (!matchAscii(0, 'RIFF') || !matchAscii(8, 'WAVE')) {
+      return 'Not a WAV file';
+    }
+    final bd = ByteData.sublistView(bytes);
+    int readLe16(int o) => bd.getUint16(o, Endian.little);
+    int readLe32(int o) => bd.getUint32(o, Endian.little);
+
+    int audioFormat = 0, channels = 0, sampleRate = 0, bitsPerSample = 0;
+    int dataOffset = -1, dataSize = 0;
+    int pos = 12;
+    while (pos + 8 <= bytes.length) {
+      final chunkSize = readLe32(pos + 4);
+      final body = pos + 8;
+      if (body + chunkSize > bytes.length) break;
+      if (matchAscii(pos, 'fmt ') && chunkSize >= 16) {
+        audioFormat = readLe16(body + 0);
+        channels = readLe16(body + 2);
+        sampleRate = readLe32(body + 4);
+        bitsPerSample = readLe16(body + 14);
+      } else if (matchAscii(pos, 'data')) {
+        dataOffset = body;
+        dataSize = chunkSize;
+      }
+      pos = body + chunkSize + (chunkSize.isOdd ? 1 : 0);
+    }
+    if (dataOffset < 0 ||
+        channels <= 0 ||
+        bitsPerSample <= 0 ||
+        !(audioFormat == 1 || audioFormat == 3)) {
+      return 'Unsupported WAV format';
+    }
+
+    final bytesPerSample = bitsPerSample ~/ 8;
+    final frameSize = bytesPerSample * channels;
+    final totalFrames = dataSize ~/ frameSize;
+    if (totalFrames <= 0) return 'Empty audio data';
+
+    final srcName =
+        src.sampleName ?? srcPath.split(Platform.pathSeparator).last;
+    final dot = srcName.lastIndexOf('.');
+    final base = dot > 0 ? srcName.substring(0, dot) : srcName;
+    final lib = await _songSamplesDir();
+
+    int lastCreatedSlot = -1;
+    int searchFrom = (currentInstrumentIndex + 1) % instruments.length;
+
+    for (final sliceNum in activeSlices) {
+      final startNorm = src.sliceStarts[sliceNum - 1] / 99.0;
+      final endNorm = src.sliceEndNorm(sliceNum);
+
+      final startFrame =
+          (startNorm * (totalFrames - 1)).round().clamp(0, totalFrames - 1);
+      final endFrame = (endNorm * totalFrames)
+          .round()
+          .clamp(startFrame + 1, totalFrames);
+      final chopFrames = endFrame - startFrame;
+      if (chopFrames <= 0) continue;
+
+      // Decode region → mono float → 16-bit PCM.
+      final outSamples = List<int>.filled(chopFrames, 0);
+      for (int f = 0; f < chopFrames; f++) {
+        final frameOff = dataOffset + (startFrame + f) * frameSize;
+        double mono = 0.0;
+        for (int ch = 0; ch < channels; ch++) {
+          final off = frameOff + ch * bytesPerSample;
+          double s = 0.0;
+          if (audioFormat == 1 && bitsPerSample == 8) {
+            s = (bytes[off] - 128) / 128.0;
+          } else if (audioFormat == 1 && bitsPerSample == 16) {
+            s = bd.getInt16(off, Endian.little) / 32768.0;
+          } else if (audioFormat == 1 && bitsPerSample == 24) {
+            int raw =
+                bytes[off] | (bytes[off + 1] << 8) | (bytes[off + 2] << 16);
+            if (raw & 0x800000 != 0) raw |= ~0xFFFFFF;
+            s = raw / 8388608.0;
+          } else if (audioFormat == 3 && bitsPerSample == 32) {
+            s = bd.getFloat32(off, Endian.little);
+          }
+          mono += s;
+        }
+        final monoVal = (mono / channels).clamp(-1.0, 1.0);
+        outSamples[f] = (monoVal * 32767.0).round().clamp(-32768, 32767);
+      }
+
+      // Build output WAV (mono 16-bit PCM).
+      final dataBytes = chopFrames * 2;
+      final wavOut = ByteData(44 + dataBytes);
+      void writeFourCC(int off, String s) {
+        for (int i = 0; i < 4; i++) wavOut.setUint8(off + i, s.codeUnitAt(i));
+      }
+
+      writeFourCC(0, 'RIFF');
+      wavOut.setUint32(4, 36 + dataBytes, Endian.little);
+      writeFourCC(8, 'WAVE');
+      writeFourCC(12, 'fmt ');
+      wavOut.setUint32(16, 16, Endian.little);
+      wavOut.setUint16(20, 1, Endian.little);
+      wavOut.setUint16(22, 1, Endian.little);
+      wavOut.setUint32(24, sampleRate, Endian.little);
+      wavOut.setUint32(28, sampleRate * 2, Endian.little);
+      wavOut.setUint16(32, 2, Endian.little);
+      wavOut.setUint16(34, 16, Endian.little);
+      writeFourCC(36, 'data');
+      wavOut.setUint32(40, dataBytes, Endian.little);
+      for (int f = 0; f < chopFrames; f++) {
+        wavOut.setInt16(44 + f * 2, outSamples[f], Endian.little);
+      }
+
+      // Unique filename: <base>_sl<N>.wav
+      String outName = '${base}_sl$sliceNum.wav';
+      int suffix = 1;
+      while (File('${lib.path}/$outName').existsSync()) {
+        outName = '${base}_sl${sliceNum}_$suffix.wav';
+        suffix++;
+      }
+      final outPath = '${lib.path}/$outName';
+      await File(outPath).writeAsBytes(wavOut.buffer.asUint8List(), flush: true);
+
+      // Find next empty slot (with wrap-around).
+      int nextEmpty =
+          instruments.indexWhere(
+            (ins) => ins.type == InstrumentType.empty,
+            searchFrom,
+          );
+      if (nextEmpty < 0 && searchFrom > 0) {
+        nextEmpty = instruments.indexWhere(
+          (ins) => ins.type == InstrumentType.empty,
+        );
+      }
+      if (nextEmpty < 0) break; // pre-check should have caught this
+
+      final destIns = instruments[nextEmpty];
+      destIns.type = InstrumentType.sampler;
+      destIns.sampler
+        ..samplePath = outPath
+        ..sampleName = outName
+        ..pitch = src.pitch
+        ..volume = src.volume
+        ..loopMode = SamplerLoopMode.off
+        ..start = 0.0
+        ..end = 1.0
+        ..attack = src.attack
+        ..release = src.release;
+
+      await AudioEngine.instance.setSamplerSample(nextEmpty, outPath);
+      lastCreatedSlot = nextEmpty;
+      searchFrom = (nextEmpty + 1) % instruments.length;
+    }
+
+    if (lastCreatedSlot >= 0) selectInstrument(lastCreatedSlot);
+    _notifyListenersSafe();
+    return null;
+  }
+
   /// Crops the current sampler's start→end region into a new WAV file,
   /// replaces the current sampler sample with it, and resets region to full.
   /// Returns null on success, or an error string on failure.

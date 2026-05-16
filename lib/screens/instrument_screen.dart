@@ -2035,6 +2035,32 @@ class _SamplerEditorState extends State<_SamplerEditor>
     }
   }
 
+  Future<void> _chopAllSlicesToNewSlots(BuildContext context) async {
+    if (_busy) return;
+    setState(() => _busy = true);
+    try {
+      final err = await state.chopAllSlicesToNewSlots();
+      if (!mounted) return;
+      if (err != null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Chop failed: $err'),
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Slices chopped to new slots'),
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
   Future<void> _cropCurrentSample(BuildContext context) async {
     if (_busy) return;
     setState(() => _busy = true);
@@ -2255,6 +2281,43 @@ class _SamplerEditorState extends State<_SamplerEditor>
                   ],
                 ),
               ),
+            const SizedBox(height: 12),
+            GestureDetector(
+              onTap: _busy ? null : () => _chopAllSlicesToNewSlots(context),
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 8,
+                ),
+                decoration: BoxDecoration(
+                  color: kBgColor.withAlpha(60),
+                  border: Border.all(
+                    color: _busy
+                        ? kColInactive.withAlpha(60)
+                        : kColAccent.withAlpha(160),
+                  ),
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      Icons.content_cut,
+                      size: 14,
+                      color: _busy ? kColInactive : kColAccent,
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      'CHOP ALL SLICES TO NEW INSTRUMENTS',
+                      style: kStyleHeader.copyWith(
+                        fontSize: 11,
+                        color: _busy ? kColInactive : kColAccent,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
           ],
         ],
       ),
