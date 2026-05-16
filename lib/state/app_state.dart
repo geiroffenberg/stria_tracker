@@ -100,7 +100,7 @@ class _ScheduledPlaybackRow {
 
 class AppState extends ChangeNotifier {
   static const int _audioVoiceCount = kMaxTracks;
-  static const int _audioRowStride = 25;
+  static const int _audioRowStride = 36;
 
   AppState() {
     _loadAppSettings();
@@ -2220,6 +2220,18 @@ class AppState extends ChangeNotifier {
             .loopMode
             .index, // drive reused as loop mode: 0=off, 1=forward, 2=pingpong
         samplerReverse ? 1 : 0, // reverse flag (REV FX)
+        // OSC fields — not applicable for sampler, use safe defaults
+        255, // osc1Gain (full)
+        0,   // osc2On
+        0,   // osc2Wave
+        128, // osc2Detune (0 semitones)
+        0,   // osc2Gain
+        0,   // osc3On
+        0,   // osc3Wave
+        128, // osc3Detune
+        0,   // osc3Gain
+        0,   // osc2FmDepth
+        0,   // osc3FmDepth
       ];
     }
     if (ins.type == InstrumentType.karplusStrong) {
@@ -2245,6 +2257,18 @@ class AppState extends ChangeNotifier {
         0,
         0,
         0,
+        // OSC fields — not applicable for Karplus, use safe defaults
+        255, // osc1Gain (full)
+        0,   // osc2On
+        0,   // osc2Wave
+        128, // osc2Detune
+        0,   // osc2Gain
+        0,   // osc3On
+        0,   // osc3Wave
+        128, // osc3Detune
+        0,   // osc3Gain
+        0,   // osc2FmDepth
+        0,   // osc3FmDepth
       ];
     }
     final p = ins.synth;
@@ -2271,6 +2295,18 @@ class AppState extends ChangeNotifier {
           : p.lfoTarget.index2, // force pitch target for VIB
       _norm01ToAudio255(p.drive),
       0, // reverse: not applicable for synth
+      // Multi-oscillator
+      _norm01ToAudio255(p.osc1Gain),
+      p.osc2On ? 255 : 0, // osc2On
+      p.osc2Wave.index,   // osc2Wave (raw enum index, 0-5)
+      _norm01ToAudio255((p.osc2Detune + 1.0) / 2.0), // map -1..1 → 0..1
+      _norm01ToAudio255(p.osc2Gain),
+      p.osc3On ? 255 : 0, // osc3On
+      p.osc3Wave.index,   // osc3Wave
+      _norm01ToAudio255((p.osc3Detune + 1.0) / 2.0),
+      _norm01ToAudio255(p.osc3Gain),
+      _norm01ToAudio255(p.osc2FmDepth),
+      _norm01ToAudio255(p.osc3FmDepth),
     ];
   }
 

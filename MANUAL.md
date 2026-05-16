@@ -312,9 +312,13 @@ Writing one of these notes on a sampler track is exactly equivalent to writing `
 
 ### 7.2 Simple Synth
 
-A subtractive synthesiser with six waveforms, a multi-mode filter, ADSR envelope, LFO, and drive.
+A three-oscillator synthesiser with FM modulation, a multi-mode filter, ADSR envelope, LFO, and drive.
 
-#### Waveforms
+#### Oscillators
+
+The synth has three oscillators. **OSC 1** is always active. **OSC 2** and **OSC 3** each have an on/off toggle in their section header; when off, their controls are dimmed and they produce no sound.
+
+Each oscillator has a selectable waveform:
 
 | Code | Shape |
 |---|---|
@@ -322,8 +326,24 @@ A subtractive synthesiser with six waveforms, a multi-mode filter, ADSR envelope
 | TRI | Triangle |
 | SAW | Sawtooth |
 | SQR | Square |
-| PUL | Pulse |
+| PUL | Pulse (25% duty) |
 | NSE | Noise |
+
+| Knob | Description |
+|---|---|
+| DETUNE | Pitch offset from the root note, ±12 semitones |
+| GAIN | Output level of this oscillator (0–100%) |
+| FM→1 / FM→2 | FM depth — how strongly this oscillator frequency-modulates the previous one (see below) |
+
+#### FM Modulation
+
+FM routing is chained: **OSC 3 → modulates OSC 2 → modulates OSC 1**.
+
+- The **FM knob on OSC 2** controls how much OSC 2 bends OSC 1's frequency each sample.
+- The **FM knob on OSC 3** controls how much OSC 3 bends OSC 2's frequency.
+- At **FM = 0** the oscillator acts as a plain additive voice (no modulation). This is the default.
+- At **FM = 100%** the carrier frequency can swing up to ±3× its base value, producing rich inharmonic sidebands.
+- **GAIN and FM are independent:** set GAIN = 0 to use an oscillator as a pure (inaudible) modulator, or combine both for additive-plus-FM timbres.
 
 #### Amplitude Envelope (ADSR)
 

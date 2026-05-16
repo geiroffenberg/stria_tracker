@@ -65,6 +65,21 @@ struct Voice {
     // Drive / saturation
     float  drive             = 0.0f; // 0..1
 
+    // Multi-oscillator
+    float  osc1Gain          = 1.0f;  // OSC 1 output gain (0..1)
+    bool   osc2On            = false;
+    int    osc2Waveform      = 0;
+    float  osc2DetuneNorm    = 0.5f;
+    float  osc2Gain          = 0.0f;
+    float  osc2FmDepth       = 0.0f;  // OSC 2 → FM-modulates OSC 1 (0..1)
+    double osc2Phase         = 0.0;
+    bool   osc3On            = false;
+    int    osc3Waveform      = 0;
+    float  osc3DetuneNorm    = 0.5f;
+    float  osc3Gain          = 0.0f;
+    float  osc3FmDepth       = 0.0f;  // OSC 3 → FM-modulates OSC 2 (0..1)
+    double osc3Phase         = 0.0;
+
     // Karplus-Strong plucked-string state
     bool   karplusMode       = false;
     bool   karplusActive     = false;

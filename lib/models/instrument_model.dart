@@ -110,8 +110,23 @@ extension SynthLfoTargetLabel on SynthLfoTarget {
 /// All ranges are 0.0 … 1.0 except where noted, normalised so the UI is
 /// uniform and the engine can map them to musical units.
 class SimpleSynthParams {
+  // ── Oscillator 1 (always on) ──────────────────────────────────────────────
   SynthWave wave;
-  double detune; // -1..1 (semitones * 12)
+  double detune;   // -1..1 (semitones * 12)
+  double osc1Gain; // 0..1
+  // ── Oscillator 2 ─────────────────────────────────────────────────────────
+  bool osc2On;
+  SynthWave osc2Wave;
+  double osc2Detune;   // -1..1
+  double osc2Gain;     // 0..1
+  double osc2FmDepth;  // 0..1 (OSC 2 FM-modulates OSC 1)
+  // ── Oscillator 3 ─────────────────────────────────────────────────────────
+  bool osc3On;
+  SynthWave osc3Wave;
+  double osc3Detune;   // -1..1
+  double osc3Gain;     // 0..1
+  double osc3FmDepth;  // 0..1 (OSC 3 FM-modulates OSC 2)
+  // ── Shared ───────────────────────────────────────────────────────────────
   double cutoff; // 0..1
   double resonance; // 0..1
   SynthFilterMode filterMode; // LP / HP / BP
@@ -134,6 +149,17 @@ class SimpleSynthParams {
   SimpleSynthParams({
     this.wave = SynthWave.saw,
     this.detune = 0.0,
+    this.osc1Gain = 1.0,
+    this.osc2On = false,
+    this.osc2Wave = SynthWave.saw,
+    this.osc2Detune = 0.0,
+    this.osc2Gain = 0.8,
+    this.osc2FmDepth = 0.0,
+    this.osc3On = false,
+    this.osc3Wave = SynthWave.saw,
+    this.osc3Detune = 0.0,
+    this.osc3Gain = 0.8,
+    this.osc3FmDepth = 0.0,
     this.cutoff = 0.7,
     this.resonance = 0.2,
     this.filterMode = SynthFilterMode.lowPass,
@@ -157,6 +183,17 @@ class SimpleSynthParams {
   Map<String, dynamic> toJson() => {
     'wave': wave.index,
     'detune': detune,
+    'osc1Gain': osc1Gain,
+    'osc2On': osc2On,
+    'osc2Wave': osc2Wave.index,
+    'osc2Detune': osc2Detune,
+    'osc2Gain': osc2Gain,
+    'osc2FmDepth': osc2FmDepth,
+    'osc3On': osc3On,
+    'osc3Wave': osc3Wave.index,
+    'osc3Detune': osc3Detune,
+    'osc3Gain': osc3Gain,
+    'osc3FmDepth': osc3FmDepth,
     'cutoff': cutoff,
     'resonance': resonance,
     'filterMode': filterMode.index,
@@ -181,6 +218,17 @@ class SimpleSynthParams {
       SimpleSynthParams(
         wave: SynthWave.values[(j['wave'] as int?) ?? 2],
         detune: (j['detune'] as num?)?.toDouble() ?? 0.0,
+        osc1Gain: (j['osc1Gain'] as num?)?.toDouble() ?? 1.0,
+        osc2On: (j['osc2On'] as bool?) ?? false,
+        osc2Wave: SynthWave.values[(j['osc2Wave'] as int?) ?? 2],
+        osc2Detune: (j['osc2Detune'] as num?)?.toDouble() ?? 0.0,
+        osc2Gain: (j['osc2Gain'] as num?)?.toDouble() ?? 0.8,
+        osc2FmDepth: (j['osc2FmDepth'] as num?)?.toDouble() ?? 0.0,
+        osc3On: (j['osc3On'] as bool?) ?? false,
+        osc3Wave: SynthWave.values[(j['osc3Wave'] as int?) ?? 2],
+        osc3Detune: (j['osc3Detune'] as num?)?.toDouble() ?? 0.0,
+        osc3Gain: (j['osc3Gain'] as num?)?.toDouble() ?? 0.8,
+        osc3FmDepth: (j['osc3FmDepth'] as num?)?.toDouble() ?? 0.0,
         cutoff: (j['cutoff'] as num?)?.toDouble() ?? 0.7,
         resonance: (j['resonance'] as num?)?.toDouble() ?? 0.2,
         filterMode: SynthFilterMode.values[(j['filterMode'] as int?) ?? 0],
@@ -205,6 +253,17 @@ class SimpleSynthParams {
   SimpleSynthParams copy() => SimpleSynthParams(
     wave: wave,
     detune: detune,
+    osc1Gain: osc1Gain,
+    osc2On: osc2On,
+    osc2Wave: osc2Wave,
+    osc2Detune: osc2Detune,
+    osc2Gain: osc2Gain,
+    osc2FmDepth: osc2FmDepth,
+    osc3On: osc3On,
+    osc3Wave: osc3Wave,
+    osc3Detune: osc3Detune,
+    osc3Gain: osc3Gain,
+    osc3FmDepth: osc3FmDepth,
     cutoff: cutoff,
     resonance: resonance,
     filterMode: filterMode,

@@ -6,63 +6,63 @@
 extern "C" {
 
 JNIEXPORT jlong JNICALL
-Java_com_example_tracker_AudioEnginePlugin_nativeCreate(JNIEnv*, jobject) {
+Java_com_metamind_stria_AudioEnginePlugin_nativeCreate(JNIEnv*, jobject) {
     return reinterpret_cast<jlong>(new AudioEngine());
 }
 
 JNIEXPORT jboolean JNICALL
-Java_com_example_tracker_AudioEnginePlugin_nativeOpen(JNIEnv*, jobject, jlong ptr) {
+Java_com_metamind_stria_AudioEnginePlugin_nativeOpen(JNIEnv*, jobject, jlong ptr) {
     return reinterpret_cast<AudioEngine*>(ptr)->open();
 }
 
 JNIEXPORT void JNICALL
-Java_com_example_tracker_AudioEnginePlugin_nativeStart(JNIEnv*, jobject, jlong ptr) {
+Java_com_metamind_stria_AudioEnginePlugin_nativeStart(JNIEnv*, jobject, jlong ptr) {
     reinterpret_cast<AudioEngine*>(ptr)->start();
 }
 
 JNIEXPORT void JNICALL
-Java_com_example_tracker_AudioEnginePlugin_nativeStop(JNIEnv*, jobject, jlong ptr) {
+Java_com_metamind_stria_AudioEnginePlugin_nativeStop(JNIEnv*, jobject, jlong ptr) {
     reinterpret_cast<AudioEngine*>(ptr)->stop();
 }
 
 JNIEXPORT void JNICALL
-Java_com_example_tracker_AudioEnginePlugin_nativeSetTempo(
+Java_com_metamind_stria_AudioEnginePlugin_nativeSetTempo(
         JNIEnv*, jobject, jlong ptr, jdouble bpm) {
     reinterpret_cast<AudioEngine*>(ptr)->setTempo(bpm);
 }
 
 JNIEXPORT void JNICALL
-Java_com_example_tracker_AudioEnginePlugin_nativeSetLineSamplesPerRow(
+Java_com_metamind_stria_AudioEnginePlugin_nativeSetLineSamplesPerRow(
         JNIEnv*, jobject, jlong ptr, jint samples) {
     reinterpret_cast<AudioEngine*>(ptr)->setLineSamplesPerRow(static_cast<int32_t>(samples));
 }
 
 JNIEXPORT jint JNICALL
-Java_com_example_tracker_AudioEnginePlugin_nativeConsumePendingRowAdvances(
+Java_com_metamind_stria_AudioEnginePlugin_nativeConsumePendingRowAdvances(
         JNIEnv*, jobject, jlong ptr) {
     return reinterpret_cast<AudioEngine*>(ptr)->consumePendingRowAdvances();
 }
 
 JNIEXPORT void JNICALL
-Java_com_example_tracker_AudioEnginePlugin_nativeResetPlayheadPhase(
+Java_com_metamind_stria_AudioEnginePlugin_nativeResetPlayheadPhase(
         JNIEnv*, jobject, jlong ptr) {
     reinterpret_cast<AudioEngine*>(ptr)->resetPlayheadPhase();
 }
 
 JNIEXPORT void JNICALL
-Java_com_example_tracker_AudioEnginePlugin_nativeClearQueuedPlaybackRows(
+Java_com_metamind_stria_AudioEnginePlugin_nativeClearQueuedPlaybackRows(
         JNIEnv*, jobject, jlong ptr) {
     reinterpret_cast<AudioEngine*>(ptr)->clearQueuedPlaybackRows();
 }
 
 JNIEXPORT void JNICALL
-Java_com_example_tracker_AudioEnginePlugin_nativeSetQueuedPlaybackLooping(
+Java_com_metamind_stria_AudioEnginePlugin_nativeSetQueuedPlaybackLooping(
         JNIEnv*, jobject, jlong ptr, jboolean loop) {
     reinterpret_cast<AudioEngine*>(ptr)->setQueuedPlaybackLooping(loop);
 }
 
 JNIEXPORT void JNICALL
-Java_com_example_tracker_AudioEnginePlugin_nativeEnqueuePlaybackRow(
+Java_com_metamind_stria_AudioEnginePlugin_nativeEnqueuePlaybackRow(
         JNIEnv* env,
         jobject,
         jlong ptr,
@@ -98,7 +98,7 @@ Java_com_example_tracker_AudioEnginePlugin_nativeEnqueuePlaybackRow(
 }
 
 JNIEXPORT void JNICALL
-Java_com_example_tracker_AudioEnginePlugin_nativeSetRowData(
+Java_com_metamind_stria_AudioEnginePlugin_nativeSetRowData(
         JNIEnv* env, jobject, jlong ptr, jintArray data) {
     jsize        len  = env->GetArrayLength(data);
     jint*        elms = env->GetIntArrayElements(data, nullptr);
@@ -108,7 +108,7 @@ Java_com_example_tracker_AudioEnginePlugin_nativeSetRowData(
 }
 
 JNIEXPORT void JNICALL
-Java_com_example_tracker_AudioEnginePlugin_nativeKillVoices(
+Java_com_metamind_stria_AudioEnginePlugin_nativeKillVoices(
         JNIEnv* env, jobject, jlong ptr, jintArray mask) {
     jsize  len  = env->GetArrayLength(mask);
     jint*  elms = env->GetIntArrayElements(mask, nullptr);
@@ -118,7 +118,7 @@ Java_com_example_tracker_AudioEnginePlugin_nativeKillVoices(
 }
 
 JNIEXPORT void JNICALL
-Java_com_example_tracker_AudioEnginePlugin_nativeQueueRetrigs(
+Java_com_metamind_stria_AudioEnginePlugin_nativeQueueRetrigs(
         JNIEnv* env, jobject, jlong ptr, jintArray data) {
     jsize len  = env->GetArrayLength(data);
     jint* elms = env->GetIntArrayElements(data, nullptr);
@@ -128,7 +128,7 @@ Java_com_example_tracker_AudioEnginePlugin_nativeQueueRetrigs(
 }
 
 JNIEXPORT void JNICALL
-Java_com_example_tracker_AudioEnginePlugin_nativeQueueArp(
+Java_com_metamind_stria_AudioEnginePlugin_nativeQueueArp(
         JNIEnv* env, jobject, jlong ptr, jintArray data) {
     jsize len  = env->GetArrayLength(data);
     jint* elms = env->GetIntArrayElements(data, nullptr);
@@ -138,7 +138,7 @@ Java_com_example_tracker_AudioEnginePlugin_nativeQueueArp(
 }
 
 JNIEXPORT void JNICALL
-Java_com_example_tracker_AudioEnginePlugin_nativeQueueDelays(
+Java_com_metamind_stria_AudioEnginePlugin_nativeQueueDelays(
         JNIEnv* env, jobject, jlong ptr, jintArray data) {
     jsize len  = env->GetArrayLength(data);
     jint* elms = env->GetIntArrayElements(data, nullptr);
@@ -148,7 +148,7 @@ Java_com_example_tracker_AudioEnginePlugin_nativeQueueDelays(
 }
 
 JNIEXPORT void JNICALL
-Java_com_example_tracker_AudioEnginePlugin_nativeQueueKills(
+Java_com_metamind_stria_AudioEnginePlugin_nativeQueueKills(
         JNIEnv* env, jobject, jlong ptr, jintArray data) {
     jsize len  = env->GetArrayLength(data);
     jint* elms = env->GetIntArrayElements(data, nullptr);
@@ -158,7 +158,7 @@ Java_com_example_tracker_AudioEnginePlugin_nativeQueueKills(
 }
 
 JNIEXPORT void JNICALL
-Java_com_example_tracker_AudioEnginePlugin_nativeQueueSliceCommands(
+Java_com_metamind_stria_AudioEnginePlugin_nativeQueueSliceCommands(
         JNIEnv* env, jobject, jlong ptr, jintArray data) {
     jsize len  = env->GetArrayLength(data);
     jint* elms = env->GetIntArrayElements(data, nullptr);
@@ -168,7 +168,7 @@ Java_com_example_tracker_AudioEnginePlugin_nativeQueueSliceCommands(
 }
 
 JNIEXPORT void JNICALL
-Java_com_example_tracker_AudioEnginePlugin_nativeQueueMixerCommands(
+Java_com_metamind_stria_AudioEnginePlugin_nativeQueueMixerCommands(
         JNIEnv* env, jobject, jlong ptr, jintArray data) {
     jsize len  = env->GetArrayLength(data);
     jint* elms = env->GetIntArrayElements(data, nullptr);
@@ -178,7 +178,7 @@ Java_com_example_tracker_AudioEnginePlugin_nativeQueueMixerCommands(
 }
 
 JNIEXPORT void JNICALL
-Java_com_example_tracker_AudioEnginePlugin_nativeQueueInsertFxCommands(
+Java_com_metamind_stria_AudioEnginePlugin_nativeQueueInsertFxCommands(
         JNIEnv* env, jobject, jlong ptr, jintArray data) {
     jsize len  = env->GetArrayLength(data);
     jint* elms = env->GetIntArrayElements(data, nullptr);
@@ -188,161 +188,161 @@ Java_com_example_tracker_AudioEnginePlugin_nativeQueueInsertFxCommands(
 }
 
 JNIEXPORT void JNICALL
-Java_com_example_tracker_AudioEnginePlugin_nativeSetMasterInsertEffect(
+Java_com_metamind_stria_AudioEnginePlugin_nativeSetMasterInsertEffect(
         JNIEnv* env, jobject, jlong ptr, jint slotIdx, jint effectType, jfloat dryWet) {
     reinterpret_cast<AudioEngine*>(ptr)->setMasterInsertEffect(slotIdx, effectType, dryWet);
 }
 
 JNIEXPORT void JNICALL
-Java_com_example_tracker_AudioEnginePlugin_nativeSetMasterInsertMix(
+Java_com_metamind_stria_AudioEnginePlugin_nativeSetMasterInsertMix(
         JNIEnv*, jobject, jlong ptr, jint slotIdx, jfloat dryLevel, jfloat wetLevel) {
     reinterpret_cast<AudioEngine*>(ptr)->setMasterInsertMix(slotIdx, dryLevel, wetLevel);
 }
 
 JNIEXPORT void JNICALL
-Java_com_example_tracker_AudioEnginePlugin_nativeSetMasterInsertBypass(
+Java_com_metamind_stria_AudioEnginePlugin_nativeSetMasterInsertBypass(
         JNIEnv*, jobject, jlong ptr, jint slotIdx, jboolean bypass) {
     reinterpret_cast<AudioEngine*>(ptr)->setMasterInsertBypass(slotIdx, bypass);
 }
 
 JNIEXPORT void JNICALL
-Java_com_example_tracker_AudioEnginePlugin_nativeSetMasterReverbParams(
+Java_com_metamind_stria_AudioEnginePlugin_nativeSetMasterReverbParams(
         JNIEnv* env, jobject, jlong ptr, jint slotIdx, jfloat roomSize, jfloat damp, jfloat width, jboolean freeze) {
     reinterpret_cast<AudioEngine*>(ptr)->setMasterReverbParams(slotIdx, roomSize, damp, width, freeze);
 }
 
 JNIEXPORT void JNICALL
-Java_com_example_tracker_AudioEnginePlugin_nativeSetTrackInsertEffect(
+Java_com_metamind_stria_AudioEnginePlugin_nativeSetTrackInsertEffect(
         JNIEnv* env, jobject, jlong ptr, jint trackIdx, jint slotIdx, jint effectType, jfloat dryWet) {
     reinterpret_cast<AudioEngine*>(ptr)->setTrackInsertEffect(trackIdx, slotIdx, effectType, dryWet);
 }
 
 JNIEXPORT void JNICALL
-Java_com_example_tracker_AudioEnginePlugin_nativeSetTrackInsertMix(
+Java_com_metamind_stria_AudioEnginePlugin_nativeSetTrackInsertMix(
         JNIEnv*, jobject, jlong ptr, jint trackIdx, jint slotIdx, jfloat dryLevel, jfloat wetLevel) {
     reinterpret_cast<AudioEngine*>(ptr)->setTrackInsertMix(trackIdx, slotIdx, dryLevel, wetLevel);
 }
 
 JNIEXPORT void JNICALL
-Java_com_example_tracker_AudioEnginePlugin_nativeSetTrackInsertBypass(
+Java_com_metamind_stria_AudioEnginePlugin_nativeSetTrackInsertBypass(
         JNIEnv*, jobject, jlong ptr, jint trackIdx, jint slotIdx, jboolean bypass) {
     reinterpret_cast<AudioEngine*>(ptr)->setTrackInsertBypass(trackIdx, slotIdx, bypass);
 }
 
 JNIEXPORT void JNICALL
-Java_com_example_tracker_AudioEnginePlugin_nativeSetVoicePreviewBypassTrackInserts(
+Java_com_metamind_stria_AudioEnginePlugin_nativeSetVoicePreviewBypassTrackInserts(
         JNIEnv*, jobject, jlong ptr, jint trackIdx, jboolean bypass) {
     reinterpret_cast<AudioEngine*>(ptr)->setVoicePreviewBypassTrackInserts(trackIdx, bypass);
 }
 
 JNIEXPORT void JNICALL
-Java_com_example_tracker_AudioEnginePlugin_nativeSetTrackReverbParams(
+Java_com_metamind_stria_AudioEnginePlugin_nativeSetTrackReverbParams(
         JNIEnv* env, jobject, jlong ptr, jint trackIdx, jint slotIdx, jfloat roomSize, jfloat damp, jfloat width, jboolean freeze) {
     reinterpret_cast<AudioEngine*>(ptr)->setTrackReverbParams(trackIdx, slotIdx, roomSize, damp, width, freeze);
 }
 
 JNIEXPORT void JNICALL
-Java_com_example_tracker_AudioEnginePlugin_nativeSetMasterDelayParams(
+Java_com_metamind_stria_AudioEnginePlugin_nativeSetMasterDelayParams(
         JNIEnv*, jobject, jlong ptr, jint slotIdx, jfloat timeMs, jfloat feedback, jfloat hpCutoff, jboolean sync) {
     reinterpret_cast<AudioEngine*>(ptr)->setMasterDelayParams(slotIdx, timeMs, feedback, hpCutoff, sync);
 }
 
 JNIEXPORT void JNICALL
-Java_com_example_tracker_AudioEnginePlugin_nativeSetTrackDelayParams(
+Java_com_metamind_stria_AudioEnginePlugin_nativeSetTrackDelayParams(
         JNIEnv*, jobject, jlong ptr, jint trackIdx, jint slotIdx, jfloat timeMs, jfloat feedback, jfloat hpCutoff, jboolean sync) {
     reinterpret_cast<AudioEngine*>(ptr)->setTrackDelayParams(trackIdx, slotIdx, timeMs, feedback, hpCutoff, sync);
 }
 
 JNIEXPORT void JNICALL
-Java_com_example_tracker_AudioEnginePlugin_nativeSetTrackFilterParams(
+Java_com_metamind_stria_AudioEnginePlugin_nativeSetTrackFilterParams(
         JNIEnv*, jobject, jlong ptr, jint trackIdx, jint slotIdx, jfloat cutoff, jfloat resonance, jint mode) {
     reinterpret_cast<AudioEngine*>(ptr)->setTrackFilterParams(trackIdx, slotIdx, cutoff, resonance, mode);
 }
 
 JNIEXPORT void JNICALL
-Java_com_example_tracker_AudioEnginePlugin_nativeSetMasterFilterParams(
+Java_com_metamind_stria_AudioEnginePlugin_nativeSetMasterFilterParams(
         JNIEnv*, jobject, jlong ptr, jint slotIdx, jfloat cutoff, jfloat resonance, jint mode) {
     reinterpret_cast<AudioEngine*>(ptr)->setMasterFilterParams(slotIdx, cutoff, resonance, mode);
 }
 
 JNIEXPORT void JNICALL
-Java_com_example_tracker_AudioEnginePlugin_nativeSetTrackDistortionParams(
+Java_com_metamind_stria_AudioEnginePlugin_nativeSetTrackDistortionParams(
         JNIEnv*, jobject, jlong ptr, jint trackIdx, jint slotIdx, jfloat drive, jfloat tone, jint distType) {
     reinterpret_cast<AudioEngine*>(ptr)->setTrackDistortionParams(trackIdx, slotIdx, drive, tone, distType);
 }
 
 JNIEXPORT void JNICALL
-Java_com_example_tracker_AudioEnginePlugin_nativeSetMasterDistortionParams(
+Java_com_metamind_stria_AudioEnginePlugin_nativeSetMasterDistortionParams(
         JNIEnv*, jobject, jlong ptr, jint slotIdx, jfloat drive, jfloat tone, jint distType) {
     reinterpret_cast<AudioEngine*>(ptr)->setMasterDistortionParams(slotIdx, drive, tone, distType);
 }
 
 JNIEXPORT void JNICALL
-Java_com_example_tracker_AudioEnginePlugin_nativeSetTrackBitcrusherParams(
+Java_com_metamind_stria_AudioEnginePlugin_nativeSetTrackBitcrusherParams(
         JNIEnv*, jobject, jlong ptr, jint trackIdx, jint slotIdx, jfloat bits, jfloat rate) {
     reinterpret_cast<AudioEngine*>(ptr)->setTrackBitcrusherParams(trackIdx, slotIdx, bits, rate);
 }
 
 JNIEXPORT void JNICALL
-Java_com_example_tracker_AudioEnginePlugin_nativeSetMasterBitcrusherParams(
+Java_com_metamind_stria_AudioEnginePlugin_nativeSetMasterBitcrusherParams(
         JNIEnv*, jobject, jlong ptr, jint slotIdx, jfloat bits, jfloat rate) {
     reinterpret_cast<AudioEngine*>(ptr)->setMasterBitcrusherParams(slotIdx, bits, rate);
 }
 
 JNIEXPORT void JNICALL
-Java_com_example_tracker_AudioEnginePlugin_nativeSetTrackLimiterParams(
+Java_com_metamind_stria_AudioEnginePlugin_nativeSetTrackLimiterParams(
         JNIEnv*, jobject, jlong ptr, jint trackIdx, jint slotIdx, jfloat gain) {
     reinterpret_cast<AudioEngine*>(ptr)->setTrackLimiterParams(trackIdx, slotIdx, gain);
 }
 
 JNIEXPORT void JNICALL
-Java_com_example_tracker_AudioEnginePlugin_nativeSetMasterLimiterParams(
+Java_com_metamind_stria_AudioEnginePlugin_nativeSetMasterLimiterParams(
         JNIEnv*, jobject, jlong ptr, jint slotIdx, jfloat gain) {
     reinterpret_cast<AudioEngine*>(ptr)->setMasterLimiterParams(slotIdx, gain);
 }
 
 JNIEXPORT void JNICALL
-Java_com_example_tracker_AudioEnginePlugin_nativeSetTrackChorusParams(
+Java_com_metamind_stria_AudioEnginePlugin_nativeSetTrackChorusParams(
         JNIEnv*, jobject, jlong ptr, jint trackIdx, jint slotIdx, jfloat rate, jfloat depth, jfloat delay, jint stereo) {
     reinterpret_cast<AudioEngine*>(ptr)->setTrackChorusParams(trackIdx, slotIdx, rate, depth, delay, stereo);
 }
 
 JNIEXPORT void JNICALL
-Java_com_example_tracker_AudioEnginePlugin_nativeSetMasterChorusParams(
+Java_com_metamind_stria_AudioEnginePlugin_nativeSetMasterChorusParams(
         JNIEnv*, jobject, jlong ptr, jint slotIdx, jfloat rate, jfloat depth, jfloat delay, jint stereo) {
     reinterpret_cast<AudioEngine*>(ptr)->setMasterChorusParams(slotIdx, rate, depth, delay, stereo);
 }
 
 JNIEXPORT void JNICALL
-Java_com_example_tracker_AudioEnginePlugin_nativeSetTrackEqParams(
+Java_com_metamind_stria_AudioEnginePlugin_nativeSetTrackEqParams(
         JNIEnv*, jobject, jlong ptr, jint trackIdx, jint slotIdx,
         jfloat lowGain, jfloat lowFreq, jfloat midGain, jfloat midFreq, jfloat midQ, jfloat highGain, jfloat highFreq) {
     reinterpret_cast<AudioEngine*>(ptr)->setTrackEqParams(trackIdx, slotIdx, lowGain, lowFreq, midGain, midFreq, midQ, highGain, highFreq);
 }
 
 JNIEXPORT void JNICALL
-Java_com_example_tracker_AudioEnginePlugin_nativeSetMasterEqParams(
+Java_com_metamind_stria_AudioEnginePlugin_nativeSetMasterEqParams(
         JNIEnv*, jobject, jlong ptr, jint slotIdx,
         jfloat lowGain, jfloat lowFreq, jfloat midGain, jfloat midFreq, jfloat midQ, jfloat highGain, jfloat highFreq) {
     reinterpret_cast<AudioEngine*>(ptr)->setMasterEqParams(slotIdx, lowGain, lowFreq, midGain, midFreq, midQ, highGain, highFreq);
 }
 
 JNIEXPORT void JNICALL
-Java_com_example_tracker_AudioEnginePlugin_nativeSetTrackCompressorParams(
+Java_com_metamind_stria_AudioEnginePlugin_nativeSetTrackCompressorParams(
         JNIEnv*, jobject, jlong ptr, jint trackIdx, jint slotIdx,
         jfloat threshold, jfloat ratio, jfloat attack, jfloat release, jfloat makeup, jint knee) {
     reinterpret_cast<AudioEngine*>(ptr)->setTrackCompressorParams(trackIdx, slotIdx, threshold, ratio, attack, release, makeup, knee);
 }
 
 JNIEXPORT void JNICALL
-Java_com_example_tracker_AudioEnginePlugin_nativeSetMasterCompressorParams(
+Java_com_metamind_stria_AudioEnginePlugin_nativeSetMasterCompressorParams(
         JNIEnv*, jobject, jlong ptr, jint slotIdx,
         jfloat threshold, jfloat ratio, jfloat attack, jfloat release, jfloat makeup, jint knee) {
     reinterpret_cast<AudioEngine*>(ptr)->setMasterCompressorParams(slotIdx, threshold, ratio, attack, release, makeup, knee);
 }
 
 JNIEXPORT jboolean JNICALL
-Java_com_example_tracker_AudioEnginePlugin_nativeSetSamplerSample(
+Java_com_metamind_stria_AudioEnginePlugin_nativeSetSamplerSample(
         JNIEnv* env, jobject, jlong ptr, jint slot, jstring path) {
     const char* cpath = env->GetStringUTFChars(path, nullptr);
     std::string spath = cpath ? cpath : "";
@@ -352,17 +352,17 @@ Java_com_example_tracker_AudioEnginePlugin_nativeSetSamplerSample(
 }
 
 JNIEXPORT void JNICALL
-Java_com_example_tracker_AudioEnginePlugin_nativeDispose(JNIEnv*, jobject, jlong ptr) {
+Java_com_metamind_stria_AudioEnginePlugin_nativeDispose(JNIEnv*, jobject, jlong ptr) {
     delete reinterpret_cast<AudioEngine*>(ptr);
 }
 
 JNIEXPORT void JNICALL
-Java_com_example_tracker_AudioEnginePlugin_nativeStartExportTap(JNIEnv*, jobject, jlong ptr) {
+Java_com_metamind_stria_AudioEnginePlugin_nativeStartExportTap(JNIEnv*, jobject, jlong ptr) {
     reinterpret_cast<AudioEngine*>(ptr)->startExportTap();
 }
 
 JNIEXPORT void JNICALL
-Java_com_example_tracker_AudioEnginePlugin_nativeSetSendRouting(
+Java_com_metamind_stria_AudioEnginePlugin_nativeSetSendRouting(
         JNIEnv* env, jobject, jlong ptr, jintArray routing) {
     const int len = env->GetArrayLength(routing);
     jint* data = env->GetIntArrayElements(routing, nullptr);
@@ -372,7 +372,7 @@ Java_com_example_tracker_AudioEnginePlugin_nativeSetSendRouting(
 }
 
 JNIEXPORT jfloatArray JNICALL
-Java_com_example_tracker_AudioEnginePlugin_nativeStopExportTap(
+Java_com_metamind_stria_AudioEnginePlugin_nativeStopExportTap(
         JNIEnv* env, jobject, jlong ptr, jintArray outSampleRate) {
     int sampleRate = 48000;
     std::vector<float> samples = reinterpret_cast<AudioEngine*>(ptr)->stopExportTap(sampleRate);
@@ -389,25 +389,25 @@ Java_com_example_tracker_AudioEnginePlugin_nativeStopExportTap(
 }
 
 JNIEXPORT void JNICALL
-Java_com_example_tracker_AudioEnginePlugin_nativeOpenRecordingStream(
+Java_com_metamind_stria_AudioEnginePlugin_nativeOpenRecordingStream(
         JNIEnv*, jobject, jlong ptr) {
     reinterpret_cast<AudioEngine*>(ptr)->openRecordingStream();
 }
 
 JNIEXPORT void JNICALL
-Java_com_example_tracker_AudioEnginePlugin_nativeCloseRecordingStream(
+Java_com_metamind_stria_AudioEnginePlugin_nativeCloseRecordingStream(
         JNIEnv*, jobject, jlong ptr) {
     reinterpret_cast<AudioEngine*>(ptr)->closeRecordingStream();
 }
 
 JNIEXPORT void JNICALL
-Java_com_example_tracker_AudioEnginePlugin_nativeStartRecording(
+Java_com_metamind_stria_AudioEnginePlugin_nativeStartRecording(
         JNIEnv*, jobject, jlong ptr) {
     reinterpret_cast<AudioEngine*>(ptr)->startRecording();
 }
 
 JNIEXPORT jfloatArray JNICALL
-Java_com_example_tracker_AudioEnginePlugin_nativeStopRecording(
+Java_com_metamind_stria_AudioEnginePlugin_nativeStopRecording(
         JNIEnv* env, jobject, jlong ptr, jintArray outSampleRate) {
     int sampleRate = 44100;
     std::vector<float> samples = reinterpret_cast<AudioEngine*>(ptr)->stopRecording(sampleRate);
@@ -426,19 +426,19 @@ Java_com_example_tracker_AudioEnginePlugin_nativeStopRecording(
 }
 
 JNIEXPORT jboolean JNICALL
-Java_com_example_tracker_AudioEnginePlugin_nativeIsVoicePlaying(
+Java_com_metamind_stria_AudioEnginePlugin_nativeIsVoicePlaying(
         JNIEnv*, jobject, jlong ptr, jint trackIdx) {
     return reinterpret_cast<AudioEngine*>(ptr)->isVoicePlaying(trackIdx);
 }
 
 JNIEXPORT jint JNICALL
-Java_com_example_tracker_AudioEnginePlugin_nativeGetVoiceEnvelopeStage(
+Java_com_metamind_stria_AudioEnginePlugin_nativeGetVoiceEnvelopeStage(
         JNIEnv*, jobject, jlong ptr, jint trackIdx) {
     return reinterpret_cast<AudioEngine*>(ptr)->getVoiceEnvelopeStage(trackIdx);
 }
 
 JNIEXPORT jfloatArray JNICALL
-Java_com_example_tracker_AudioEnginePlugin_nativeGetMeterValues(
+Java_com_metamind_stria_AudioEnginePlugin_nativeGetMeterValues(
         JNIEnv* env, jobject, jlong ptr) {
     const auto values = reinterpret_cast<AudioEngine*>(ptr)->getMeterValues();
     jfloatArray result = env->NewFloatArray(static_cast<jsize>(values.size()));

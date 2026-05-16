@@ -619,11 +619,13 @@ void AudioEngine::triggerRowLocked(const std::vector<int>& rowData) {
     mPendingArp.clear();
     mPendingDelays.clear();
     mPendingKills.clear();
-    // Current canonical stride is 25:
-    // [note, vol, pan, wave, instrumentType, 20 params].
-    // Fall back to legacy stride 24 / 23 / 18 / 4 packets.
+    // Current canonical stride is 36:
+    // [note, vol, pan, wave, instrumentType, 31 params].
+    // Fall back to legacy stride 34 / 25 / 24 / 23 / 18 / 4 packets.
     int stride = 4;
-    if      (rowData.size() % 25 == 0) stride = 25;
+    if      (rowData.size() % 36 == 0) stride = 36;
+    else if (rowData.size() % 34 == 0) stride = 34;
+    else if (rowData.size() % 25 == 0) stride = 25;
     else if (rowData.size() % 24 == 0) stride = 24;
     else if (rowData.size() % 23 == 0) stride = 23;
     else if (rowData.size() % 18 == 0) stride = 18;
@@ -684,7 +686,18 @@ void AudioEngine::triggerRowLocked(const std::vector<int>& rowData) {
         const int lfoDepth= (full24 || full23) ? rowData[pBase + 16] : kDefLfoDep;
         const int lfoTgt  = (full24 || full23) ? rowData[pBase + 17] : kDefLfoTgt;
         const int drive   = (full24 || full23) ? rowData[pBase + 18] : kDefDrive;
-        const int reverse = (stride == 25)    ? rowData[pBase + 19] : 0;
+        const int reverse     = (stride >= 25) ? rowData[pBase + 19] : 0;
+        const int osc1GainRaw = (stride >= 34) ? rowData[pBase + 20] : 255;
+        const int osc2OnRaw   = (stride >= 34) ? rowData[pBase + 21] : 0;
+        const int osc2WaveRaw = (stride >= 34) ? rowData[pBase + 22] : 0;
+        const int osc2DetRaw  = (stride >= 34) ? rowData[pBase + 23] : 128;
+        const int osc2GnRaw   = (stride >= 34) ? rowData[pBase + 24] : 0;
+        const int osc3OnRaw   = (stride >= 34) ? rowData[pBase + 25] : 0;
+        const int osc3WaveRaw = (stride >= 34) ? rowData[pBase + 26] : 0;
+        const int osc3DetRaw  = (stride >= 34) ? rowData[pBase + 27] : 128;
+        const int osc3GnRaw   = (stride >= 34) ? rowData[pBase + 28] : 0;
+        const int osc2FmRaw   = (stride >= 36) ? rowData[pBase + 29] : 0;
+        const int osc3FmRaw   = (stride >= 36) ? rowData[pBase + 30] : 0;
         auto& v = mVoices[i];
 
         // note encoding:
@@ -724,6 +737,17 @@ void AudioEngine::triggerRowLocked(const std::vector<int>& rowData) {
             v.lfoTarget   = std::clamp(lfoTgt, 0, 2);
         }
         v.drive = byteToNorm(drive);
+        v.osc1Gain       = byteToNorm(osc1GainRaw);
+        v.osc2On         = (osc2OnRaw != 0);
+        v.osc2Waveform   = std::clamp(osc2WaveRaw, 0, 5);
+        v.osc2DetuneNorm = byteToNorm(osc2DetRaw);
+        v.osc2Gain       = byteToNorm(osc2GnRaw);
+        v.osc3On         = (osc3OnRaw != 0);
+        v.osc3Waveform   = std::clamp(osc3WaveRaw, 0, 5);
+        v.osc3DetuneNorm = byteToNorm(osc3DetRaw);
+        v.osc3Gain       = byteToNorm(osc3GnRaw);
+        v.osc2FmDepth    = byteToNorm(osc2FmRaw);
+        v.osc3FmDepth    = byteToNorm(osc3FmRaw);
         v.karplusDecayNorm = byteToNorm(detune);
         v.karplusDampingNorm = byteToNorm(cutoff);
         v.karplusToneNorm = byteToNorm(resonance);
@@ -2418,7 +2442,63 @@ oboe::DataCallbackResult AudioEngine::onAudioReady(
                 }
             }
 
-            const double phaseInc = twoPi * std::max(1.0f, voiceFreq) / sampleRate;
+            // ── OSC 3: compute first (FM source for OSC 2) ─────────────────────────
+            float osc3Raw = 0.0f;
+            if (v.osc3On) {
+                const float det3 = (v.osc3DetuneNorm - 0.5f) * 24.0f;
+                const double freq3 = static_cast<double>(std::max(1.0f, voiceFreq)) *
+                    std::pow(2.0, static_cast<double>(det3) / 12.0);
+                const double inc3 = twoPi * freq3 / sampleRate;
+                const float t3 = static_cast<float>(v.osc3Phase / twoPi);
+                switch (v.osc3Waveform) {
+                    case 1: osc3Raw = 1.0f - 4.0f * std::fabs(t3 - 0.5f); break;
+                    case 2: osc3Raw = 2.0f * t3 - 1.0f; break;
+                    case 3: osc3Raw = (t3 < 0.5f) ? 1.0f : -1.0f; break;
+                    case 4: osc3Raw = (t3 < 0.25f) ? 1.0f : -1.0f; break;
+                    case 5: {
+                        uint32_t ns3 = (v.noiseState ^ 0x5A5A5A5Au) * 22695477u + 1u;
+                        osc3Raw = (static_cast<float>((ns3 >> 8) & 0xFFFFu) / 32767.5f) - 1.0f;
+                        break;
+                    }
+                    default: osc3Raw = static_cast<float>(std::sin(v.osc3Phase)); break;
+                }
+                v.osc3Phase += inc3;
+                if (v.osc3Phase >= twoPi) v.osc3Phase -= twoPi;
+            }
+
+            // ── OSC 2: FM-modulated by OSC 3, FM source for OSC 1 ───────────────
+            float osc2Raw = 0.0f;
+            if (v.osc2On) {
+                const float det2 = (v.osc2DetuneNorm - 0.5f) * 24.0f;
+                float freq2 = std::max(1.0f, voiceFreq) *
+                    std::pow(2.0f, det2 / 12.0f);
+                if (v.osc3On && v.osc3FmDepth > 0.001f) {
+                    freq2 = std::max(1.0f, freq2 + osc3Raw * v.osc3FmDepth * freq2 * 3.0f);
+                }
+                const double inc2 = twoPi * static_cast<double>(freq2) / sampleRate;
+                const float t2 = static_cast<float>(v.osc2Phase / twoPi);
+                switch (v.osc2Waveform) {
+                    case 1: osc2Raw = 1.0f - 4.0f * std::fabs(t2 - 0.5f); break;
+                    case 2: osc2Raw = 2.0f * t2 - 1.0f; break;
+                    case 3: osc2Raw = (t2 < 0.5f) ? 1.0f : -1.0f; break;
+                    case 4: osc2Raw = (t2 < 0.25f) ? 1.0f : -1.0f; break;
+                    case 5: {
+                        uint32_t ns2 = (v.noiseState ^ 0xA5A5A5A5u) * 1664525u + 1013904223u;
+                        osc2Raw = (static_cast<float>((ns2 >> 8) & 0xFFFFu) / 32767.5f) - 1.0f;
+                        break;
+                    }
+                    default: osc2Raw = static_cast<float>(std::sin(v.osc2Phase)); break;
+                }
+                v.osc2Phase += inc2;
+                if (v.osc2Phase >= twoPi) v.osc2Phase -= twoPi;
+            }
+
+            // ── OSC 1: FM-modulated by OSC 2 ───────────────────────────────
+            float fm1Freq = voiceFreq;
+            if (v.osc2On && v.osc2FmDepth > 0.001f) {
+                fm1Freq = std::max(1.0f, voiceFreq + osc2Raw * v.osc2FmDepth * voiceFreq * 3.0f);
+            }
+            const double phaseInc = twoPi * static_cast<double>(std::max(1.0f, fm1Freq)) / sampleRate;
             const float t = static_cast<float>(v.phase / twoPi); // [0,1)
             float osc = 0.0f;
             switch (v.waveform) {
@@ -2445,7 +2525,11 @@ oboe::DataCallbackResult AudioEngine::onAudioReady(
                     break;
             }
 
-            float dry = osc * v.gain * v.envLevel * v.level * v.instrumentVolume * 0.15f * lfoAmpMod;
+            // Mix OSC 1 + OSC 2 + OSC 3.
+            const float oscMix = osc * v.osc1Gain
+                + (v.osc2On ? osc2Raw * v.osc2Gain : 0.0f)
+                + (v.osc3On ? osc3Raw * v.osc3Gain : 0.0f);
+            float dry = oscMix * v.gain * v.envLevel * v.level * v.instrumentVolume * 0.15f * lfoAmpMod;
 
             // Drive: boost then soft-clip (Doidic formula: x/(1+|x|)).
             if (v.drive > 0.001f) {

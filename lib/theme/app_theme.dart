@@ -101,8 +101,8 @@ const TrackerPalette kPaletteGreen = TrackerPalette(
   name: 'Green',
   previewColor: Color(0xFF55FF99),
   bgColor: Color(0xFF010101),
-  bgBeat: Color(0xFF0A0A0A),
-  bgBar: Color(0xFF141414),
+  bgBeat: Color(0xFF001A0A),
+  bgBar: Color(0xFF002E14),
   bgSelected: Color(0xFF002010),
   bgPlayhead: Color(0xFF003A1C),
   bgHeader: Color(0xFF0A0A0A),
@@ -129,8 +129,8 @@ const TrackerPalette kPaletteRed = TrackerPalette(
   name: 'Red',
   previewColor: Color(0xFFFF6688),
   bgColor: Color(0xFF010101),
-  bgBeat: Color(0xFF0A0A0A),
-  bgBar: Color(0xFF141414),
+  bgBeat: Color(0xFF1A000C),
+  bgBar: Color(0xFF2E0016),
   bgSelected: Color(0xFF300008),
   bgPlayhead: Color(0xFF500012),
   bgHeader: Color(0xFF0A0A0A),
@@ -157,8 +157,8 @@ const TrackerPalette kPalettePurple = TrackerPalette(
   name: 'Purple',
   previewColor: Color(0xFFBB66FF),
   bgColor: Color(0xFF010101),
-  bgBeat: Color(0xFF0A0A0A),
-  bgBar: Color(0xFF141414),
+  bgBeat: Color(0xFF0E001A),
+  bgBar: Color(0xFF1A002E),
   bgSelected: Color(0xFF1A0038),
   bgPlayhead: Color(0xFF2E0060),
   bgHeader: Color(0xFF0A0A0A),
@@ -185,8 +185,8 @@ const TrackerPalette kPaletteAmber = TrackerPalette(
   name: 'Amber',
   previewColor: Color(0xFFFFCC44),
   bgColor: Color(0xFF010101),
-  bgBeat: Color(0xFF0A0A0A),
-  bgBar: Color(0xFF141414),
+  bgBeat: Color(0xFF1A0D00),
+  bgBar: Color(0xFF2E1800),
   bgSelected: Color(0xFF2A1400),
   bgPlayhead: Color(0xFF452200),
   bgHeader: Color(0xFF0A0A0A),
@@ -213,8 +213,8 @@ const TrackerPalette kPaletteMono = TrackerPalette(
   name: 'Mono',
   previewColor: Color(0xFFDDDDDD),
   bgColor: Color(0xFF010101),
-  bgBeat: Color(0xFF0A0A0A),
-  bgBar: Color(0xFF141414),
+  bgBeat: Color(0xFF141414),
+  bgBar: Color(0xFF222222),
   bgSelected: Color(0xFF252525),
   bgPlayhead: Color(0xFF383838),
   bgHeader: Color(0xFF0A0A0A),
@@ -359,6 +359,8 @@ TextStyle columnStyle(CellColumn col) =>
 
 Color rowBgColor(int row, bool isSelected, bool isPlayhead, int linesPerBeat) {
   if (isPlayhead) return kBgPlayhead;
+  if (linesPerBeat > 0 && row % (linesPerBeat * 4) == 0) return kBgBar;
+  if (linesPerBeat > 0 && row % linesPerBeat == 0) return kBgBeat;
   return kBgColor;
 }
 

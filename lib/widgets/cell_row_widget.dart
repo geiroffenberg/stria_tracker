@@ -62,6 +62,8 @@ class CellRowWidget extends StatelessWidget {
         color: bg,
         border: isRowSelected
             ? Border.all(color: kColSelection, width: 1.5)
+            : isBeatStart && row > 0
+            ? Border(top: BorderSide(color: kColAccent.withAlpha(60), width: 1))
             : null,
       ),
       child: Row(

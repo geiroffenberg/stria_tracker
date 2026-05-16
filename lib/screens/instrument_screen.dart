@@ -438,9 +438,9 @@ class _SimpleSynthEditor extends StatelessWidget {
             ),
           ),
 
-          // ── Oscillator
+          // ── Oscillator 1
           _Section(
-            title: 'OSCILLATOR',
+            title: 'OSC 1',
             child: Column(
               children: [
                 _WaveformPicker(
@@ -451,16 +451,169 @@ class _SimpleSynthEditor extends StatelessWidget {
                   },
                 ),
                 const SizedBox(height: 8),
-                _Knob(
-                  label: 'DETUNE',
-                  value: (p.detune + 1) / 2,
-                  display: '${(p.detune * 12).toStringAsFixed(1)} st',
-                  onChanged: (v) {
-                    p.detune = (v * 2) - 1;
-                    state.instrumentParamsChanged();
-                  },
+                Row(
+                  children: [
+                    Expanded(
+                      child: _Knob(
+                        label: 'DETUNE',
+                        value: (p.detune + 1) / 2,
+                        display: '${(p.detune * 12).toStringAsFixed(1)} st',
+                        onChanged: (v) {
+                          p.detune = (v * 2) - 1;
+                          state.instrumentParamsChanged();
+                        },
+                      ),
+                    ),
+                    Expanded(
+                      child: _Knob(
+                        label: 'GAIN',
+                        value: p.osc1Gain,
+                        display: '${(p.osc1Gain * 100).round()}%',
+                        onChanged: (v) {
+                          p.osc1Gain = v;
+                          state.instrumentParamsChanged();
+                        },
+                      ),
+                    ),
+                  ],
                 ),
               ],
+            ),
+          ),
+
+          // ── Oscillator 2
+          _Section(
+            title: 'OSC 2',
+            trailing: _OscOnOffButton(
+              on: p.osc2On,
+              onTap: () {
+                p.osc2On = !p.osc2On;
+                state.instrumentParamsChanged();
+              },
+            ),
+            child: IgnorePointer(
+              ignoring: !p.osc2On,
+              child: AnimatedOpacity(
+                opacity: p.osc2On ? 1.0 : 0.35,
+                duration: const Duration(milliseconds: 150),
+                child: Column(
+                  children: [
+                    _WaveformPicker(
+                      value: p.osc2Wave,
+                      onChanged: (w) {
+                        p.osc2Wave = w;
+                        state.instrumentParamsChanged();
+                      },
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _Knob(
+                            label: 'DETUNE',
+                            value: (p.osc2Detune + 1) / 2,
+                            display: '${(p.osc2Detune * 12).toStringAsFixed(1)} st',
+                            onChanged: (v) {
+                              p.osc2Detune = (v * 2) - 1;
+                              state.instrumentParamsChanged();
+                            },
+                          ),
+                        ),
+                        Expanded(
+                          child: _Knob(
+                            label: 'GAIN',
+                            value: p.osc2Gain,
+                            display: '${(p.osc2Gain * 100).round()}%',
+                            onChanged: (v) {
+                              p.osc2Gain = v;
+                              state.instrumentParamsChanged();
+                            },
+                          ),
+                        ),
+                        Expanded(
+                          child: _Knob(
+                            label: 'FM→1',
+                            value: p.osc2FmDepth,
+                            display: '${(p.osc2FmDepth * 100).round()}%',
+                            onChanged: (v) {
+                              p.osc2FmDepth = v;
+                              state.instrumentParamsChanged();
+                            },
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+
+          // ── Oscillator 3
+          _Section(
+            title: 'OSC 3',
+            trailing: _OscOnOffButton(
+              on: p.osc3On,
+              onTap: () {
+                p.osc3On = !p.osc3On;
+                state.instrumentParamsChanged();
+              },
+            ),
+            child: IgnorePointer(
+              ignoring: !p.osc3On,
+              child: AnimatedOpacity(
+                opacity: p.osc3On ? 1.0 : 0.35,
+                duration: const Duration(milliseconds: 150),
+                child: Column(
+                  children: [
+                    _WaveformPicker(
+                      value: p.osc3Wave,
+                      onChanged: (w) {
+                        p.osc3Wave = w;
+                        state.instrumentParamsChanged();
+                      },
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _Knob(
+                            label: 'DETUNE',
+                            value: (p.osc3Detune + 1) / 2,
+                            display: '${(p.osc3Detune * 12).toStringAsFixed(1)} st',
+                            onChanged: (v) {
+                              p.osc3Detune = (v * 2) - 1;
+                              state.instrumentParamsChanged();
+                            },
+                          ),
+                        ),
+                        Expanded(
+                          child: _Knob(
+                            label: 'GAIN',
+                            value: p.osc3Gain,
+                            display: '${(p.osc3Gain * 100).round()}%',
+                            onChanged: (v) {
+                              p.osc3Gain = v;
+                              state.instrumentParamsChanged();
+                            },
+                          ),
+                        ),
+                        Expanded(
+                          child: _Knob(
+                            label: 'FM→2',
+                            value: p.osc3FmDepth,
+                            display: '${(p.osc3FmDepth * 100).round()}%',
+                            onChanged: (v) {
+                              p.osc3FmDepth = v;
+                              state.instrumentParamsChanged();
+                            },
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
             ),
           ),
 
@@ -2535,7 +2688,8 @@ class _SampleWaveformPainter extends CustomPainter {
 class _Section extends StatelessWidget {
   final String title;
   final Widget child;
-  const _Section({required this.title, required this.child});
+  final Widget? trailing;
+  const _Section({required this.title, required this.child, this.trailing});
 
   @override
   Widget build(BuildContext context) {
@@ -2552,16 +2706,51 @@ class _Section extends StatelessWidget {
         children: [
           Padding(
             padding: const EdgeInsets.only(bottom: 6),
-            child: Text(
-              title,
-              style: kStyleHeader.copyWith(
-                color: kColAccent,
-                letterSpacing: 1.2,
-              ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    title,
+                    style: kStyleHeader.copyWith(
+                      color: kColAccent,
+                      letterSpacing: 1.2,
+                    ),
+                  ),
+                ),
+                if (trailing != null) trailing!,
+              ],
             ),
           ),
           child,
         ],
+      ),
+    );
+  }
+}
+
+class _OscOnOffButton extends StatelessWidget {
+  final bool on;
+  final VoidCallback onTap;
+  const _OscOnOffButton({required this.on, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
+        decoration: BoxDecoration(
+          color: on ? kColAccent.withAlpha(40) : Colors.transparent,
+          border: Border.all(color: on ? kColAccent : kColInactive),
+          borderRadius: BorderRadius.circular(3),
+        ),
+        child: Text(
+          on ? 'ON' : 'OFF',
+          style: kStyleHeader.copyWith(
+            color: on ? kColAccent : kColInactive,
+            letterSpacing: 1.2,
+          ),
+        ),
       ),
     );
   }
@@ -2776,8 +2965,8 @@ class _KnobPainter extends CustomPainter {
         ..strokeWidth = 1.2,
     );
 
-    // -135° .. +135° sweep (in screen space, with 0° at +x axis).
-    final startAngle = math.pi * 3 / 4 + math.pi / 2; // bottom-left
+    // 0 value at 12 o'clock, sweeps 270° clockwise to 9 o'clock at max.
+    const startAngle = -math.pi / 2; // straight up
     const sweep = math.pi * 3 / 2;
     final angle = startAngle + sweep * value;
 

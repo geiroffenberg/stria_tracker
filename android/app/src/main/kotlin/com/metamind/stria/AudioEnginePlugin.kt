@@ -1,4 +1,4 @@
-package com.example.tracker
+package com.metamind.stria
 
 import io.flutter.embedding.engine.plugins.FlutterPlugin
 import io.flutter.plugin.common.MethodCall
