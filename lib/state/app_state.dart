@@ -152,6 +152,10 @@ class AppState extends ChangeNotifier {
 
   Map<String, dynamic> _insertSnapshot = {};
 
+  // Per-pattern "last" values for the pattern editor.
+  // Key: patternIndex; Value: (lastNote, lastVolume, lastInstrument, lastFx, lastFxValue)
+  final Map<int, ({String note, int volume, int instrument, int fxCommand, int fxValue})> _patternLastValues = {};
+
   int _songStateVersion = 0;
 
   int _currentPatternIndex = 0;
@@ -448,6 +452,98 @@ class AppState extends ChangeNotifier {
   PatternModel get currentPattern => song.patterns[_currentPatternIndex];
   TrackModel get currentTrack => currentPattern.tracks[_currentTrackIndex];
   InstrumentModel get currentInstrument => instruments[_currentInstrumentIndex];
+
+  // ─ Pattern Editor "Remember Last" Values ────────────────────────────────
+  
+  /// Get the last note value for the current pattern (default: "C4")
+  String get lastNote {
+    final last = _patternLastValues[_currentPatternIndex];
+    return last?.note ?? 'C4';
+  }
+
+  /// Get the last instrument value for the current pattern (default: 01)
+  int get lastInstrument {
+    final last = _patternLastValues[_currentPatternIndex];
+    return last?.instrument ?? 1;
+  }
+
+  /// Get the last volume value for the current pattern (default: 99)
+  int get lastVolume {
+    final last = _patternLastValues[_currentPatternIndex];
+    return last?.volume ?? 99;
+  }
+
+  /// Get the last FX command value for the current pattern (default: ARP)
+  int get lastFxCommand {
+    final last = _patternLastValues[_currentPatternIndex];
+    return last?.fxCommand ?? kFxARP;
+  }
+
+  /// Get the last FX value for the current pattern (default: 00)
+  int get lastFxValue {
+    final last = _patternLastValues[_currentPatternIndex];
+    return last?.fxValue ?? 0;
+  }
+
+  /// Update the last note value for the current pattern
+  void updateLastNote(String note) {
+    final current = _patternLastValues[_currentPatternIndex];
+    _patternLastValues[_currentPatternIndex] = (
+      note: note,
+      volume: current?.volume ?? 99,
+      instrument: current?.instrument ?? 1,
+      fxCommand: current?.fxCommand ?? kFxARP,
+      fxValue: current?.fxValue ?? 0,
+    );
+  }
+
+  /// Update the last instrument value for the current pattern
+  void updateLastInstrument(int instrument) {
+    final current = _patternLastValues[_currentPatternIndex];
+    _patternLastValues[_currentPatternIndex] = (
+      note: current?.note ?? 'C4',
+      volume: current?.volume ?? 99,
+      instrument: instrument,
+      fxCommand: current?.fxCommand ?? kFxARP,
+      fxValue: current?.fxValue ?? 0,
+    );
+  }
+
+  /// Update the last volume value for the current pattern
+  void updateLastVolume(int volume) {
+    final current = _patternLastValues[_currentPatternIndex];
+    _patternLastValues[_currentPatternIndex] = (
+      note: current?.note ?? 'C4',
+      volume: volume,
+      instrument: current?.instrument ?? 1,
+      fxCommand: current?.fxCommand ?? kFxARP,
+      fxValue: current?.fxValue ?? 0,
+    );
+  }
+
+  /// Update the last FX command value for the current pattern
+  void updateLastFxCommand(int command) {
+    final current = _patternLastValues[_currentPatternIndex];
+    _patternLastValues[_currentPatternIndex] = (
+      note: current?.note ?? 'C4',
+      volume: current?.volume ?? 99,
+      instrument: current?.instrument ?? 1,
+      fxCommand: command,
+      fxValue: current?.fxValue ?? 0,
+    );
+  }
+
+  /// Update the last FX value for the current pattern
+  void updateLastFxValue(int value) {
+    final current = _patternLastValues[_currentPatternIndex];
+    _patternLastValues[_currentPatternIndex] = (
+      note: current?.note ?? 'C4',
+      volume: current?.volume ?? 99,
+      instrument: current?.instrument ?? 1,
+      fxCommand: current?.fxCommand ?? kFxARP,
+      fxValue: value,
+    );
+  }
 
   double get bpm => currentPattern.bpm ?? 120.0;
   int get beats => currentPattern.beatCount;
@@ -1461,11 +1557,29 @@ class AppState extends ChangeNotifier {
       track.maxValue(column),
     );
     track.writeColumnValue(row, column, clamped);
+    
+    // Remember the last value set
+    if (column == CellColumn.note) {
+      // Note nudging is handled via setNote, but handle it here for completeness
+      final cell = track.cells[row];
+      if (cell.note.isNote) {
+        updateLastNote(cell.note.display);
+      }
+    } else if (column == CellColumn.instrument) {
+      updateLastInstrument(clamped);
+    } else if (column == CellColumn.fx0cmd || column == CellColumn.fx1cmd || column == CellColumn.fx2cmd) {
+      updateLastFxCommand(clamped);
+    } else if (column == CellColumn.fx0val || column == CellColumn.fx1val || column == CellColumn.fx2val) {
+      updateLastFxValue(clamped);
+    }
     notifyListeners();
   }
 
   void setNote(int row, NoteValue note) {
     currentTrack.setNote(row, note);
+    if (note.isNote) {
+      updateLastNote(note.display);
+    }
     notifyListeners();
   }
 
@@ -1525,31 +1639,84 @@ class AppState extends ChangeNotifier {
     final track = currentTrack;
     switch (column) {
       case CellColumn.note:
-        track.setNote(row, NoteValue.fromScrollIndex(49)); // C-4
+        // Use the last note if available, otherwise default to C4
+        final noteDisplay = lastNote;
+        final noteValue = _parseNoteDisplay(noteDisplay);
+        track.setNote(row, noteValue);
       case CellColumn.instrument:
+        // Use the last instrument value
         track.writeColumnValue(
           row,
           column,
-          _defaultInstrumentForRow(track, row),
+          lastInstrument,
         );
       case CellColumn.volume:
         track.writeColumnValue(row, column, 80);
       case CellColumn.fx0cmd:
       case CellColumn.fx1cmd:
       case CellColumn.fx2cmd:
-        track.writeColumnValue(row, column, 0x00);
+        // Use the last FX command
+        track.writeColumnValue(row, column, lastFxCommand);
       case CellColumn.fx0val:
       case CellColumn.fx1val:
       case CellColumn.fx2val:
+        // Use the last FX value
         final fxIndex = column == CellColumn.fx0val
             ? 0
             : column == CellColumn.fx1val
             ? 1
             : 2;
         final cmd = track.cells[row].fxSlots[fxIndex].command;
-        track.writeColumnValue(row, column, cmd == kFxPAN ? 50 : 0);
+        // If using PAN effect and no last FX value set, default to 50 (center)
+        final defaultVal = cmd == kFxPAN && lastFxValue == 0 ? 50 : lastFxValue;
+        track.writeColumnValue(row, column, defaultVal);
     }
     notifyListeners();
+  }
+
+  /// Parse a note display string (e.g. "C4", "D#4", "A-1") to a NoteValue
+  NoteValue _parseNoteDisplay(String display) {
+    display = display.trim().toUpperCase();
+    if (display == '---') return NoteValue.empty;
+    if (display == 'OFF') return NoteValue.off;
+
+    // Parse format: "N-O" (natural) or "N#O" (sharp) where N=note, O=octave
+    // Examples: "C-4", "C#4", "D-0", "B-9"
+    String notePart = '';
+    String octavePart = '';
+
+    // Handle both formats: "C-4" and "C#4"
+    if (display.contains('-')) {
+      final parts = display.split('-');
+      if (parts.length == 2) {
+        notePart = parts[0];
+        octavePart = parts[1];
+      }
+    } else {
+      // Format like "C#4" - extract note and octave
+      if (display.length >= 2) {
+        if (display.contains('#')) {
+          final idx = display.indexOf('#');
+          notePart = display.substring(0, idx + 1);
+          octavePart = display.substring(idx + 1);
+        } else {
+          notePart = display.substring(0, 1);
+          octavePart = display.substring(1);
+        }
+      }
+    }
+
+    const noteNames = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+    final noteIdx = noteNames.indexOf(notePart);
+    final octave = int.tryParse(octavePart);
+
+    if (noteIdx >= 0 && octave != null && octave >= 0 && octave <= 9) {
+      final scrollIndex = 1 + (octave * 12) + noteIdx;
+      return NoteValue.fromScrollIndex(scrollIndex);
+    }
+
+    // Default to C4 if parsing fails
+    return NoteValue.fromScrollIndex(49);
   }
 
   /// Clears a single column value (sets to empty/null). Ignored for fx val columns.

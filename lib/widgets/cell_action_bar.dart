@@ -323,7 +323,18 @@ class _NumericActions extends StatelessWidget {
     final track = state.currentTrack;
     final maxV = track.maxValue(column);
     final minV = track.minValue(column);
-    track.writeColumnValue(row, column, v.clamp(minV, maxV));
+    final clamped = v.clamp(minV, maxV);
+    track.writeColumnValue(row, column, clamped);
+    
+    // Remember the last value set based on column type
+    if (column == CellColumn.instrument) {
+      state.updateLastInstrument(clamped);
+    } else if (column == CellColumn.volume) {
+      state.updateLastVolume(clamped);
+    } else if (column == CellColumn.fx0val || column == CellColumn.fx1val || column == CellColumn.fx2val) {
+      state.updateLastFxValue(clamped);
+    }
+    
     state.instrumentParamsChanged();
   }
 
@@ -660,6 +671,7 @@ class _FxCmdActions extends StatelessWidget {
         return GestureDetector(
           onTap: () {
             state.currentTrack.writeColumnValue(row, column, cmd);
+            state.updateLastFxCommand(cmd);
             state.instrumentParamsChanged();
           },
           child: IntrinsicWidth(
@@ -701,6 +713,7 @@ class _FxCmdActions extends StatelessWidget {
         return GestureDetector(
           onTap: () {
             state.currentTrack.writeColumnValue(row, column, cmd);
+            state.updateLastFxCommand(cmd);
             state.instrumentParamsChanged();
           },
           child: IntrinsicWidth(

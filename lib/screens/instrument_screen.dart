@@ -444,6 +444,17 @@ class _SimpleSynthEditor extends StatelessWidget {
             title: 'OSC 1',
             child: Column(
               children: [
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 6),
+                  child: Text(
+                    'WAVEFORM',
+                    style: kStyleBase.copyWith(
+                      fontSize: 10,
+                      color: kColInactive,
+                      letterSpacing: 0.5,
+                    ),
+                  ),
+                ),
                 _WaveformPicker(
                   value: p.wave,
                   onChanged: (w) {
@@ -464,7 +475,7 @@ class _SimpleSynthEditor extends StatelessWidget {
                   children: [
                     Expanded(
                       child: _Knob(
-                        label: 'DETUNE',
+                        label: 'OSC1 DETUNE',
                         value: (p.detune + 1) / 2,
                         display: '${(p.detune * 12).toStringAsFixed(1)} st',
                         onChanged: (v) {
@@ -475,7 +486,7 @@ class _SimpleSynthEditor extends StatelessWidget {
                     ),
                     Expanded(
                       child: _Knob(
-                        label: 'GAIN',
+                        label: 'OSC1 GAIN',
                         value: p.osc1Gain,
                         display: '${(p.osc1Gain * 100).round()}%',
                         onChanged: (v) {
@@ -507,6 +518,17 @@ class _SimpleSynthEditor extends StatelessWidget {
                 duration: const Duration(milliseconds: 150),
                 child: Column(
                   children: [
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 6),
+                      child: Text(
+                        'WAVEFORM',
+                        style: kStyleBase.copyWith(
+                          fontSize: 10,
+                          color: kColInactive,
+                          letterSpacing: 0.5,
+                        ),
+                      ),
+                    ),
                     _WaveformPicker(
                       value: p.osc2Wave,
                       onChanged: (w) {
@@ -527,7 +549,7 @@ class _SimpleSynthEditor extends StatelessWidget {
                       children: [
                         Expanded(
                           child: _Knob(
-                            label: 'DETUNE',
+                            label: 'OSC2 DETUNE',
                             value: (p.osc2Detune + 1) / 2,
                             display:
                                 '${(p.osc2Detune * 12).toStringAsFixed(1)} st',
@@ -539,7 +561,7 @@ class _SimpleSynthEditor extends StatelessWidget {
                         ),
                         Expanded(
                           child: _Knob(
-                            label: 'GAIN',
+                            label: 'OSC2 GAIN',
                             value: p.osc2Gain,
                             display: '${(p.osc2Gain * 100).round()}%',
                             onChanged: (v) {
@@ -550,7 +572,7 @@ class _SimpleSynthEditor extends StatelessWidget {
                         ),
                         Expanded(
                           child: _Knob(
-                            label: 'FM→1',
+                            label: 'OSC2 FM',
                             value: p.osc2FmDepth,
                             display: '${(p.osc2FmDepth * 100).round()}%',
                             onChanged: (v) {
@@ -584,6 +606,17 @@ class _SimpleSynthEditor extends StatelessWidget {
                 duration: const Duration(milliseconds: 150),
                 child: Column(
                   children: [
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 6),
+                      child: Text(
+                        'WAVEFORM',
+                        style: kStyleBase.copyWith(
+                          fontSize: 10,
+                          color: kColInactive,
+                          letterSpacing: 0.5,
+                        ),
+                      ),
+                    ),
                     _WaveformPicker(
                       value: p.osc3Wave,
                       onChanged: (w) {
@@ -604,7 +637,7 @@ class _SimpleSynthEditor extends StatelessWidget {
                       children: [
                         Expanded(
                           child: _Knob(
-                            label: 'DETUNE',
+                            label: 'OSC3 DETUNE',
                             value: (p.osc3Detune + 1) / 2,
                             display:
                                 '${(p.osc3Detune * 12).toStringAsFixed(1)} st',
@@ -616,7 +649,7 @@ class _SimpleSynthEditor extends StatelessWidget {
                         ),
                         Expanded(
                           child: _Knob(
-                            label: 'GAIN',
+                            label: 'OSC3 GAIN',
                             value: p.osc3Gain,
                             display: '${(p.osc3Gain * 100).round()}%',
                             onChanged: (v) {
@@ -627,7 +660,7 @@ class _SimpleSynthEditor extends StatelessWidget {
                         ),
                         Expanded(
                           child: _Knob(
-                            label: 'FM→2',
+                            label: 'OSC3 FM',
                             value: p.osc3FmDepth,
                             display: '${(p.osc3FmDepth * 100).round()}%',
                             onChanged: (v) {

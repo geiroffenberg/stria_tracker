@@ -387,6 +387,10 @@ class _MiniCellState extends State<_MiniCell> {
         if (steps != 0) {
           _dragAccum -= steps * _pixelsPerStep;
           state.nudgeCell(widget.row, widget.column, steps);
+          // Preview note when editing note cells
+          if (widget.column == CellColumn.note) {
+            state.previewCellNoteOneShot(widget.row);
+          }
         }
       },
       child: Container(

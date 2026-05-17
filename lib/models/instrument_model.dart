@@ -300,9 +300,9 @@ class SimpleSynthParams {
   );
 
   /// Highest Pxx param index supported for synth instruments.
-  static const int maxParamIndex = 13;
+  static const int maxParamIndex = 21;
 
-  /// Display name for synth Pxx param slot [idx] (0=reset, 1–13=params).
+  /// Display name for synth Pxx param slot [idx] (0=reset, 1–21=params).
   static String paramName(int idx) {
     switch (idx) {
       case 0:
@@ -324,7 +324,7 @@ class SimpleSynthParams {
       case 8:
         return 'Drive';
       case 9:
-        return 'Detune';
+        return 'OSC1 Detune';
       case 10:
         return 'Glide';
       case 11:
@@ -332,7 +332,23 @@ class SimpleSynthParams {
       case 12:
         return 'LFO Depth';
       case 13:
-        return 'Waveform';
+        return 'OSC1 Waveform';
+      case 14:
+        return 'OSC2 Waveform';
+      case 15:
+        return 'OSC2 Detune';
+      case 16:
+        return 'OSC2 Gain';
+      case 17:
+        return 'OSC2 FM';
+      case 18:
+        return 'OSC3 Waveform';
+      case 19:
+        return 'OSC3 Detune';
+      case 20:
+        return 'OSC3 Gain';
+      case 21:
+        return 'OSC3 FM';
       default:
         return 'P${idx.toString().padLeft(2, '0')}';
     }
@@ -360,7 +376,7 @@ class SimpleSynthParams {
       case 8:
         return 'P08 Drive — saturation (00=clean, 99=full drive)';
       case 9:
-        return 'P09 Detune — pitch offset (00=−12st, 50=centre, 99=+12st)';
+        return 'P09 OSC1 Detune — pitch offset (00=−12st, 50=centre, 99=+12st)';
       case 10:
         return 'P10 Glide — portamento time (00=instant, 99=slowest)';
       case 11:
@@ -368,7 +384,23 @@ class SimpleSynthParams {
       case 12:
         return 'P12 LFO Depth — LFO intensity (00=off, 99=max)';
       case 13:
-        return 'P13 Waveform — 00=sine 01=tri 02=saw 03=sqr 04=pul 05=nse';
+        return 'P13 OSC1 Waveform — 00=sine 01=tri 02=saw 03=sqr 04=pul 05=nse';
+      case 14:
+        return 'P14 OSC2 Waveform — 00=sine 01=tri 02=saw 03=sqr 04=pul 05=nse';
+      case 15:
+        return 'P15 OSC2 Detune — pitch offset (00=−12st, 50=centre, 99=+12st)';
+      case 16:
+        return 'P16 OSC2 Gain — output level (00=silent, 99=full)';
+      case 17:
+        return 'P17 OSC2 FM — FM depth modulating OSC1 (00=off, 99=full)';
+      case 18:
+        return 'P18 OSC3 Waveform — 00=sine 01=tri 02=saw 03=sqr 04=pul 05=nse';
+      case 19:
+        return 'P19 OSC3 Detune — pitch offset (00=−12st, 50=centre, 99=+12st)';
+      case 20:
+        return 'P20 OSC3 Gain — output level (00=silent, 99=full)';
+      case 21:
+        return 'P21 OSC3 FM — FM depth modulating OSC2 (00=off, 99=full)';
       default:
         return '';
     }
