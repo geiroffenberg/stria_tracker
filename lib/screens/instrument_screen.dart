@@ -6,6 +6,8 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:file_picker/file_picker.dart';
 import '../audio/audio_engine.dart';
 import '../audio/wav_encoder.dart';
 import '../models/instrument_model.dart';
@@ -1875,6 +1877,23 @@ class _SamplerEditorState extends State<_SamplerEditor>
     }
   }
 
+  Future<void> _loadSamplerFromVideo(BuildContext context) async {
+    // Video loading requires FFmpeg which has platform-specific build requirements.
+    // For now, show a user-friendly message about the setup needed.
+    if (!mounted) return;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text(
+          'Video loading requires FFmpeg setup. '
+          'Please convert video files to WAV using external tools, '
+          'then use LOAD SAMPLE.',
+        ),
+        duration: Duration(seconds: 4),
+      ),
+    );
+  }
+
   Future<String?> _saveRecordedSample(
     List<double> samples,
     int sampleRate,
@@ -2372,34 +2391,45 @@ class _SamplerEditorState extends State<_SamplerEditor>
         children: [
           _Section(
             title: 'SAMPLE',
-            child: Row(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Expanded(
-                  child: ElevatedButton.icon(
-                    onPressed: _busy ? null : () => _showSampleBrowser(context),
-                    icon: const Icon(Icons.folder_open),
-                    label: const Text('LOAD SAMPLE'),
-                  ),
+                Row(
+                  children: [
+                    Expanded(
+                      child: ElevatedButton.icon(
+                        onPressed: _busy ? null : () => _showSampleBrowser(context),
+                        icon: const Icon(Icons.folder_open),
+                        label: const Text('LOAD SAMPLE'),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: ElevatedButton.icon(
+                        onPressed: (_busy || isPreviewing)
+                            ? null
+                            : () => _showRecordingWindow(context),
+                        icon: const Icon(Icons.mic),
+                        label: const Text('RECORD'),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    IconButton(
+                      tooltip: 'Delete sample',
+                      onPressed: (_busy || p.samplePath == null)
+                          ? null
+                          : () {
+                              state.clearCurrentSamplerSample();
+                            },
+                      icon: const Icon(Icons.delete_outline),
+                    ),
+                  ],
                 ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: ElevatedButton.icon(
-                    onPressed: (_busy || isPreviewing)
-                        ? null
-                        : () => _showRecordingWindow(context),
-                    icon: const Icon(Icons.mic),
-                    label: const Text('RECORD'),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                IconButton(
-                  tooltip: 'Delete sample',
-                  onPressed: (_busy || p.samplePath == null)
-                      ? null
-                      : () {
-                          state.clearCurrentSamplerSample();
-                        },
-                  icon: const Icon(Icons.delete_outline),
+                const SizedBox(height: 8),
+                ElevatedButton.icon(
+                  onPressed: _busy ? null : () => _loadSamplerFromVideo(context),
+                  icon: const Icon(Icons.video_file),
+                  label: const Text('LOAD VIDEO'),
                 ),
               ],
             ),

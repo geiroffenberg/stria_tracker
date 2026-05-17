@@ -4875,7 +4875,7 @@ class AppState extends ChangeNotifier {
       }
     }
 
-    final picked = await FilePicker.getDirectoryPath(
+    final picked = await FilePicker.platform.getDirectoryPath(
       dialogTitle: 'Choose where to create STRIA_PROJECTS',
     );
     if (picked == null || picked.trim().isEmpty) {
