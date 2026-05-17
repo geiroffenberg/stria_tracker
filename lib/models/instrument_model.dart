@@ -542,7 +542,7 @@ class SamplerParams {
   double end; // 0..1
   double attack; // 0..1  (fade-in length, 0 = instant)
   double release; // 0..1  (fade-out length, 0 = instant)
-  List<int> sliceStarts; // 9 x 0..99, where 0 = unused
+  List<int> sliceStarts; // 9 x 0..999, where 0 = unused
 
   // keep legacy bool getter so existing code using p.loop still compiles
   bool get loop => loopMode != SamplerLoopMode.off;
@@ -566,7 +566,7 @@ class SamplerParams {
     final source = values ?? const <int>[];
     for (int i = 0; i < sliceCount; i++) {
       final raw = i < source.length ? source[i] : 0;
-      final safe = raw.clamp(0, 99);
+      final safe = raw.clamp(0, 999);
       if (safe == 0) {
         normalized[i] = 0;
         continue;
@@ -582,7 +582,7 @@ class SamplerParams {
   void setSliceStart(int index, int value) {
     if (index < 0 || index >= sliceStarts.length) return;
     final next = List<int>.from(sliceStarts);
-    int safe = value.clamp(0, 99);
+    int safe = value.clamp(0, 999);
     if (safe > 0) {
       // Clamp only this slider so it cannot cross already-set neighbors.
       int minBound = 1;
@@ -592,7 +592,7 @@ class SamplerParams {
           break;
         }
       }
-      int maxBound = 99;
+      int maxBound = 999;
       for (int i = index + 1; i < next.length; i++) {
         if (next[i] > 0) {
           maxBound = next[i];
@@ -613,7 +613,7 @@ class SamplerParams {
   double? sliceStartNorm(int sliceNumber) {
     final value = sliceStartValue(sliceNumber);
     if (value <= 0) return null;
-    return value / 99.0;
+    return value / 999.0;
   }
 
   double sliceEndNorm(int sliceNumber, {bool playThrough = false}) {
@@ -623,7 +623,7 @@ class SamplerParams {
     final startIndex = sliceNumber.clamp(0, sliceStarts.length);
     for (int i = startIndex; i < sliceStarts.length; i++) {
       final next = sliceStarts[i];
-      if (next > 0) return next / 99.0;
+      if (next > 0) return next / 999.0;
     }
     return 1.0;
   }
@@ -639,6 +639,7 @@ class SamplerParams {
     'attack': attack,
     'release': release,
     'sliceStarts': sliceStarts,
+    'sliceVersion': 2, // 2 = range 0-999; 1 (absent) = legacy 0-99
   };
 
   factory SamplerParams.fromJson(Map<String, dynamic> j) => SamplerParams(
@@ -654,7 +655,10 @@ class SamplerParams {
     attack: (j['attack'] as num?)?.toDouble() ?? 0.0,
     release: (j['release'] as num?)?.toDouble() ?? 0.05,
     sliceStarts: (j['sliceStarts'] as List<dynamic>?)?.map((e) {
-      return (e as num?)?.toInt() ?? 0;
+      final v = (e as num?)?.toInt() ?? 0;
+      // Migrate legacy saves (sliceVersion absent = old 0-99 range → multiply by 10)
+      final isLegacy = ((j['sliceVersion'] as int?) ?? 1) < 2;
+      return isLegacy ? (v * 10).clamp(0, 999) : v;
     }).toList(),
   );
 

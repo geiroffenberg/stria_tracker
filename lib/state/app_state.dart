@@ -4071,7 +4071,7 @@ class AppState extends ChangeNotifier {
     int searchFrom = (currentInstrumentIndex + 1) % instruments.length;
 
     for (final sliceNum in activeSlices) {
-      final startNorm = src.sliceStarts[sliceNum - 1] / 99.0;
+      final startNorm = src.sliceStarts[sliceNum - 1] / 999.0;
       final endNorm = src.sliceEndNorm(sliceNum);
 
       final startFrame = (startNorm * (totalFrames - 1)).round().clamp(

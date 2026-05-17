@@ -1133,6 +1133,35 @@ class _KarplusStrongEditor extends StatelessWidget {
   }
 }
 
+// ── Small ±1 nudge button for the slice editor ───────────────────────────────
+
+class _NudgeButton extends StatelessWidget {
+  final IconData icon;
+  final bool enabled;
+  final VoidCallback onTap;
+
+  const _NudgeButton({
+    required this.icon,
+    required this.enabled,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: enabled ? onTap : null,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 2),
+        child: Icon(
+          icon,
+          size: 18,
+          color: enabled ? kColHeader : kColInactive.withAlpha(80),
+        ),
+      ),
+    );
+  }
+}
+
 // ── Compact icon+label button used in the sampler toolbar ────────────────────
 
 class _SamplerButton extends StatelessWidget {
@@ -1197,6 +1226,7 @@ class _SamplerEditorState extends State<_SamplerEditor>
       MethodChannel('video_audio_extractor');
 
   static const _kSampleExts = <String>{
+    '.wav',
     '.aif',
     '.aiff',
     '.flac',
@@ -2288,7 +2318,7 @@ class _SamplerEditorState extends State<_SamplerEditor>
       for (int i = 0; i < p.sliceStarts.length; i++) {
         final v = p.sliceStarts[i];
         if (v <= 0) continue;
-        final start = (v / 99.0).clamp(regionStart, regionEnd);
+        final start = (v / 999.0).clamp(regionStart, regionEnd);
         activeSlices.add(MapEntry(i + 1, start));
       }
       activeSlices.sort((a, b) => a.value.compareTo(b.value));
@@ -2431,8 +2461,8 @@ class _SamplerEditorState extends State<_SamplerEditor>
                       child: Slider(
                         value: p.sliceStarts[i].toDouble(),
                         min: 0,
-                        max: 99,
-                        divisions: 99,
+                        max: 999,
+                        divisions: 999,
                         activeColor: kColComplement,
                         inactiveColor: kColInactive.withAlpha(70),
                         onChanged: (v) {
@@ -2443,11 +2473,23 @@ class _SamplerEditorState extends State<_SamplerEditor>
                         },
                       ),
                     ),
+                    // ── Nudge −1 ─────────────────────────────────────────────
+                    _NudgeButton(
+                      icon: Icons.remove,
+                      enabled: p.sliceStarts[i] > 0,
+                      onTap: () {
+                        setState(() {
+                          p.setSliceStart(i, p.sliceStarts[i] - 1);
+                        });
+                        state.instrumentParamsChanged();
+                      },
+                    ),
+                    // ── Value display ─────────────────────────────────────────
                     SizedBox(
-                      width: 28,
+                      width: 36,
                       child: Text(
-                        p.sliceStarts[i].toString().padLeft(2, '0'),
-                        textAlign: TextAlign.right,
+                        p.sliceStarts[i].toString().padLeft(3, '0'),
+                        textAlign: TextAlign.center,
                         style: kStyleBase.copyWith(
                           color: p.sliceStarts[i] == 0
                               ? kColInactive
@@ -2456,6 +2498,17 @@ class _SamplerEditorState extends State<_SamplerEditor>
                           fontWeight: FontWeight.w700,
                         ),
                       ),
+                    ),
+                    // ── Nudge +1 ─────────────────────────────────────────────
+                    _NudgeButton(
+                      icon: Icons.add,
+                      enabled: p.sliceStarts[i] < 999,
+                      onTap: () {
+                        setState(() {
+                          p.setSliceStart(i, p.sliceStarts[i] + 1);
+                        });
+                        state.instrumentParamsChanged();
+                      },
                     ),
                   ],
                 ),
@@ -2615,7 +2668,7 @@ class _SamplerEditorState extends State<_SamplerEditor>
                                       if (p.sliceStarts[i] > 0)
                                         MapEntry(
                                           i + 1,
-                                          p.sliceStarts[i] / 99.0,
+                                          p.sliceStarts[i] / 999.0,
                                         ),
                                   ],
                                   previewStartNorm:
