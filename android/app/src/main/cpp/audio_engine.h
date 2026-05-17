@@ -264,6 +264,19 @@ struct InsertEffect {
     std::vector<float> chorusBufL;
     std::vector<float> chorusBufR;
     int   chorusBufPos  = 0;     // write head
+    
+    // Flanger-specific parameters (type == 9)
+    float flangerRate     = 0.3f;   // 0..1 → 0.1..8 Hz LFO speed
+    float flangerDepth    = 0.22f;  // 0..1 → 0..10 ms modulation depth
+    float flangerDelay    = 0.2f;   // 0..1 → 0..10 ms base delay
+    float flangerFeedback = 0.0f;   // -1..1 feedback amount
+    int   flangerStereo   = 0;      // 0=mono LFO, 1=stereo (R lfo 90° offset)
+    float flangerLfoPhL   = 0.0f;   // LFO phase accumulators
+    float flangerLfoPhR   = 0.0f;
+    // Ring buffer for flanger (max ~10 ms @ 48 kHz = 480 samples)
+    std::vector<float> flangerBufL;
+    std::vector<float> flangerBufR;
+    int   flangerBufPos  = 0;
 
     // EQ (type == 7) — 3-band semi-parametric
     // All gains stored as linear multipliers; frequencies/Q as 0..1 normalised.
@@ -442,6 +455,10 @@ public:
     /// Configure chorus parameters on a track/master insert effect slot (type 6).
     void setTrackChorusParams(int trackIdx, int slotIdx, float rate, float depth, float delay, int stereo);
     void setMasterChorusParams(int slotIdx, float rate, float depth, float delay, int stereo);
+    
+    /// Configure flanger parameters on a track/master insert effect slot (type 9).
+    void setTrackFlangerParams(int trackIdx, int slotIdx, float rate, float depth, float delay, float feedback, int stereo);
+    void setMasterFlangerParams(int slotIdx, float rate, float depth, float delay, float feedback, int stereo);
 
     /// Configure EQ parameters on a track/master insert effect slot (type 7).
     void setTrackEqParams(int trackIdx, int slotIdx, float lowGain, float lowFreq, float midGain, float midFreq, float midQ, float highGain, float highFreq);

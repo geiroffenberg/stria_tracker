@@ -211,6 +211,34 @@ const TrackerPalette kPaletteAmber = TrackerPalette(
   colComplement: Color(0xFF6644FF),
 );
 
+const TrackerPalette kPaletteRainbow = TrackerPalette(
+  name: 'Rainbow',
+  previewColor: Color.fromARGB(255, 102, 156, 255),
+  bgColor: Color(0xFF07070F),
+  bgBeat: Color(0xFF0B0712),
+  bgBar: Color(0xFF12081A),
+  bgSelected: Color(0xFF1A0A1F),
+  bgPlayhead: Color(0xFF2A0D28),
+  bgHeader: Color(0xFF0B0B0B),
+  bgTrackHeader: Color(0xFF0E0E0E),
+  bgTopNav: Color(0xFF0C0C0C),
+  colNote: Color(0xFFFF6B6B),
+  colInst: Color(0xFFFFA94D),
+  colVol: Color(0xFFFFE66D),
+  colPan: Color(0xFF8AFF66),
+  colFxCmd: Color(0xFF66E0FF),
+  colFxVal: Color(0xFF6B66FF),
+  colEmpty: Color(0xFF574F5F),
+  colRowNum: Color(0xFF9E88A8),
+  colHeader: Color(0xFFDDD6FF),
+  colAccent: Color.fromARGB(255, 71, 120, 255),
+  colActive: Color.fromARGB(255, 102, 199, 255),
+  colInactive: Color(0xFF6E6E6E),
+  colSelection: Color(0xFF66FFCC),
+  colPlayBtn: Color(0xFF66FF88),
+  colComplement: Color(0xFF44AADD),
+);
+
 const TrackerPalette kPaletteMono = TrackerPalette(
   name: 'Mono',
   previewColor: Color(0xFFDDDDDD),
@@ -275,6 +303,7 @@ const List<TrackerPalette> kAllPalettes = [
   kPaletteRed,
   kPalettePurple,
   kPaletteAmber,
+  kPaletteRainbow,
   kPaletteMono,
   kPaletteLight,
 ];

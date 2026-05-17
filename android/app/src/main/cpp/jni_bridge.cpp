@@ -314,6 +314,18 @@ Java_com_metamind_stria_AudioEnginePlugin_nativeSetMasterChorusParams(
 }
 
 JNIEXPORT void JNICALL
+Java_com_metamind_stria_AudioEnginePlugin_nativeSetTrackFlangerParams(
+        JNIEnv*, jobject, jlong ptr, jint trackIdx, jint slotIdx, jfloat rate, jfloat depth, jfloat delay, jfloat feedback, jint stereo) {
+    reinterpret_cast<AudioEngine*>(ptr)->setTrackFlangerParams(trackIdx, slotIdx, rate, depth, delay, feedback, stereo);
+}
+
+JNIEXPORT void JNICALL
+Java_com_metamind_stria_AudioEnginePlugin_nativeSetMasterFlangerParams(
+        JNIEnv*, jobject, jlong ptr, jint slotIdx, jfloat rate, jfloat depth, jfloat delay, jfloat feedback, jint stereo) {
+    reinterpret_cast<AudioEngine*>(ptr)->setMasterFlangerParams(slotIdx, rate, depth, delay, feedback, stereo);
+}
+
+JNIEXPORT void JNICALL
 Java_com_metamind_stria_AudioEnginePlugin_nativeSetTrackEqParams(
         JNIEnv*, jobject, jlong ptr, jint trackIdx, jint slotIdx,
         jfloat lowGain, jfloat lowFreq, jfloat midGain, jfloat midFreq, jfloat midQ, jfloat highGain, jfloat highFreq) {

@@ -460,6 +460,31 @@ class AudioEngine {
     });
   }
 
+  Future<void> setTrackFlangerParams(int trackIdx, int slotIdx, double rate, double depth, double delay, double feedback, int stereo) async {
+    if (!_initialised) return;
+    await _channel.invokeMethod('setTrackFlangerParams', {
+      'trackIdx': trackIdx,
+      'slotIdx': slotIdx,
+      'rate': rate,
+      'depth': depth,
+      'delay': delay,
+      'feedback': feedback,
+      'stereo': stereo,
+    });
+  }
+
+  Future<void> setMasterFlangerParams(int slotIdx, double rate, double depth, double delay, double feedback, int stereo) async {
+    if (!_initialised) return;
+    await _channel.invokeMethod('setMasterFlangerParams', {
+      'slotIdx': slotIdx,
+      'rate': rate,
+      'depth': depth,
+      'delay': delay,
+      'feedback': feedback,
+      'stereo': stereo,
+    });
+  }
+
   Future<void> setTrackEqParams(int trackIdx, int slotIdx,
       double lowGain, double lowFreq,
       double midGain, double midFreq, double midQ,

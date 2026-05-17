@@ -908,7 +908,7 @@ class AppState extends ChangeNotifier {
             await AudioEngine.instance.setMasterChorusParams(
               slot,
               d('rate', 0.3),
-              d('depth', 0.22),
+              d('depth', 0.22) * (5.0 / 15.0),
               d('delay', 0.3),
               i('stereo', 0),
             );
@@ -929,7 +929,7 @@ class AppState extends ChangeNotifier {
               trackIdx,
               slot,
               d('rate', 0.3),
-              d('depth', 0.22),
+              d('depth', 0.22) * (5.0 / 15.0),
               d('delay', 0.3),
               i('stereo', 0),
             );
@@ -4261,12 +4261,37 @@ class AppState extends ChangeNotifier {
 
     final waveCmd = _waveCodeForInstrumentSlot(slot);
     final instrumentTypeCmd = _instrumentTypeCodeForSlot(slot);
-    final synthParams = _synthParamsForInstrumentSlot(slot);
+    var synthParams = _synthParamsForInstrumentSlot(slot);
     final previewVoice = _previewVoiceIndexForInstrumentSlot(slot);
+
+    // If this is a sampler and the note is in C-0..G#0, preview the
+    // corresponding slice (1..9) instead of playing the full sample pitched.
+    if (instruments[slot].type == InstrumentType.sampler &&
+        note.isNote) {
+      final midi = note.midiNote;
+      if (midi >= 12 && midi <= 20) {
+        final sliceNum = (midi - 11).clamp(1, 9);
+        synthParams = _synthParamsForInstrumentSlot(
+          slot,
+          samplerSlice: sliceNum,
+          samplerSliceActive: true,
+          samplerPlayThrough: false,
+        );
+      }
+    }
 
     if (_previewSamplerSlot >= 0) await stopPreviewCurrentSampler();
     if (_previewBypassVoice >= 0 && _previewBypassVoice != previewVoice) {
       await _setPreviewDryBypass(_previewBypassVoice, false);
+    }
+
+    int midiToSend = note.midiNote.clamp(0, 127);
+
+    // If the sampler slice preview was selected (C-0..G#0), play at C-4
+    // so the slice plays back at normal pitch.
+    if (instruments[slot].type == InstrumentType.sampler && note.isNote) {
+      final midi = note.midiNote;
+      if (midi >= 12 && midi <= 20) midiToSend = 60;
     }
 
     final noteOff = _buildPreviewRowData(
@@ -4278,7 +4303,7 @@ class AppState extends ChangeNotifier {
     );
     final noteOn = _buildPreviewRowData(
       voiceIdx: previewVoice,
-      note: note.midiNote.clamp(0, 127),
+      note: midiToSend,
       waveCmd: waveCmd,
       instrumentTypeCmd: instrumentTypeCmd,
       synthParams: synthParams,

@@ -335,6 +335,27 @@ class AudioEnginePlugin : FlutterPlugin, MethodCallHandler {
                 if (enginePtr != 0L) nativeSetMasterChorusParams(enginePtr, slotIdx, rate.toFloat(), depth.toFloat(), delay.toFloat(), stereo)
                 result.success(null)
             }
+            "setTrackFlangerParams" -> {
+                val trackIdx = call.argument<Int>("trackIdx") ?: 0
+                val slotIdx  = call.argument<Int>("slotIdx") ?: 0
+                val rate     = call.argument<Double>("rate") ?: 0.3
+                val depth    = call.argument<Double>("depth") ?: 0.22
+                val delay    = call.argument<Double>("delay") ?: 0.2
+                val feedback = call.argument<Double>("feedback") ?: 0.0
+                val stereo   = call.argument<Int>("stereo") ?: 0
+                if (enginePtr != 0L) nativeSetTrackFlangerParams(enginePtr, trackIdx, slotIdx, rate.toFloat(), depth.toFloat(), delay.toFloat(), feedback.toFloat(), stereo)
+                result.success(null)
+            }
+            "setMasterFlangerParams" -> {
+                val slotIdx = call.argument<Int>("slotIdx") ?: 0
+                val rate    = call.argument<Double>("rate") ?: 0.3
+                val depth   = call.argument<Double>("depth") ?: 0.22
+                val delay   = call.argument<Double>("delay") ?: 0.2
+                val feedback= call.argument<Double>("feedback") ?: 0.0
+                val stereo  = call.argument<Int>("stereo") ?: 0
+                if (enginePtr != 0L) nativeSetMasterFlangerParams(enginePtr, slotIdx, rate.toFloat(), depth.toFloat(), delay.toFloat(), feedback.toFloat(), stereo)
+                result.success(null)
+            }
             "setTrackEqParams" -> {
                 val trackIdx  = call.argument<Int>("trackIdx") ?: 0
                 val slotIdx   = call.argument<Int>("slotIdx") ?: 0
@@ -532,6 +553,8 @@ class AudioEnginePlugin : FlutterPlugin, MethodCallHandler {
     private external fun nativeSetMasterLimiterParams(ptr: Long, slotIdx: Int, gain: Float)
     private external fun nativeSetTrackChorusParams(ptr: Long, trackIdx: Int, slotIdx: Int, rate: Float, depth: Float, delay: Float, stereo: Int)
     private external fun nativeSetMasterChorusParams(ptr: Long, slotIdx: Int, rate: Float, depth: Float, delay: Float, stereo: Int)
+    private external fun nativeSetTrackFlangerParams(ptr: Long, trackIdx: Int, slotIdx: Int, rate: Float, depth: Float, delay: Float, feedback: Float, stereo: Int)
+    private external fun nativeSetMasterFlangerParams(ptr: Long, slotIdx: Int, rate: Float, depth: Float, delay: Float, feedback: Float, stereo: Int)
     private external fun nativeSetTrackEqParams(ptr: Long, trackIdx: Int, slotIdx: Int, lowGain: Float, lowFreq: Float, midGain: Float, midFreq: Float, midQ: Float, highGain: Float, highFreq: Float)
     private external fun nativeSetMasterEqParams(ptr: Long, slotIdx: Int, lowGain: Float, lowFreq: Float, midGain: Float, midFreq: Float, midQ: Float, highGain: Float, highFreq: Float)
     private external fun nativeSetTrackCompressorParams(ptr: Long, trackIdx: Int, slotIdx: Int, threshold: Float, ratio: Float, attack: Float, release: Float, makeup: Float, knee: Int)

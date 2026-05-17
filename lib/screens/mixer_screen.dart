@@ -190,7 +190,7 @@ class _LimiterUiState {
 
 class _ChorusUiState {
   final double rate; // 0..1 → 0.1..8 Hz
-  final double depth; // 0..1 → 0..15 ms
+  final double depth; // 0..1 → 0..5 ms
   final double delay; // 0..1 → 1..30 ms base
   final int stereo; // 0=mono, 1=stereo
   final double dry;
@@ -198,7 +198,7 @@ class _ChorusUiState {
 
   const _ChorusUiState({
     this.rate = 0.3,
-    this.depth = 0.22,
+    this.depth = 0.2,
     this.delay = 0.3,
     this.stereo = 0,
     this.dry = 0.5,
@@ -216,6 +216,44 @@ class _ChorusUiState {
     rate: rate ?? this.rate,
     depth: depth ?? this.depth,
     delay: delay ?? this.delay,
+    stereo: stereo ?? this.stereo,
+    dry: dry ?? this.dry,
+    wet: wet ?? this.wet,
+  );
+}
+
+class _FlangerUiState {
+  final double rate; // 0..1 → 0.1..8 Hz
+  final double depth; // 0..1 → 0..10 ms
+  final double delay; // 0..1 → 0..10 ms base
+  final double feedback; // -1..1
+  final int stereo; // 0=mono, 1=stereo
+  final double dry;
+  final double wet;
+
+  const _FlangerUiState({
+    this.rate = 0.3,
+    this.depth = 0.22,
+    this.delay = 0.2,
+    this.feedback = 0.0,
+    this.stereo = 0,
+    this.dry = 1.0,
+    this.wet = 1.0,
+  });
+
+  _FlangerUiState copyWith({
+    double? rate,
+    double? depth,
+    double? delay,
+    double? feedback,
+    int? stereo,
+    double? dry,
+    double? wet,
+  }) => _FlangerUiState(
+    rate: rate ?? this.rate,
+    depth: depth ?? this.depth,
+    delay: delay ?? this.delay,
+    feedback: feedback ?? this.feedback,
     stereo: stereo ?? this.stereo,
     dry: dry ?? this.dry,
     wet: wet ?? this.wet,
@@ -266,6 +304,44 @@ class _EqUiState {
     dry: dry ?? this.dry,
     wet: wet ?? this.wet,
   );
+}
+
+class _Eq5UiState {
+  final double bass; // -10..+10 dB (60 Hz)
+  final double warmth; // -10..+10 dB (250 Hz)
+  final double presence; // -10..+10 dB (1 kHz)
+  final double clarity; // -10..+10 dB (4 kHz)
+  final double air; // -10..+10 dB (12 kHz)
+  final double dry;
+  final double wet;
+
+  const _Eq5UiState({
+    this.bass = 0.0,
+    this.warmth = 0.0,
+    this.presence = 0.0,
+    this.clarity = 0.0,
+    this.air = 0.0,
+    this.dry = 0.0,
+    this.wet = 1.0,
+  });
+
+  _Eq5UiState copyWith({
+    double? bass,
+    double? warmth,
+    double? presence,
+    double? clarity,
+    double? air,
+    double? dry,
+    double? wet,
+  }) => _Eq5UiState(
+        bass: bass ?? this.bass,
+        warmth: warmth ?? this.warmth,
+        presence: presence ?? this.presence,
+        clarity: clarity ?? this.clarity,
+        air: air ?? this.air,
+        dry: dry ?? this.dry,
+        wet: wet ?? this.wet,
+      );
 }
 
 class _CompressorUiState {
@@ -332,8 +408,10 @@ class _MixerScreenState extends State<MixerScreen> {
   late List<List<_BitcrusherUiState>> _trackBitcrusherStates;
   late List<List<_LimiterUiState>> _trackLimiterStates;
   late List<List<_ChorusUiState>> _trackChorusStates;
+  late List<List<_FlangerUiState>> _trackFlangerStates;
   late List<List<_EqUiState>> _trackEqStates;
   late List<List<_CompressorUiState>> _trackCompressorStates;
+  late List<List<_Eq5UiState>> _trackEq5States;
   final List<String?> _masterInserts = List<String?>.filled(kInsertSlots, null);
   final List<bool> _masterBypassed = List<bool>.filled(kInsertSlots, false);
   final List<_ReverbUiState> _masterReverbStates = List.generate(
@@ -364,6 +442,10 @@ class _MixerScreenState extends State<MixerScreen> {
     kInsertSlots,
     (_) => const _ChorusUiState(),
   );
+  final List<_FlangerUiState> _masterFlangerStates = List.generate(
+    kInsertSlots,
+    (_) => const _FlangerUiState(),
+  );
   final List<_EqUiState> _masterEqStates = List.generate(
     kInsertSlots,
     (_) => const _EqUiState(),
@@ -372,8 +454,12 @@ class _MixerScreenState extends State<MixerScreen> {
     kInsertSlots,
     (_) => const _CompressorUiState(),
   );
-  bool _insertsInitialized = false;
-  int _seenSongStateVersion = -1;
+  final List<_Eq5UiState> _masterEq5States = List.generate(
+    kInsertSlots,
+    (_) => const _Eq5UiState(),
+  );
+  late bool _insertsInitialized;
+  late int _seenSongStateVersion;
   Timer? _meterTimer;
   List<double> _meterValues = List<double>.filled(34, 0.0);
 
@@ -384,6 +470,8 @@ class _MixerScreenState extends State<MixerScreen> {
   @override
   void initState() {
     super.initState();
+    _insertsInitialized = false;
+    _seenSongStateVersion = -1;
     _refreshMeters();
     _meterTimer = Timer.periodic(
       const Duration(milliseconds: 42),
@@ -513,9 +601,48 @@ class _MixerScreenState extends State<MixerScreen> {
           trackIdx,
           slotIdx,
           c.rate,
-          c.depth,
+          c.depth * (5.0 / 15.0),
           c.delay,
           c.stereo,
+        );
+        } else if (effectName == 'FLANGER') {
+          final f = _trackFlangerStates[trackIdx][slotIdx];
+          AudioEngine.instance.setTrackInsertMix(trackIdx, slotIdx, f.dry, f.wet);
+          AudioEngine.instance.setTrackFlangerParams(
+            trackIdx,
+            slotIdx,
+            f.rate,
+            f.depth,
+            f.delay,
+            f.feedback,
+            f.stereo,
+          );
+          if (_trackBypassed[trackIdx][slotIdx]) {
+            AudioEngine.instance.setTrackInsertBypass(trackIdx, slotIdx, false);
+            setState(() => _trackBypassed[trackIdx][slotIdx] = false);
+          }
+        
+      } else if (effectName == 'EQ-5') {
+        final e5 = _trackEq5States[trackIdx][slotIdx];
+        AudioEngine.instance.setTrackInsertMix(trackIdx, slotIdx, e5.dry, e5.wet);
+        double toNorm(double db) => (db / 12.0).clamp(-1.0, 1.0);
+        final lowGain = toNorm(e5.bass);
+        final midGain = toNorm(e5.presence);
+        final highGain = toNorm(e5.air);
+        final lowFreq = 0.07;
+        final midFreq = 0.436;
+        final midQ = 0.091;
+        final highFreq = 0.862;
+        AudioEngine.instance.setTrackEqParams(
+          trackIdx,
+          slotIdx,
+          lowGain,
+          lowFreq,
+          midGain,
+          midFreq,
+          midQ,
+          highGain,
+          highFreq,
         );
         if (_trackBypassed[trackIdx][slotIdx]) {
           AudioEngine.instance.setTrackInsertBypass(trackIdx, slotIdx, false);
@@ -842,6 +969,45 @@ class _MixerScreenState extends State<MixerScreen> {
     );
   }
 
+  Future<void> _openFlangerEditor({
+    required bool onMaster,
+    int? trackIdx,
+    required int slotIdx,
+  }) async {
+    final initialBypass = onMaster
+        ? _masterBypassed[slotIdx]
+        : _trackBypassed[trackIdx!][slotIdx];
+    final initialState = onMaster
+        ? _masterFlangerStates[slotIdx]
+        : _trackFlangerStates[trackIdx!][slotIdx];
+    await showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: kBgTrackHeader,
+      isScrollControlled: true,
+      builder: (_) => _FlangerEffectEditor(
+        onMaster: onMaster,
+        trackIdx: trackIdx,
+        slotIdx: slotIdx,
+        initialBypass: initialBypass,
+        initialState: initialState,
+        onBypassChanged: (b) => setState(() {
+          if (onMaster) {
+            _masterBypassed[slotIdx] = b;
+          } else {
+            _trackBypassed[trackIdx!][slotIdx] = b;
+          }
+        }),
+        onParamsChanged: (s) => setState(() {
+          if (onMaster) {
+            _masterFlangerStates[slotIdx] = s;
+          } else {
+            _trackFlangerStates[trackIdx!][slotIdx] = s;
+          }
+        }),
+      ),
+    );
+  }
+
   Future<void> _openEqEditor({
     required bool onMaster,
     int? trackIdx,
@@ -875,6 +1041,45 @@ class _MixerScreenState extends State<MixerScreen> {
             _masterEqStates[slotIdx] = s;
           } else {
             _trackEqStates[trackIdx!][slotIdx] = s;
+          }
+        }),
+      ),
+    );
+  }
+
+  Future<void> _openEq5Editor({
+    required bool onMaster,
+    int? trackIdx,
+    required int slotIdx,
+  }) async {
+    final initialBypass = onMaster
+        ? _masterBypassed[slotIdx]
+        : _trackBypassed[trackIdx!][slotIdx];
+    final initialState = onMaster
+        ? _masterEq5States[slotIdx]
+        : _trackEq5States[trackIdx!][slotIdx];
+    await showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: kBgTrackHeader,
+      isScrollControlled: true,
+      builder: (_) => _Eq5EffectEditor(
+        onMaster: onMaster,
+        trackIdx: trackIdx,
+        slotIdx: slotIdx,
+        initialBypass: initialBypass,
+        initialState: initialState,
+        onBypassChanged: (b) => setState(() {
+          if (onMaster) {
+            _masterBypassed[slotIdx] = b;
+          } else {
+            _trackBypassed[trackIdx!][slotIdx] = b;
+          }
+        }),
+        onParamsChanged: (s) => setState(() {
+          if (onMaster) {
+            _masterEq5States[slotIdx] = s;
+          } else {
+            _trackEq5States[trackIdx!][slotIdx] = s;
           }
         }),
       ),
@@ -979,6 +1184,13 @@ class _MixerScreenState extends State<MixerScreen> {
         (_) => const _ChorusUiState(),
       ),
     );
+    _trackFlangerStates = List.generate(
+      n,
+      (_) => List<_FlangerUiState>.generate(
+        kInsertSlots,
+        (_) => const _FlangerUiState(),
+      ),
+    );
     _trackEqStates = List.generate(
       n,
       (_) => List<_EqUiState>.generate(kInsertSlots, (_) => const _EqUiState()),
@@ -990,10 +1202,17 @@ class _MixerScreenState extends State<MixerScreen> {
         (_) => const _CompressorUiState(),
       ),
     );
+    _trackEq5States = List.generate(
+      n,
+      (_) => List<_Eq5UiState>.generate(
+        kInsertSlots,
+        (_) => const _Eq5UiState(),
+      ),
+    );
     _insertsInitialized = true;
   }
 
-  void _resetTrackInsertSlotState(int trackIdx, int slotIdx) {
+  void resetTrackInsertSlotState(int trackIdx, int slotIdx) {
     _trackBypassed[trackIdx][slotIdx] = false;
     _trackReverbStates[trackIdx][slotIdx] = const _ReverbUiState();
     _trackDelayStates[trackIdx][slotIdx] = const _DelayUiState();
@@ -1002,11 +1221,13 @@ class _MixerScreenState extends State<MixerScreen> {
     _trackBitcrusherStates[trackIdx][slotIdx] = const _BitcrusherUiState();
     _trackLimiterStates[trackIdx][slotIdx] = const _LimiterUiState();
     _trackChorusStates[trackIdx][slotIdx] = const _ChorusUiState();
+    _trackFlangerStates[trackIdx][slotIdx] = const _FlangerUiState();
+    _trackEq5States[trackIdx][slotIdx] = const _Eq5UiState();
     _trackEqStates[trackIdx][slotIdx] = const _EqUiState();
     _trackCompressorStates[trackIdx][slotIdx] = const _CompressorUiState();
   }
 
-  void _resetMasterInsertState() {
+  void resetMasterInsertState() {
     for (int slot = 0; slot < kInsertSlots; slot++) {
       _masterInserts[slot] = null;
       _masterBypassed[slot] = false;
@@ -1017,6 +1238,8 @@ class _MixerScreenState extends State<MixerScreen> {
       _masterBitcrusherStates[slot] = const _BitcrusherUiState();
       _masterLimiterStates[slot] = const _LimiterUiState();
       _masterChorusStates[slot] = const _ChorusUiState();
+      _masterFlangerStates[slot] = const _FlangerUiState();
+      _masterEq5States[slot] = const _Eq5UiState();
       _masterEqStates[slot] = const _EqUiState();
       _masterCompressorStates[slot] = const _CompressorUiState();
     }
@@ -1024,7 +1247,7 @@ class _MixerScreenState extends State<MixerScreen> {
 
   // Serializes all current in-memory insert state to a Map suitable for
   // passing to AppState.setInsertSnapshot().
-  Map<String, dynamic> _buildInsertSnapshot() {
+  Map<String, dynamic> buildInsertSnapshot() {
     if (!_insertsInitialized) return {};
 
     Map<String, dynamic>? serSlot(
@@ -1103,6 +1326,28 @@ class _MixerScreenState extends State<MixerScreen> {
             'dry': c.dry,
             'wet': c.wet,
           };
+        case 'EQ-5':
+          final e5 = onMaster ? _masterEq5States[s] : _trackEq5States[t!][s];
+          p = {
+            'bass': e5.bass,
+            'warmth': e5.warmth,
+            'presence': e5.presence,
+            'clarity': e5.clarity,
+            'air': e5.air,
+            'dry': e5.dry,
+            'wet': e5.wet,
+          };
+        case 'FLANGER':
+          final f = onMaster ? _masterFlangerStates[s] : _trackFlangerStates[t!][s];
+          p = {
+            'rate': f.rate,
+            'depth': f.depth,
+            'delay': f.delay,
+            'feedback': f.feedback,
+            'stereo': f.stereo,
+            'dry': f.dry,
+            'wet': f.wet,
+          };
         case 'EQ':
           final e = onMaster ? _masterEqStates[s] : _trackEqStates[t!][s];
           p = {
@@ -1160,7 +1405,7 @@ class _MixerScreenState extends State<MixerScreen> {
   // Restores the MixerScreen UI state from AppState.insertSnapshot.
   // Called synchronously from _syncInsertStateFromAppState after resetting.
   // (Native engine has already been set up by loadSongByName.)
-  void _restoreInsertUiFromSnapshot(AppState state) {
+  void restoreInsertUiFromSnapshot(AppState state) {
     final snapshot = state.insertSnapshot;
     if (snapshot.isEmpty) return;
 
@@ -1279,6 +1524,36 @@ class _MixerScreenState extends State<MixerScreen> {
           } else {
             _trackChorusStates[t!][s] = ch;
           }
+        case 'EQ-5':
+          final e5 = _Eq5UiState(
+            bass: d(data, 'bass', 0.0),
+            warmth: d(data, 'warmth', 0.0),
+            presence: d(data, 'presence', 0.0),
+            clarity: d(data, 'clarity', 0.0),
+            air: d(data, 'air', 0.0),
+            dry: d(data, 'dry', 0.0),
+            wet: d(data, 'wet', 1.0),
+          );
+          if (onMaster) {
+            _masterEq5States[s] = e5;
+          } else {
+            _trackEq5States[t!][s] = e5;
+          }
+        case 'FLANGER':
+          final fl = _FlangerUiState(
+            rate: d(data, 'rate', 0.3),
+            depth: d(data, 'depth', 0.22),
+            delay: d(data, 'delay', 0.2),
+            feedback: d(data, 'feedback', 0.0),
+            stereo: iv(data, 'stereo', 0),
+            dry: d(data, 'dry', 1.0),
+            wet: d(data, 'wet', 1.0),
+          );
+          if (onMaster) {
+            _masterFlangerStates[s] = fl;
+          } else {
+            _trackFlangerStates[t!][s] = fl;
+          }
         case 'EQ':
           final eq = _EqUiState(
             lowGain: d(data, 'lowGain', 0.0),
@@ -1339,21 +1614,21 @@ class _MixerScreenState extends State<MixerScreen> {
     }
   }
 
-  void _syncInsertStateFromAppState(AppState state) {
+  void syncInsertStateFromAppState(AppState state) {
     final trackCount = state.currentPattern.tracks.length;
     _ensureSized(trackCount);
 
     if (_seenSongStateVersion != state.songStateVersion) {
-      _resetMasterInsertState();
+      resetMasterInsertState();
       for (int trackIdx = 0; trackIdx < trackCount; trackIdx++) {
         for (int slotIdx = 0; slotIdx < kInsertSlots; slotIdx++) {
           _inserts[trackIdx][slotIdx] = null;
-          _resetTrackInsertSlotState(trackIdx, slotIdx);
+          resetTrackInsertSlotState(trackIdx, slotIdx);
         }
       }
       _seenSongStateVersion = state.songStateVersion;
       // Restore UI state from the saved snapshot (engine already set up by loadSongByName).
-      _restoreInsertUiFromSnapshot(state);
+      restoreInsertUiFromSnapshot(state);
     }
 
     for (int trackIdx = 0; trackIdx < trackCount; trackIdx++) {
@@ -1361,7 +1636,7 @@ class _MixerScreenState extends State<MixerScreen> {
         final effectName = state.trackInsertEffectName(trackIdx, slotIdx);
         if (_inserts[trackIdx][slotIdx] == effectName) continue;
         _inserts[trackIdx][slotIdx] = effectName;
-        _resetTrackInsertSlotState(trackIdx, slotIdx);
+        resetTrackInsertSlotState(trackIdx, slotIdx);
       }
     }
   }
@@ -1370,7 +1645,7 @@ class _MixerScreenState extends State<MixerScreen> {
   Widget build(BuildContext context) {
     final state = AppStateScope.of(context);
     final tracks = state.currentPattern.tracks;
-    _syncInsertStateFromAppState(state);
+    syncInsertStateFromAppState(state);
 
     return Container(
       color: kBgColor,
@@ -1390,7 +1665,7 @@ class _MixerScreenState extends State<MixerScreen> {
               bypassed: _masterBypassed,
               onVolume: state.setMasterVolume,
               onMute: state.toggleMasterMute,
-              onInsertTap: (slot) => _onMasterInsertTap(slot),
+              onInsertTap: (slot) => onMasterInsertTap(slot),
               onInsertClear: (slot) {
                 setState(() {
                   _masterInserts[slot] = null;
@@ -1402,11 +1677,12 @@ class _MixerScreenState extends State<MixerScreen> {
                   _masterBitcrusherStates[slot] = const _BitcrusherUiState();
                   _masterLimiterStates[slot] = const _LimiterUiState();
                   _masterChorusStates[slot] = const _ChorusUiState();
+                  _masterFlangerStates[slot] = const _FlangerUiState();
                   _masterEqStates[slot] = const _EqUiState();
                   _masterCompressorStates[slot] = const _CompressorUiState();
                 });
                 AudioEngine.instance.setMasterInsertEffect(slot, -1, 0.0);
-                state.setInsertSnapshot(_buildInsertSnapshot());
+                state.setInsertSnapshot(buildInsertSnapshot());
               },
             ),
             const SizedBox(width: 6),
@@ -1429,17 +1705,17 @@ class _MixerScreenState extends State<MixerScreen> {
                 onPan: (v) => state.setTrackMixerPan(i, v),
                 onMute: () => state.toggleTrackMixerMute(i),
                 onSolo: () => state.toggleTrackMixerSolo(i),
-                onInsertTap: (slot) => _onInsertSlotTap(i, slot),
+                onInsertTap: (slot) => onInsertSlotTap(i, slot),
                 onInsertClear: (slot) {
                   setState(() {
                     _inserts[i][slot] = null;
-                    _resetTrackInsertSlotState(i, slot);
+                    resetTrackInsertSlotState(i, slot);
                   });
                   state.setTrackInsertEffectName(i, slot, null);
                   AudioEngine.instance.setTrackInsertEffect(i, slot, -1, 0.0);
-                  state.setInsertSnapshot(_buildInsertSnapshot());
+                  state.setInsertSnapshot(buildInsertSnapshot());
                 },
-                onSendTap: () => _onSendTap(i, state),
+                onSendTap: () => onSendTap(i, state),
               ),
           ],
         ),
@@ -1447,7 +1723,7 @@ class _MixerScreenState extends State<MixerScreen> {
     );
   }
 
-  void _onSendTap(int trackIdx, AppState state) async {
+  void onSendTap(int trackIdx, AppState state) async {
     // Build choices: 0=Master, 1-16 valid channels excluding self.
     final tracks = state.currentPattern.tracks;
     final numTracks = tracks.length;
@@ -1491,10 +1767,22 @@ class _MixerScreenState extends State<MixerScreen> {
     }
   }
 
-  void _onInsertSlotTap(int trackIdx, int slotIdx) async {
+  void onInsertSlotTap(int trackIdx, int slotIdx) async {
     final state = AppStateScope.of(context);
     try {
       final currentFx = _inserts[trackIdx][slotIdx];
+      if (currentFx == 'EQ-5') {
+        await _openEq5Editor(onMaster: false, trackIdx: trackIdx, slotIdx: slotIdx);
+        return;
+      }
+      if (currentFx == 'FLANGER') {
+        await _openFlangerEditor(
+          onMaster: false,
+          trackIdx: trackIdx,
+          slotIdx: slotIdx,
+        );
+        return;
+      }
       if (currentFx == 'REVERB') {
         await _openReverbEditor(
           onMaster: false,
@@ -1751,7 +2039,7 @@ class _MixerScreenState extends State<MixerScreen> {
             trackIdx,
             slotIdx,
             cs.rate,
-            cs.depth,
+            cs.depth * (5.0 / 15.0),
             cs.delay,
             cs.stereo,
           );
@@ -1760,6 +2048,63 @@ class _MixerScreenState extends State<MixerScreen> {
             trackIdx: trackIdx,
             slotIdx: slotIdx,
           );
+        } else if (picked == 'FLANGER') {
+          final fs = _trackFlangerStates[trackIdx][slotIdx];
+          await AudioEngine.instance.setTrackInsertEffect(
+            trackIdx,
+            slotIdx,
+            9,
+            fs.wet,
+          );
+          await AudioEngine.instance.setTrackInsertMix(
+            trackIdx,
+            slotIdx,
+            fs.dry,
+            fs.wet,
+          );
+          await AudioEngine.instance.setTrackFlangerParams(
+            trackIdx,
+            slotIdx,
+            fs.rate,
+            fs.depth,
+            fs.delay,
+            fs.feedback,
+            fs.stereo,
+          );
+          await _openFlangerEditor(
+            onMaster: false,
+            trackIdx: trackIdx,
+            slotIdx: slotIdx,
+          );
+        } else if (picked == 'EQ-5') {
+          final es = _trackEq5States[trackIdx][slotIdx];
+          await AudioEngine.instance.setTrackInsertEffect(
+            trackIdx,
+            slotIdx,
+            7,
+            es.wet,
+          );
+          await AudioEngine.instance.setTrackInsertMix(trackIdx, slotIdx, es.dry, es.wet);
+          double toNorm(double db) => (db / 12.0).clamp(-1.0, 1.0);
+          final lowGain = toNorm(es.bass);
+          final midGain = toNorm(es.presence);
+          final highGain = toNorm(es.air);
+          final lowFreq = 0.07;
+          final midFreq = 0.436;
+          final midQ = 0.091;
+          final highFreq = 0.862;
+          await AudioEngine.instance.setTrackEqParams(
+            trackIdx,
+            slotIdx,
+            lowGain,
+            lowFreq,
+            midGain,
+            midFreq,
+            midQ,
+            highGain,
+            highFreq,
+          );
+          await _openEq5Editor(onMaster: false, trackIdx: trackIdx, slotIdx: slotIdx);
         } else if (picked == 'EQ') {
           final es = _trackEqStates[trackIdx][slotIdx];
           await AudioEngine.instance.setTrackInsertEffect(
@@ -1830,14 +2175,22 @@ class _MixerScreenState extends State<MixerScreen> {
         }
       }
     } finally {
-      if (mounted) state.setInsertSnapshot(_buildInsertSnapshot());
+      if (mounted) state.setInsertSnapshot(buildInsertSnapshot());
     }
   }
 
-  void _onMasterInsertTap(int slotIdx) async {
+  void onMasterInsertTap(int slotIdx) async {
     final state = AppStateScope.of(context);
     try {
       final currentFx = _masterInserts[slotIdx];
+      if (currentFx == 'EQ-5') {
+        await _openEq5Editor(onMaster: true, slotIdx: slotIdx);
+        return;
+      }
+      if (currentFx == 'FLANGER') {
+        await _openFlangerEditor(onMaster: true, slotIdx: slotIdx);
+        return;
+      }
       if (currentFx == 'REVERB') {
         await _openReverbEditor(onMaster: true, slotIdx: slotIdx);
         return;
@@ -1916,6 +2269,20 @@ class _MixerScreenState extends State<MixerScreen> {
             ds.sync,
           );
           await _openDelayEditor(onMaster: true, slotIdx: slotIdx);
+        } else if (picked == 'EQ-5') {
+          final es = _masterEq5States[slotIdx];
+          await AudioEngine.instance.setMasterInsertEffect(slotIdx, 7, es.wet);
+          await AudioEngine.instance.setMasterInsertMix(slotIdx, es.dry, es.wet);
+          double toNorm(double db) => (db / 12.0).clamp(-1.0, 1.0);
+          final lowGain = toNorm(es.bass);
+          final midGain = toNorm(es.presence);
+          final highGain = toNorm(es.air);
+          final lowFreq = 0.07;
+          final midFreq = 0.436;
+          final midQ = 0.091;
+          final highFreq = 0.862;
+          await AudioEngine.instance.setMasterEqParams(slotIdx, lowGain, lowFreq, midGain, midFreq, midQ, highGain, highFreq);
+          await _openEq5Editor(onMaster: true, slotIdx: slotIdx);
         } else if (picked == 'FILTER') {
           final fs = _masterFilterStates[slotIdx];
           await AudioEngine.instance.setMasterInsertEffect(slotIdx, 2, fs.wet);
@@ -1981,11 +2348,24 @@ class _MixerScreenState extends State<MixerScreen> {
           await AudioEngine.instance.setMasterChorusParams(
             slotIdx,
             cs.rate,
-            cs.depth,
+            cs.depth * (5.0 / 15.0),
             cs.delay,
             cs.stereo,
           );
           await _openChorusEditor(onMaster: true, slotIdx: slotIdx);
+        } else if (picked == 'FLANGER') {
+          final f = _masterFlangerStates[slotIdx];
+          await AudioEngine.instance.setMasterInsertEffect(slotIdx, 9, f.wet);
+          await AudioEngine.instance.setMasterInsertMix(slotIdx, f.dry, f.wet);
+          await AudioEngine.instance.setMasterFlangerParams(
+            slotIdx,
+            f.rate,
+            f.depth,
+            f.delay,
+            f.feedback,
+            f.stereo,
+          );
+          await _openFlangerEditor(onMaster: true, slotIdx: slotIdx);
         } else if (picked == 'EQ') {
           final es = _masterEqStates[slotIdx];
           await AudioEngine.instance.setMasterInsertEffect(slotIdx, 7, es.wet);
@@ -2028,7 +2408,7 @@ class _MixerScreenState extends State<MixerScreen> {
         }
       }
     } finally {
-      if (mounted) state.setInsertSnapshot(_buildInsertSnapshot());
+      if (mounted) state.setInsertSnapshot(buildInsertSnapshot());
     }
   }
 }
@@ -2038,6 +2418,7 @@ class _FxPicker extends StatelessWidget {
 
   static const _options = <String>[
     'EQ',
+      'EQ-5',
     'COMPRESSOR',
     'REVERB',
     'DELAY',
@@ -2046,6 +2427,7 @@ class _FxPicker extends StatelessWidget {
     'FILTER',
     'BITCRUSHER',
     'LIMITER',
+    'FLANGER',
   ];
 
   @override
@@ -2075,6 +2457,7 @@ class _FxPicker extends StatelessWidget {
                 ),
                 onTap: () => Navigator.of(context).pop(fx),
               ),
+            
           ],
         ),
       ),
@@ -4221,7 +4604,7 @@ class _ChorusEffectEditorState extends State<_ChorusEffectEditor> {
       AudioEngine.instance.setMasterChorusParams(
         widget.slotIdx,
         _rate,
-        _depth,
+        _depth * (5.0 / 15.0),
         _delay,
         _stereo,
       );
@@ -4231,7 +4614,7 @@ class _ChorusEffectEditorState extends State<_ChorusEffectEditor> {
         widget.trackIdx ?? 0,
         widget.slotIdx,
         _rate,
-        _depth,
+        _depth * (5.0 / 15.0),
         _delay,
         _stereo,
       );
@@ -4245,7 +4628,7 @@ class _ChorusEffectEditorState extends State<_ChorusEffectEditor> {
   }
 
   String _rateLabel() => '${(0.1 + _rate * 7.9).toStringAsFixed(1)} Hz';
-  String _depthLabel() => '${(_depth * 15.0).toStringAsFixed(1)} ms';
+  String _depthLabel() => '${(_depth * 5.0).toStringAsFixed(1)} ms';
   String _delayLabel() => '${(1.0 + _delay * 29.0).toStringAsFixed(0)} ms';
 
   @override
@@ -4437,6 +4820,291 @@ class _EqEffectEditor extends StatefulWidget {
 
   @override
   State<_EqEffectEditor> createState() => _EqEffectEditorState();
+}
+
+class _FlangerEffectEditor extends StatefulWidget {
+  final bool onMaster;
+  final int? trackIdx;
+  final int slotIdx;
+  final bool initialBypass;
+  final _FlangerUiState initialState;
+  final ValueChanged<bool> onBypassChanged;
+  final ValueChanged<_FlangerUiState> onParamsChanged;
+
+  const _FlangerEffectEditor({
+    required this.onMaster,
+    this.trackIdx,
+    required this.slotIdx,
+    required this.initialBypass,
+    required this.initialState,
+    required this.onBypassChanged,
+    required this.onParamsChanged,
+  });
+
+  @override
+  State<_FlangerEffectEditor> createState() => _FlangerEffectEditorState();
+}
+
+class _FlangerEffectEditorState extends State<_FlangerEffectEditor> {
+  late double _rate;
+  late double _depth;
+  late double _delay;
+  late double _feedback;
+  late int _stereo;
+  late double _dry;
+  late double _wet;
+  late bool _bypass;
+
+  @override
+  void initState() {
+    super.initState();
+    _rate = widget.initialState.rate;
+    _depth = widget.initialState.depth;
+    _delay = widget.initialState.delay;
+    _feedback = widget.initialState.feedback;
+    _stereo = widget.initialState.stereo;
+    _dry = widget.initialState.dry;
+    _wet = widget.initialState.wet;
+    _bypass = widget.initialBypass;
+  }
+
+  void _toggleBypass() {
+    setState(() => _bypass = !_bypass);
+    widget.onBypassChanged(_bypass);
+    if (widget.onMaster) {
+      AudioEngine.instance.setMasterInsertBypass(widget.slotIdx, _bypass);
+    } else {
+      AudioEngine.instance.setTrackInsertBypass(
+        widget.trackIdx ?? 0,
+        widget.slotIdx,
+        _bypass,
+      );
+    }
+  }
+
+  void _updateParams() {
+    widget.onParamsChanged(
+      _FlangerUiState(
+        rate: _rate,
+        depth: _depth,
+        delay: _delay,
+        feedback: _feedback,
+        stereo: _stereo,
+        dry: _dry,
+        wet: _wet,
+      ),
+    );
+    if (widget.onMaster) {
+      AudioEngine.instance.setMasterFlangerParams(
+        widget.slotIdx,
+        _rate,
+        _depth,
+        _delay,
+        _feedback,
+        _stereo,
+      );
+      AudioEngine.instance.setMasterInsertMix(widget.slotIdx, _dry, _wet);
+    } else {
+      AudioEngine.instance.setTrackFlangerParams(
+        widget.trackIdx ?? 0,
+        widget.slotIdx,
+        _rate,
+        _depth,
+        _delay,
+        _feedback,
+        _stereo,
+      );
+      AudioEngine.instance.setTrackInsertMix(
+        widget.trackIdx ?? 0,
+        widget.slotIdx,
+        _dry,
+        _wet,
+      );
+    }
+  }
+
+  String _rateLabel() => '${(0.1 + _rate * 7.9).toStringAsFixed(1)} Hz';
+  String _depthLabel() => '${(_depth * 10.0).toStringAsFixed(1)} ms';
+  String _delayLabel() => '${(_delay * 10.0).toStringAsFixed(1)} ms';
+  String _feedbackLabel() => '${(_feedback * 100.0).toStringAsFixed(0)} %';
+
+  @override
+  Widget build(BuildContext context) {
+    final bottomInset = MediaQuery.of(context).padding.bottom;
+    return SafeArea(
+      top: false,
+      child: Container(
+        color: kBgColor,
+        child: SingleChildScrollView(
+          padding: EdgeInsets.fromLTRB(12, 16, 12, bottomInset + 28),
+          child: Container(
+            padding: const EdgeInsets.fromLTRB(14, 14, 14, 20),
+            decoration: BoxDecoration(
+              color: kBgTrackHeader,
+              border: Border.all(color: kColInactive.withAlpha(80)),
+              borderRadius: BorderRadius.circular(4),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          'FLANGER',
+                          style: kStyleHeader.copyWith(
+                            fontSize: 18,
+                            color: _bypass ? kColInactive : kColAccent,
+                            letterSpacing: 1.8,
+                          ),
+                        ),
+                      ),
+                      GestureDetector(
+                        onTap: _toggleBypass,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 5,
+                          ),
+                          decoration: BoxDecoration(
+                            color: (_bypass ? kColInactive : kColAccent)
+                                .withAlpha(40),
+                            border: Border.all(
+                              color: _bypass ? kColInactive : kColAccent,
+                            ),
+                            borderRadius: BorderRadius.circular(2),
+                          ),
+                          child: Text(
+                            _bypass ? 'BYP' : 'ON',
+                            style: kStyleHeader.copyWith(
+                              fontSize: 10,
+                              color: _bypass ? kColInactive : kColAccent,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 18),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        'STEREO',
+                        style: kStyleBase.copyWith(
+                          fontSize: 11,
+                          color: kColInactive,
+                        ),
+                      ),
+                      GestureDetector(
+                        onTap: () {
+                          setState(() => _stereo = _stereo == 0 ? 1 : 0);
+                          _updateParams();
+                        },
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 5,
+                          ),
+                          decoration: BoxDecoration(
+                            color: (_stereo == 1 ? kColAccent : kColInactive)
+                                .withAlpha(40),
+                            border: Border.all(
+                              color: _stereo == 1 ? kColAccent : kColInactive,
+                            ),
+                            borderRadius: BorderRadius.circular(2),
+                          ),
+                          child: Text(
+                            _stereo == 1 ? 'STEREO' : 'MONO',
+                            style: kStyleHeader.copyWith(
+                              fontSize: 10,
+                              color: _stereo == 1 ? kColAccent : kColInactive,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 28),
+                  child: _ReverbSlider(
+                    label: 'RATE',
+                    value: _rate,
+                    displayText: _rateLabel(),
+                    onChanged: (v) {
+                      setState(() => _rate = v);
+                      _updateParams();
+                    },
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 28),
+                  child: _ReverbSlider(
+                    label: 'DEPTH',
+                    value: _depth,
+                    displayText: _depthLabel(),
+                    onChanged: (v) {
+                      setState(() => _depth = v);
+                      _updateParams();
+                    },
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 28),
+                  child: _ReverbSlider(
+                    label: 'DELAY',
+                    value: _delay,
+                    displayText: _delayLabel(),
+                    onChanged: (v) {
+                      setState(() => _delay = v);
+                      _updateParams();
+                    },
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 28),
+                  child: _ReverbSlider(
+                    label: 'FEEDBACK',
+                    value: (_feedback + 1.0) / 2.0,
+                    displayText: _feedbackLabel(),
+                    onChanged: (v) {
+                      setState(() => _feedback = v * 2.0 - 1.0);
+                      _updateParams();
+                    },
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 28),
+                  child: _ReverbSlider(
+                    label: 'DRY',
+                    value: _dry,
+                    onChanged: (v) {
+                      setState(() => _dry = v);
+                      _updateParams();
+                    },
+                  ),
+                ),
+                _ReverbSlider(
+                  label: 'WET',
+                  value: _wet,
+                  onChanged: (v) {
+                    setState(() => _wet = v);
+                    _updateParams();
+                  },
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 class _EqEffectEditorState extends State<_EqEffectEditor> {
@@ -5181,6 +5849,170 @@ class _ReverbSlider extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+class _Eq5EffectEditor extends StatefulWidget {
+  final bool onMaster;
+  final int? trackIdx;
+  final int slotIdx;
+  final bool initialBypass;
+  final _Eq5UiState initialState;
+  final ValueChanged<bool> onBypassChanged;
+  final ValueChanged<_Eq5UiState> onParamsChanged;
+
+  const _Eq5EffectEditor({
+    required this.onMaster,
+    this.trackIdx,
+    required this.slotIdx,
+    required this.initialBypass,
+    required this.initialState,
+    required this.onBypassChanged,
+    required this.onParamsChanged,
+  });
+
+  @override
+  State<_Eq5EffectEditor> createState() => _Eq5EffectEditorState();
+}
+
+class _Eq5EffectEditorState extends State<_Eq5EffectEditor> {
+  late double _bass, _warmth, _presence, _clarity, _air;
+  late double _dry, _wet;
+  late bool _bypass;
+
+  @override
+  void initState() {
+    super.initState();
+    _bass = widget.initialState.bass;
+    _warmth = widget.initialState.warmth;
+    _presence = widget.initialState.presence;
+    _clarity = widget.initialState.clarity;
+    _air = widget.initialState.air;
+    _dry = widget.initialState.dry;
+    _wet = widget.initialState.wet;
+    _bypass = widget.initialBypass;
+  }
+
+  void _toggleBypass() {
+    setState(() => _bypass = !_bypass);
+    widget.onBypassChanged(_bypass);
+    if (widget.onMaster) {
+      AudioEngine.instance.setMasterInsertBypass(widget.slotIdx, _bypass);
+    } else {
+      AudioEngine.instance.setTrackInsertBypass(widget.trackIdx ?? 0, widget.slotIdx, _bypass);
+    }
+  }
+
+  void _updateParams() {
+    final s = _Eq5UiState(
+      bass: _bass,
+      warmth: _warmth,
+      presence: _presence,
+      clarity: _clarity,
+      air: _air,
+      dry: _dry,
+      wet: _wet,
+    );
+    widget.onParamsChanged(s);
+
+    double toNorm(double db) => (db / 12.0).clamp(-1.0, 1.0);
+    final lowGain = toNorm(_bass);
+    final midGain = toNorm(_presence);
+    final highGain = toNorm(_air);
+
+    final lowFreq = 0.07; // ~60 Hz
+    final midFreq = 0.436; // ~1 kHz
+    final midQ = 0.091; // ~Q=1
+    final highFreq = 0.862; // ~12 kHz
+
+    if (widget.onMaster) {
+      AudioEngine.instance.setMasterEqParams(widget.slotIdx, lowGain, lowFreq, midGain, midFreq, midQ, highGain, highFreq);
+      AudioEngine.instance.setMasterInsertMix(widget.slotIdx, _dry, _wet);
+    } else {
+      AudioEngine.instance.setTrackEqParams(widget.trackIdx ?? 0, widget.slotIdx, lowGain, lowFreq, midGain, midFreq, midQ, highGain, highFreq);
+      AudioEngine.instance.setTrackInsertMix(widget.trackIdx ?? 0, widget.slotIdx, _dry, _wet);
+    }
+  }
+
+  String _dbLabel(double v) => '${v.toStringAsFixed(1)} dB';
+
+  @override
+  Widget build(BuildContext context) {
+    final bottomInset = MediaQuery.of(context).padding.bottom;
+    return SafeArea(
+      top: false,
+      child: Container(
+        color: kBgColor,
+        child: SingleChildScrollView(
+          padding: EdgeInsets.fromLTRB(12, 16, 12, bottomInset + 28),
+          child: Container(
+            padding: const EdgeInsets.fromLTRB(14, 14, 14, 20),
+            decoration: BoxDecoration(
+              color: kBgTrackHeader,
+              border: Border.all(color: kColInactive.withAlpha(80)),
+              borderRadius: BorderRadius.circular(4),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          'EQ-5',
+                          style: kStyleHeader.copyWith(
+                            fontSize: 18,
+                            color: _bypass ? kColInactive : kColAccent,
+                            letterSpacing: 1.8,
+                          ),
+                        ),
+                      ),
+                      GestureDetector(
+                        onTap: _toggleBypass,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                          decoration: BoxDecoration(
+                            color: (_bypass ? kColInactive : kColAccent).withAlpha(40),
+                            border: Border.all(color: _bypass ? kColInactive : kColAccent),
+                            borderRadius: BorderRadius.circular(2),
+                          ),
+                          child: Text(_bypass ? 'BYP' : 'ON', style: kStyleHeader.copyWith(fontSize: 10, color: _bypass ? kColInactive : kColAccent)),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 18),
+                  child: _ReverbSlider(label: 'BASS (60Hz)', value: (_bass + 10.0) / 20.0, displayText: _dbLabel(_bass), onChanged: (v) { setState(() => _bass = v * 20.0 - 10.0); _updateParams(); }),
+                ),
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 18),
+                  child: _ReverbSlider(label: 'WARMTH (250Hz)', value: (_warmth + 10.0) / 20.0, displayText: _dbLabel(_warmth), onChanged: (v) { setState(() => _warmth = v * 20.0 - 10.0); _updateParams(); }),
+                ),
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 18),
+                  child: _ReverbSlider(label: 'PRESENCE (1kHz)', value: (_presence + 10.0) / 20.0, displayText: _dbLabel(_presence), onChanged: (v) { setState(() => _presence = v * 20.0 - 10.0); _updateParams(); }),
+                ),
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 18),
+                  child: _ReverbSlider(label: 'CLARITY (4kHz)', value: (_clarity + 10.0) / 20.0, displayText: _dbLabel(_clarity), onChanged: (v) { setState(() => _clarity = v * 20.0 - 10.0); _updateParams(); }),
+                ),
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 18),
+                  child: _ReverbSlider(label: 'AIR (12kHz)', value: (_air + 10.0) / 20.0, displayText: _dbLabel(_air), onChanged: (v) { setState(() => _air = v * 20.0 - 10.0); _updateParams(); }),
+                ),
+                Padding(padding: const EdgeInsets.only(bottom: 28), child: _ReverbSlider(label: 'DRY', value: _dry, onChanged: (v) { setState(() => _dry = v); _updateParams(); })),
+                _ReverbSlider(label: 'WET', value: _wet, onChanged: (v) { setState(() => _wet = v); _updateParams(); }),
+              ],
+            ),
+          ),
+        ),
+      ),
     );
   }
 }

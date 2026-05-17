@@ -421,13 +421,6 @@ class _SongScreenState extends State<SongScreen> {
                       value: _SongMenuAction.exportWav,
                       child: Text('Export WAV', style: TextStyle(fontSize: 16)),
                     ),
-                    PopupMenuItem(
-                      enabled: false,
-                      child: Text(
-                        'Export Tracks (coming soon)',
-                        style: TextStyle(fontSize: 16),
-                      ),
-                    ),
                     PopupMenuDivider(),
                     PopupMenuItem(
                       value: _SongMenuAction.showManual,

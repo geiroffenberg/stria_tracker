@@ -1425,11 +1425,35 @@ static void applyChorusParams(InsertEffect& fx, float rate, float depth, float d
     if (fx.chorusBufR.size() < 2880) { fx.chorusBufR.assign(2880, 0.0f); }
 }
 
+static void applyFlangerParams(InsertEffect& fx, float rate, float depth, float delay, float feedback, int stereo) {
+    fx.flangerRate     = std::clamp(rate,  0.0f, 1.0f);
+    fx.flangerDepth    = std::clamp(depth, 0.0f, 1.0f);
+    fx.flangerDelay    = std::clamp(delay, 0.0f, 1.0f);
+    fx.flangerFeedback = std::clamp(feedback, -0.95f, 0.95f);
+    fx.flangerStereo   = std::clamp(stereo, 0, 1);
+    // Ensure buffer is allocated (may have been cleared on reset)
+    if (fx.flangerBufL.size() < 480) { fx.flangerBufL.assign(480, 0.0f); }
+    if (fx.flangerBufR.size() < 480) { fx.flangerBufR.assign(480, 0.0f); }
+}
+
 void AudioEngine::setTrackChorusParams(int trackIdx, int slotIdx, float rate, float depth, float delay, int stereo) {
     if (trackIdx < 0 || trackIdx >= kMaxVoices) return;
     if (slotIdx < 0 || slotIdx >= kMaxInsertSlots) return;
     std::lock_guard<std::mutex> lock(mVoiceMutex);
     applyChorusParams(mTrackInserts[trackIdx][slotIdx], rate, depth, delay, stereo);
+}
+
+void AudioEngine::setTrackFlangerParams(int trackIdx, int slotIdx, float rate, float depth, float delay, float feedback, int stereo) {
+    if (trackIdx < 0 || trackIdx >= kMaxVoices) return;
+    if (slotIdx < 0 || slotIdx >= kMaxInsertSlots) return;
+    std::lock_guard<std::mutex> lock(mVoiceMutex);
+    applyFlangerParams(mTrackInserts[trackIdx][slotIdx], rate, depth, delay, feedback, stereo);
+}
+
+void AudioEngine::setMasterFlangerParams(int slotIdx, float rate, float depth, float delay, float feedback, int stereo) {
+    if (slotIdx < 0 || slotIdx >= kMaxInsertSlots) return;
+    std::lock_guard<std::mutex> lock(mVoiceMutex);
+    applyFlangerParams(mMasterInserts[slotIdx], rate, depth, delay, feedback, stereo);
 }
 
 void AudioEngine::setMasterChorusParams(int slotIdx, float rate, float depth, float delay, int stereo) {
@@ -1645,6 +1669,60 @@ void AudioEngine::processEffects(float* outL, float* outR, int numFrames, Insert
                 outL[i] = outL[i] * fx.dryLevel + gL * fx.wetLevel;
                 outR[i] = outR[i] * fx.dryLevel + gR * fx.wetLevel;
             }
+        } else if (fx.type == 9) {
+            // Flanger: short modulated delay with feedback
+            // rate: 0..1 → 0.1..8 Hz
+            const float lfoHz    = 0.1f + fx.flangerRate * 7.9f;
+            // depth: 0..1 → 0..10 ms  (in samples)
+            const float depthSmp = fx.flangerDepth * 10.0f * 0.001f * mCachedSampleRate;
+            // base delay: 0..1 → 0..10 ms  (in samples)
+            const float baseSmp  = fx.flangerDelay * 10.0f * 0.001f * mCachedSampleRate;
+            const float feedback = std::clamp(fx.flangerFeedback, -0.95f, 0.95f);
+            const int   bufSize  = static_cast<int>(fx.flangerBufL.size());
+            if (bufSize == 0) goto flanger_skip;
+            {
+                const float twoPi    = 6.28318530718f;
+                const float phaseInc = twoPi * lfoHz / mCachedSampleRate;
+                for (int i = 0; i < numFrames; ++i) {
+                    // current input
+                    float inL = outL[i];
+                    float inR = outR[i];
+
+                    // write current sample + feedback into ring buffer
+                    fx.flangerBufL[fx.flangerBufPos] = inL + fx.flangerBufL[fx.flangerBufPos] * feedback;
+                    fx.flangerBufR[fx.flangerBufPos] = inR + fx.flangerBufR[fx.flangerBufPos] * feedback;
+
+                    // LFO mod
+                    float modL = std::sin(fx.flangerLfoPhL);
+                    float phR  = fx.flangerStereo ? (fx.flangerLfoPhL + twoPi * 0.25f) : fx.flangerLfoPhL;
+                    float modR = std::sin(phR);
+
+                    float readOffL = baseSmp + depthSmp * modL;
+                    float readOffR = baseSmp + depthSmp * modR;
+
+                    auto linearRead = [&](std::vector<float>& buf, float offset) -> float {
+                        float rPos = static_cast<float>(fx.flangerBufPos) - offset;
+                        int   r0   = static_cast<int>(std::floor(rPos));
+                        float frac = rPos - static_cast<float>(r0);
+                        int   i0   = ((r0 % bufSize) + bufSize) % bufSize;
+                        int   i1   = ((r0 + 1) % bufSize + bufSize) % bufSize;
+                        return buf[i0] + frac * (buf[i1] - buf[i0]);
+                    };
+
+                    float delayedL = linearRead(fx.flangerBufL, readOffL);
+                    float delayedR = linearRead(fx.flangerBufR, readOffR);
+
+                    outL[i] = inL * fx.dryLevel + delayedL * fx.wetLevel;
+                    outR[i] = inR * fx.dryLevel + delayedR * fx.wetLevel;
+
+                    fx.flangerLfoPhL += phaseInc;
+                    if (fx.flangerLfoPhL >= twoPi) fx.flangerLfoPhL -= twoPi;
+                    fx.flangerLfoPhR = fx.flangerLfoPhL;
+
+                    fx.flangerBufPos = (fx.flangerBufPos + 1) % bufSize;
+                }
+            }
+            flanger_skip:;
         } else if (fx.type == 6) {
             // Chorus: modulated delay line with sinusoidal LFO
             // rate: 0..1 → 0.1..8 Hz
