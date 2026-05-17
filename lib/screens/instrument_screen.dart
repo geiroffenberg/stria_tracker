@@ -5,8 +5,8 @@ import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
+import 'package:flutter/services.dart';
 import 'package:permission_handler/permission_handler.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:file_picker/file_picker.dart';
 import '../audio/audio_engine.dart';
 import '../audio/wav_encoder.dart';
@@ -1133,6 +1133,54 @@ class _KarplusStrongEditor extends StatelessWidget {
   }
 }
 
+// ── Compact icon+label button used in the sampler toolbar ────────────────────
+
+class _SamplerButton extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final VoidCallback? onPressed;
+
+  const _SamplerButton({
+    required this.icon,
+    required this.label,
+    required this.onPressed,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final active = onPressed != null;
+    final color = active ? kColHeader : kColInactive;
+    return Opacity(
+      opacity: active ? 1.0 : 0.35,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onPressed,
+          borderRadius: BorderRadius.circular(6),
+          child: Container(
+            padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
+            decoration: BoxDecoration(
+              border: Border.all(color: kColInactive.withAlpha(90), width: 1),
+              borderRadius: BorderRadius.circular(6),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(icon, color: color, size: 24),
+                const SizedBox(height: 4),
+                Text(
+                  label,
+                  style: kStyleBase.copyWith(fontSize: 9, color: color),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 // ── Sampler editor (placeholder) ─────────────────────────────────────────────
 
 class _SamplerEditor extends StatefulWidget {
@@ -1145,8 +1193,10 @@ class _SamplerEditor extends StatefulWidget {
 
 class _SamplerEditorState extends State<_SamplerEditor>
     with TickerProviderStateMixin {
+  static const _videoExtractorChannel =
+      MethodChannel('video_audio_extractor');
+
   static const _kSampleExts = <String>{
-    '.wav',
     '.aif',
     '.aiff',
     '.flac',
@@ -1878,20 +1928,97 @@ class _SamplerEditorState extends State<_SamplerEditor>
   }
 
   Future<void> _loadSamplerFromVideo(BuildContext context) async {
-    // Video loading requires FFmpeg which has platform-specific build requirements.
-    // For now, show a user-friendly message about the setup needed.
+    // Pick a video file
+    final picked = await FilePicker.platform.pickFiles(
+      type: FileType.video,
+      allowMultiple: false,
+    );
+    if (picked == null || picked.files.isEmpty) return;
+    final videoPath = picked.files.first.path;
+    if (videoPath == null) return;
+
     if (!mounted) return;
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text(
-          'Video loading requires FFmpeg setup. '
-          'Please convert video files to WAV using external tools, '
-          'then use LOAD SAMPLE.',
+    // Show spinner while extracting
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: kBgTrackHeader,
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const CircularProgressIndicator(),
+            const SizedBox(height: 16),
+            Text(
+              'Extracting audio...',
+              style: kStyleBase.copyWith(color: kColHeader),
+              textAlign: TextAlign.center,
+            ),
+          ],
         ),
-        duration: Duration(seconds: 4),
       ),
     );
+
+    try {
+      // Android native MediaExtractor/MediaCodec via platform channel
+      // Extracts up to 10 s, downmixed to mono, 16-bit PCM WAV
+      final String? wavPath = await _videoExtractorChannel.invokeMethod<String>(
+        'extractVideoAudio',
+        {'path': videoPath},
+      );
+
+      if (!mounted) return;
+      Navigator.of(context).pop();
+
+      if (wavPath == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('No audio track found in video.'),
+            duration: Duration(seconds: 3),
+          ),
+        );
+        return;
+      }
+
+      final videoName = videoPath.split(Platform.pathSeparator).last;
+      final displayName =
+          videoName.replaceAll(RegExp(r'\.[^.]*$'), '') + '.wav';
+
+      final err = await state.loadSamplerSampleFromPath(
+        wavPath,
+        displayName: displayName,
+      );
+
+      if (!mounted) return;
+      if (err != null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Load failed: $err'),
+            duration: const Duration(seconds: 3),
+          ),
+        );
+        return;
+      }
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Loaded "$displayName" from video'),
+          duration: const Duration(seconds: 2),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      try {
+        Navigator.of(context).pop();
+      } catch (_) {}
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error: $e'),
+          duration: const Duration(seconds: 3),
+        ),
+      );
+    }
   }
 
   Future<String?> _saveRecordedSample(
@@ -2395,41 +2522,33 @@ class _SamplerEditorState extends State<_SamplerEditor>
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                   children: [
-                    Expanded(
-                      child: ElevatedButton.icon(
-                        onPressed: _busy ? null : () => _showSampleBrowser(context),
-                        icon: const Icon(Icons.folder_open),
-                        label: const Text('LOAD SAMPLE'),
-                      ),
+                    _SamplerButton(
+                      icon: Icons.folder_open,
+                      label: 'SAMPLE',
+                      onPressed: _busy ? null : () => _showSampleBrowser(context),
                     ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: ElevatedButton.icon(
-                        onPressed: (_busy || isPreviewing)
-                            ? null
-                            : () => _showRecordingWindow(context),
-                        icon: const Icon(Icons.mic),
-                        label: const Text('RECORD'),
-                      ),
+                    _SamplerButton(
+                      icon: Icons.video_file,
+                      label: 'VIDEO',
+                      onPressed: _busy ? null : () => _loadSamplerFromVideo(context),
                     ),
-                    const SizedBox(width: 8),
-                    IconButton(
-                      tooltip: 'Delete sample',
+                    _SamplerButton(
+                      icon: Icons.mic,
+                      label: 'RECORD',
+                      onPressed: (_busy || isPreviewing)
+                          ? null
+                          : () => _showRecordingWindow(context),
+                    ),
+                    _SamplerButton(
+                      icon: Icons.delete_outline,
+                      label: 'DELETE',
                       onPressed: (_busy || p.samplePath == null)
                           ? null
-                          : () {
-                              state.clearCurrentSamplerSample();
-                            },
-                      icon: const Icon(Icons.delete_outline),
+                          : () => state.clearCurrentSamplerSample(),
                     ),
                   ],
-                ),
-                const SizedBox(height: 8),
-                ElevatedButton.icon(
-                  onPressed: _busy ? null : () => _loadSamplerFromVideo(context),
-                  icon: const Icon(Icons.video_file),
-                  label: const Text('LOAD VIDEO'),
                 ),
               ],
             ),

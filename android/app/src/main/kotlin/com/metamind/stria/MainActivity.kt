@@ -19,6 +19,27 @@ class MainActivity : FlutterActivity() {
 		super.configureFlutterEngine(flutterEngine)
 		flutterEngine.plugins.add(AudioEnginePlugin())
 
+		// Video audio extraction channel (uses Android MediaExtractor/MediaCodec)
+		MethodChannel(
+			flutterEngine.dartExecutor.binaryMessenger,
+			"video_audio_extractor",
+		).setMethodCallHandler { call, result ->
+			when (call.method) {
+				"extractVideoAudio" -> {
+					val path = call.argument<String>("path")
+					if (path.isNullOrBlank()) {
+						result.error("bad_args", "Missing path", null)
+						return@setMethodCallHandler
+					}
+					Thread {
+						val wavPath = VideoAudioExtractor.extractToWav(this, path)
+						runOnUiThread { result.success(wavPath) }
+					}.start()
+				}
+				else -> result.notImplemented()
+			}
+		}
+
 		projectStorageChannel = MethodChannel(
 			flutterEngine.dartExecutor.binaryMessenger,
 			"project_storage"
