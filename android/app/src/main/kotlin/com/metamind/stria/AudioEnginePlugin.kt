@@ -30,6 +30,11 @@ class AudioEnginePlugin : FlutterPlugin, MethodCallHandler {
         }
     }
 
+    // ── Audio-focus helpers (called by MainActivity) ──────────────────────────
+
+    fun pauseStream()  { if (enginePtr != 0L) nativePauseStream(enginePtr) }
+    fun resumeStream() { if (enginePtr != 0L) nativeResumeStream(enginePtr) }
+
     // ── MethodCallHandler ────────────────────────────────────────────────────
 
     override fun onMethodCall(call: MethodCall, result: Result) {
@@ -522,6 +527,8 @@ class AudioEnginePlugin : FlutterPlugin, MethodCallHandler {
     private external fun nativeOpen(ptr: Long): Boolean
     private external fun nativeStart(ptr: Long)
     private external fun nativeStop(ptr: Long)
+    private external fun nativePauseStream(ptr: Long)
+    private external fun nativeResumeStream(ptr: Long)
     private external fun nativeSetTempo(ptr: Long, bpm: Double)
     private external fun nativeSetLineSamplesPerRow(ptr: Long, samples: Int)
     private external fun nativeConsumePendingRowAdvances(ptr: Long): Int

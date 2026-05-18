@@ -375,6 +375,7 @@ bool AudioEngine::open() {
     builder.setFormat(oboe::AudioFormat::Float);
     builder.setChannelCount(oboe::ChannelCount::Stereo);
     builder.setDataCallback(this);
+    builder.setErrorCallback(this);  // triggers onErrorAfterClose on device disconnect
 
     oboe::Result result = builder.openManagedStream(mStream);
     if (result != oboe::Result::OK) {
@@ -460,6 +461,88 @@ void AudioEngine::close() {
         }
         mStream->close();
         LOGI("Stream closed");
+    }
+}
+
+// Called from a detached thread when onErrorAfterClose fires.
+// Rebuilds the Oboe stream after a device disconnect (phone call, headphone swap, etc.)
+// without disturbing transport state or loaded samples.
+void AudioEngine::restartStream() {
+    mStarted = false;
+
+    oboe::AudioStreamBuilder builder;
+    builder.setDirection(oboe::Direction::Output);
+    builder.setPerformanceMode(oboe::PerformanceMode::LowLatency);
+    builder.setSharingMode(oboe::SharingMode::Exclusive);
+    builder.setFormat(oboe::AudioFormat::Float);
+    builder.setChannelCount(oboe::ChannelCount::Stereo);
+    builder.setDataCallback(this);
+    builder.setErrorCallback(this);
+
+    oboe::Result result = builder.openManagedStream(mStream);
+    if (result != oboe::Result::OK) {
+        // Exclusive mode may not be available on the new device — fall back to Shared.
+        builder.setSharingMode(oboe::SharingMode::Shared);
+        result = builder.openManagedStream(mStream);
+    }
+
+    if (result == oboe::Result::OK) {
+        mCachedSampleRate = static_cast<float>(mStream->getSampleRate());
+        if (mHasFocus) {
+            // Only auto-start if we currently own audio focus.
+            // If focus was lost (phone call in progress), leave the stream idle;
+            // resumeOutputStream() will start it when focus returns.
+            oboe::Result startResult = mStream->requestStart();
+            if (startResult == oboe::Result::OK) {
+                mStarted = true;
+                LOGI("Stream restarted after disconnect: sampleRate=%d", mStream->getSampleRate());
+            } else {
+                LOGE("Stream restart: requestStart failed: %s", oboe::convertToText(startResult));
+            }
+        } else {
+            LOGI("Stream rebuilt (idle — no audio focus, will start on resume): sampleRate=%d",
+                 mStream->getSampleRate());
+        }
+    } else {
+        LOGE("Stream restart failed: %s", oboe::convertToText(result));
+    }
+}
+
+// Stop stream output without touching transport state (used on audio-focus loss).
+void AudioEngine::pauseOutputStream() {
+    mHasFocus = false;
+    if (mStream && mStarted) {
+        mStream->requestStop();
+        mStarted = false;
+        LOGI("Stream output paused (audio focus loss)");
+    }
+}
+
+// Resume stream output after focus is regained.
+// Falls back to a full stream rebuild if requestStart() fails (e.g. stream was
+// closed by onErrorAfterClose during a phone call and never successfully reopened).
+void AudioEngine::resumeOutputStream() {
+    mHasFocus = true;
+    if (!mStarted) {
+        if (mStream) {
+            oboe::Result r = mStream->requestStart();
+            if (r == oboe::Result::OK) {
+                mStarted = true;
+                LOGI("Stream output resumed (audio focus gained)");
+                return;
+            }
+            LOGI("requestStart failed (%s) — full stream rebuild", oboe::convertToText(r));
+        }
+        // Stream is null or in a bad state — rebuild from scratch.
+        restartStream();
+    }
+}
+
+// oboe::AudioStreamErrorCallback — fires on a background thread after the stream is closed.
+void AudioEngine::onErrorAfterClose(oboe::AudioStream* /*stream*/, oboe::Result error) {
+    if (error == oboe::Result::ErrorDisconnected) {
+        LOGI("Audio device disconnected — scheduling stream rebuild");
+        std::thread([this]() { restartStream(); }).detach();
     }
 }
 

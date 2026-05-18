@@ -2013,7 +2013,7 @@ class _SamplerEditorState extends State<_SamplerEditor>
 
       final videoName = videoPath.split(Platform.pathSeparator).last;
       final displayName =
-          videoName.replaceAll(RegExp(r'\.[^.]*$'), '') + '.wav';
+          '${videoName.replaceAll(RegExp(r'\.[^.]*$'), '')}.wav';
 
       final err = await state.loadSamplerSampleFromPath(
         wavPath,

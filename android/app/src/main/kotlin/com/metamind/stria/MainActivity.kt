@@ -1,8 +1,13 @@
 package com.metamind.stria
 
 import android.app.Activity
+import android.content.Context
 import android.content.Intent
+import android.media.AudioAttributes
+import android.media.AudioFocusRequest
+import android.media.AudioManager
 import android.net.Uri
+import android.os.Build
 import androidx.documentfile.provider.DocumentFile
 import com.metamind.stria.AudioEnginePlugin
 import io.flutter.embedding.android.FlutterActivity
@@ -10,14 +15,21 @@ import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 import java.nio.charset.StandardCharsets
 
-class MainActivity : FlutterActivity() {
+class MainActivity : FlutterActivity(), AudioManager.OnAudioFocusChangeListener {
 	private val requestPickProjectFolder = 60241
 	private var pendingPickFolderResult: MethodChannel.Result? = null
 	private lateinit var projectStorageChannel: MethodChannel
 
+	// Kept as a field so the focus handler can reach it.
+	private lateinit var audioPlugin: AudioEnginePlugin
+
+	private lateinit var audioManager: AudioManager
+	private var focusRequest: AudioFocusRequest? = null   // API 26+
+
 	override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
 		super.configureFlutterEngine(flutterEngine)
-		flutterEngine.plugins.add(AudioEnginePlugin())
+		audioPlugin = AudioEnginePlugin()
+		flutterEngine.plugins.add(audioPlugin)
 
 		// Video audio extraction channel (uses Android MediaExtractor/MediaCodec)
 		MethodChannel(
@@ -224,6 +236,64 @@ class MainActivity : FlutterActivity() {
 				else -> result.notImplemented()
 			}
 		}
+	}
+
+	override fun onResume() {
+		super.onResume()
+		audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
+		requestAudioFocus()
+		// Always restart the Oboe stream when returning to the app (covers the
+		// case where AUDIOFOCUS_LOSS paused the stream during a phone call but
+		// AUDIOFOCUS_GAIN never fired because we re-registered the listener).
+		audioPlugin.resumeStream()
+	}
+
+	override fun onPause() {
+		super.onPause()
+		// Don't stop the stream here — let audio focus callbacks handle it so
+		// that screen-lock / brief app-switches don't silence playback.
+		// Focus is abandoned in onDestroy() when we truly stop.
+	}
+
+	private fun requestAudioFocus() {
+		if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+			val attrs = AudioAttributes.Builder()
+				.setUsage(AudioAttributes.USAGE_MEDIA)
+				.setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
+				.build()
+			focusRequest = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
+				.setAudioAttributes(attrs)
+				.setAcceptsDelayedFocusGain(true)
+				.setOnAudioFocusChangeListener(this)
+				.build()
+			audioManager.requestAudioFocus(focusRequest!!)
+		} else {
+			@Suppress("DEPRECATION")
+			audioManager.requestAudioFocus(this, AudioManager.STREAM_MUSIC, AudioManager.AUDIOFOCUS_GAIN)
+		}
+	}
+
+	private fun abandonAudioFocus() {
+		if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+			focusRequest?.let { audioManager.abandonAudioFocusRequest(it) }
+		} else {
+			@Suppress("DEPRECATION")
+			audioManager.abandonAudioFocus(this)
+		}
+	}
+
+	override fun onAudioFocusChange(focusChange: Int) {
+		when (focusChange) {
+			AudioManager.AUDIOFOCUS_LOSS,
+			AudioManager.AUDIOFOCUS_LOSS_TRANSIENT -> audioPlugin.pauseStream()
+			AudioManager.AUDIOFOCUS_GAIN           -> audioPlugin.resumeStream()
+			// AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK: notifications etc. — let them through, don't pause
+		}
+	}
+
+	override fun onDestroy() {
+		super.onDestroy()
+		abandonAudioFocus()
 	}
 
 	override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {

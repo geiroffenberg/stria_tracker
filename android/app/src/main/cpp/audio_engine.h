@@ -316,7 +316,8 @@ struct InsertEffect {
  *
  * TODO: replace std::mutex with a lock-free scheme for real-time safety.
  */
-class AudioEngine : public oboe::AudioStreamDataCallback {
+class AudioEngine : public oboe::AudioStreamDataCallback,
+                    public oboe::AudioStreamErrorCallback {
 public:
     AudioEngine();
     ~AudioEngine() override;
@@ -325,6 +326,9 @@ public:
     void start();
     void stop();
     void close();
+    void restartStream();      // rebuild Oboe stream after device disconnect
+    void pauseOutputStream();  // stop stream output without resetting transport
+    void resumeOutputStream(); // resume stream output after focus regained
 
     void setTempo(double bpm);
 
@@ -510,6 +514,10 @@ public:
         void*              audioData,
         int32_t            numFrames) override;
 
+    // oboe::AudioStreamErrorCallback — fires after stream is closed by Oboe
+    void onErrorAfterClose(oboe::AudioStream* stream,
+                           oboe::Result       error) override;
+
     /// Check if a specific voice (track) is currently playing.
     /// Returns true if the voice has an active note or is in release stage.
     bool isVoicePlaying(int trackIdx) const;
@@ -553,7 +561,8 @@ private:
     oboe::ManagedStream              mStream;
     oboe::ManagedStream              mRecordingStream;
     std::unique_ptr<RecordingCallback> mRecordingCallback;
-    bool                             mStarted = false;
+    bool                             mStarted   = false;
+    bool                             mHasFocus  = true;   // tracks audio-focus state
     std::atomic<double>              mBpm{120.0};
     mutable std::mutex               mVoiceMutex;
     std::array<Voice, kMaxVoices>    mVoices{};

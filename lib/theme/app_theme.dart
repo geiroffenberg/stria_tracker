@@ -269,7 +269,7 @@ const TrackerPalette kPaletteMono = TrackerPalette(
 
 const TrackerPalette kPaletteLight = TrackerPalette(
   name: 'Paper',
-  previewColor: Color(0xFF1A1A1A),
+  previewColor: Color.fromARGB(255, 252, 251, 251),
   brightness: Brightness.light,
   bgColor: Color(0xFFFFFFFF),
   bgBeat: Color(0xFFF4F4F4),
