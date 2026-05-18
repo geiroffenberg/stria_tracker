@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../main.dart';
 import '../state/app_state.dart';
 import '../theme/app_theme.dart';
 import '../widgets/transport_bar.dart';
@@ -24,38 +25,41 @@ class _MainScreenState extends State<MainScreen> {
   Widget build(BuildContext context) {
     AppStateScope.of(context); // subscribe to app state
 
-    return Scaffold(
-      backgroundColor: kBgColor,
-      body: NotificationListener<OpenPatternTrackNotification>(
-        onNotification: (notification) {
-          if (_tabIndex != 1) {
-            setState(() => _tabIndex = 1);
-          }
-          AppStateScope.of(context).setPlaybackFollowsSong(false);
-          return true;
-        },
-        child: SafeArea(
-          child: Column(
-            children: [
-              _buildTopNav(),
-              Expanded(
-                child: IndexedStack(
-                  index: _tabIndex,
-                  children: const [
-                    SongScreen(),
-                    PatternScreen(),
-                    InstrumentScreen(),
-                    MixerScreen(),
-                  ],
+    return ValueListenableBuilder<TrackerPalette>(
+      valueListenable: paletteNotifier,
+      builder: (_, __, ___) => Scaffold(
+        backgroundColor: kBgColor,
+        body: NotificationListener<OpenPatternTrackNotification>(
+          onNotification: (notification) {
+            if (_tabIndex != 1) {
+              setState(() => _tabIndex = 1);
+            }
+            AppStateScope.of(context).setPlaybackFollowsSong(false);
+            return true;
+          },
+          child: SafeArea(
+            child: Column(
+              children: [
+                _buildTopNav(),
+                Expanded(
+                  child: IndexedStack(
+                    index: _tabIndex,
+                    children: const [
+                      SongScreen(),
+                      PatternScreen(),
+                      InstrumentScreen(),
+                      MixerScreen(),
+                    ],
+                  ),
                 ),
-              ),
-              const Divider(
-                height: 1,
-                thickness: 1,
-                color: Color(0xFF226666),
-              ),
-              const TransportBar(),
-            ],
+                const Divider(
+                  height: 1,
+                  thickness: 1,
+                  color: Color(0xFF226666),
+                ),
+                TransportBar(),
+              ],
+            ),
           ),
         ),
       ),

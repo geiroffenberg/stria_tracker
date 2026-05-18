@@ -2721,44 +2721,187 @@ class _SamplerEditorState extends State<_SamplerEditor>
                   ],
                 ),
               ),
-            const SizedBox(height: 12),
-            GestureDetector(
-              onTap: _busy ? null : () => _chopAllSlicesToNewSlots(context),
-              child: Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 10,
-                  vertical: 8,
-                ),
-                decoration: BoxDecoration(
-                  color: kBgColor.withAlpha(60),
-                  border: Border.all(
-                    color: _busy
-                        ? kColInactive.withAlpha(60)
-                        : kColAccent.withAlpha(160),
-                  ),
-                  borderRadius: BorderRadius.circular(4),
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(
-                      Icons.content_cut,
-                      size: 14,
-                      color: _busy ? kColInactive : kColAccent,
+            ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCropChopCard(SamplerParams p) {
+    return _Section(
+      title: 'CROP & CHOP',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // ── Three buttons in a row ────────────────────────────────
+          Row(
+            children: [
+              // CROP
+              Expanded(
+                child: GestureDetector(
+                  onTap: (_busy || p.samplePath == null)
+                      ? null
+                      : () => _cropCurrentSample(context),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 12,
                     ),
-                    const SizedBox(width: 6),
-                    Text(
-                      'CHOP ALL SLICES TO NEW INSTRUMENTS',
-                      style: kStyleHeader.copyWith(
-                        fontSize: 11,
-                        color: _busy ? kColInactive : kColAccent,
+                    decoration: BoxDecoration(
+                      color: kBgColor.withAlpha(60),
+                      border: Border.all(
+                        color: (_busy || p.samplePath == null)
+                            ? kColInactive.withAlpha(60)
+                            : kColAccent.withAlpha(160),
                       ),
+                      borderRadius: BorderRadius.circular(4),
                     ),
-                  ],
+                    child: Column(
+                      children: [
+                        Icon(
+                          Icons.content_cut,
+                          size: 20,
+                          color: (_busy || p.samplePath == null)
+                              ? kColInactive
+                              : kColAccent,
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          'CROP',
+                          style: kStyleHeader.copyWith(
+                            fontSize: 11,
+                            color: (_busy || p.samplePath == null)
+                                ? kColInactive
+                                : kColAccent,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
                 ),
               ),
-            ),
-          ],
+              const SizedBox(width: 8),
+              // CHOP
+              Expanded(
+                child: GestureDetector(
+                  onTap: (_busy || p.samplePath == null)
+                      ? null
+                      : () => _chopToNewSlot(context),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 12,
+                    ),
+                    decoration: BoxDecoration(
+                      color: kBgColor.withAlpha(60),
+                      border: Border.all(
+                        color: (_busy || p.samplePath == null)
+                            ? kColInactive.withAlpha(60)
+                            : kColAccent.withAlpha(160),
+                      ),
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: Column(
+                      children: [
+                        Icon(
+                          Icons.arrow_forward,
+                          size: 20,
+                          color: (_busy || p.samplePath == null)
+                              ? kColInactive
+                              : kColAccent,
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          'CHOP',
+                          style: kStyleHeader.copyWith(
+                            fontSize: 11,
+                            color: (_busy || p.samplePath == null)
+                                ? kColInactive
+                                : kColAccent,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              // SLICES
+              Expanded(
+                child: GestureDetector(
+                  onTap: (_busy || p.samplePath == null)
+                      ? null
+                      : () => _chopAllSlicesToNewSlots(context),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 12,
+                    ),
+                    decoration: BoxDecoration(
+                      color: kBgColor.withAlpha(60),
+                      border: Border.all(
+                        color: (_busy || p.samplePath == null)
+                            ? kColInactive.withAlpha(60)
+                            : kColAccent.withAlpha(160),
+                      ),
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: Column(
+                      children: [
+                        Icon(
+                          Icons.account_tree,
+                          size: 20,
+                          color: (_busy || p.samplePath == null)
+                              ? kColInactive
+                              : kColAccent,
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          'SLICES',
+                          style: kStyleHeader.copyWith(
+                            fontSize: 11,
+                            color: (_busy || p.samplePath == null)
+                                ? kColInactive
+                                : kColAccent,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          // ── Subtext labels ────────────────────────────────────────
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+            children: [
+              Text(
+                'CROP here',
+                style: kStyleBase.copyWith(
+                  fontSize: 9,
+                  color: kColInactive,
+                ),
+              ),
+              Text(
+                'CHOP to new\ninstrument',
+                textAlign: TextAlign.center,
+                style: kStyleBase.copyWith(
+                  fontSize: 9,
+                  color: kColInactive,
+                ),
+              ),
+              Text(
+                'SLICES to new\ninstruments',
+                textAlign: TextAlign.center,
+                style: kStyleBase.copyWith(
+                  fontSize: 9,
+                  color: kColInactive,
+                ),
+              ),
+            ],
+          ),
         ],
       ),
     );
@@ -2896,6 +3039,7 @@ class _SamplerEditorState extends State<_SamplerEditor>
             ),
           ),
           _buildSliceEditor(p),
+          _buildCropChopCard(p),
           _buildStretchEditor(p),
           _Section(
             title: 'PARAMS',
@@ -2947,37 +3091,6 @@ class _SamplerEditorState extends State<_SamplerEditor>
                     },
                   ),
                 ),
-                Row(
-                  children: [
-                    Expanded(
-                      child: ElevatedButton.icon(
-                        onPressed: (_busy || p.samplePath == null)
-                            ? null
-                            : () => _chopToNewSlot(context),
-                        icon: const Icon(Icons.call_split),
-                        label: const Text('CHOP TO SLOT'),
-                        style: ElevatedButton.styleFrom(
-                          foregroundColor: kColAccent,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: ElevatedButton.icon(
-                        onPressed: (_busy || p.samplePath == null)
-                            ? null
-                            : () => _cropCurrentSample(context),
-                        icon: const Icon(Icons.content_cut),
-                        label: const Text('CROP CURRENT'),
-                        style: ElevatedButton.styleFrom(
-                          foregroundColor: kColAccent,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 6),
-                // ── Knob row: Pitch · Volume · Attack · Release ──────────
                 Row(
                   children: [
                     Expanded(
