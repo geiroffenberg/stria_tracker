@@ -1032,6 +1032,8 @@ void AudioEngine::triggerRowLocked(const std::vector<int>& rowData) {
             if (v.currentFreq <= 0.0f || v.glideSec <= 0.0f) {
                 v.currentFreq = v.targetFreq;
             }
+            // Cancel any in-flight SLU/SLD pitch ramp — new note takes over.
+            v.pitchRampSamplesLeft = 0;
             // Only reset filter state when the voice is effectively idle.
             // Resetting during an overlapping retrigger causes discontinuities (clicks).
             const bool voiceWasActive =
@@ -1134,6 +1136,7 @@ void AudioEngine::applyQueuedPlaybackRowLocked(const QueuedPlaybackRow& row) {
     if (!row.sliceCommandData.empty()) queueSliceCommandsLocked(row.sliceCommandData);
     if (!row.mixerCommandData.empty()) queueMixerCommandsLocked(row.mixerCommandData);
     if (!row.insertFxCommandData.empty()) queueInsertFxCommandsLocked(row.insertFxCommandData);
+    if (!row.pitchRampData.empty()) applyPitchRampsLocked(row.pitchRampData);
 }
 
 bool AudioEngine::primeNextQueuedPlaybackRowLocked() {
@@ -1199,6 +1202,27 @@ void AudioEngine::queueArpLocked(const std::vector<int>& data) {
         const int32_t sampleOffset = (static_cast<int64_t>(mLineSamplesPerRow) * stepNum) / totalSteps;
         const int32_t target = sampleOffset + mSubRowSampleCounter;
         mPendingArp.push_back({target, data[i + 2], data[i + 3]});
+    }
+}
+
+void AudioEngine::applyPitchRampsLocked(const std::vector<int>& data) {
+    // data format: groups of 3 ints — [trackIdx, targetMidiNote, durationSamples].
+    // Sets up a linear per-sample frequency ramp from currentFreq → targetFreq
+    // for sample-accurate smooth slides (SLU/SLD).
+    for (size_t i = 0; i + 2 < data.size(); i += 3) {
+        const int trackIdx       = data[i];
+        const int targetNote     = std::clamp(data[i + 1], 0, 127);
+        const int durationSamples = std::max(1, data[i + 2]);
+        if (trackIdx < 0 || trackIdx >= static_cast<int>(mVoices.size())) continue;
+        Voice& v = mVoices[trackIdx];
+        if (v.currentFreq <= 0.0f) continue; // no note playing — nothing to ramp
+        const float detuneSemitones = (v.detuneNorm - 0.5f) * 24.0f;
+        const float targetFreq = static_cast<float>(midiToFreq(targetNote)) *
+            std::pow(2.0f, detuneSemitones / 12.0f);
+        v.targetFreq = targetFreq;
+        v.pitchRampFreqPerSample = (targetFreq - v.currentFreq) /
+            static_cast<float>(durationSamples);
+        v.pitchRampSamplesLeft = durationSamples;
     }
 }
 
@@ -2588,7 +2612,14 @@ oboe::DataCallbackResult AudioEngine::onAudioReady(
         for (int i = 0; i < numFrames; ++i) {
             v.gain += smoothK * (v.gainTarget - v.gain);
             v.pan += panSmoothK * (v.panTarget - v.pan);
-            if (v.glideSec > 0.0f) {
+            if (v.pitchRampSamplesLeft > 0) {
+                // Linear pitch ramp for SLU/SLD: interpolates in frequency space
+                // at sample granularity → smooth cent-level sliding.
+                v.currentFreq += v.pitchRampFreqPerSample;
+                if (--v.pitchRampSamplesLeft == 0) {
+                    v.currentFreq = v.targetFreq; // snap to exact target at end
+                }
+            } else if (v.glideSec > 0.0f) {
                 v.currentFreq += glideK * (v.targetFreq - v.currentFreq);
             } else {
                 v.currentFreq = v.targetFreq;

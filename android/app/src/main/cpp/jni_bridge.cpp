@@ -85,7 +85,8 @@ Java_com_metamind_stria_AudioEnginePlugin_nativeEnqueuePlaybackRow(
         jintArray killData,
         jintArray sliceCommandData,
         jintArray mixerCommandData,
-        jintArray insertFxCommandData) {
+        jintArray insertFxCommandData,
+        jintArray pitchRampData) {
     auto toVector = [env](jintArray array) {
         jsize len = env->GetArrayLength(array);
         jint* elms = env->GetIntArrayElements(array, nullptr);
@@ -104,6 +105,7 @@ Java_com_metamind_stria_AudioEnginePlugin_nativeEnqueuePlaybackRow(
     row.sliceCommandData = toVector(sliceCommandData);
     row.mixerCommandData = toVector(mixerCommandData);
     row.insertFxCommandData = toVector(insertFxCommandData);
+    row.pitchRampData = toVector(pitchRampData);
     reinterpret_cast<AudioEngine*>(ptr)->enqueuePlaybackRow(row);
 }
 

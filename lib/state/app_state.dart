@@ -82,6 +82,8 @@ class _ScheduledPlaybackRow {
   final List<int> sliceCommandData;
   final List<int> mixerCommandData;
   final List<int> insertFxCommandData;
+  /// Linear pitch ramp commands for SLU/SLD: [trackIdx, targetMidiNote, durationSamples, ...].
+  final List<int> pitchRampData;
   final int lineSamples;
 
   const _ScheduledPlaybackRow({
@@ -94,6 +96,7 @@ class _ScheduledPlaybackRow {
     required this.sliceCommandData,
     required this.mixerCommandData,
     required this.insertFxCommandData,
+    required this.pitchRampData,
     required this.lineSamples,
   });
 }
@@ -225,6 +228,8 @@ class AppState extends ChangeNotifier {
   List<double?> _carryVibDepthByTrack = const [];
   List<({List<int> cycle, int notesPerLine, int phase})?> _carryArpByTrack =
       const [];
+  // Per-track pitch-slide carry (SLU/SLD).
+  List<({int startNote, int endNote, int totalLines, int linesElapsed})?> _carrySlideByTrack = const [];
   // Per-track Pxx automation carries: map of param-index → raw 00-99 value.
   List<Map<int, int>> _carryInstrumentParamsByTrack = const [];
   int _carryPatternIndex = -1;
@@ -2649,6 +2654,7 @@ class AppState extends ChangeNotifier {
     _carryVibSpeedByTrack = const [];
     _carryVibDepthByTrack = const [];
     _carryArpByTrack = const [];
+    _carrySlideByTrack = const [];
     _carryInstrumentParamsByTrack = const [];
     _carryPatternIndex = -1;
   }
@@ -2912,6 +2918,7 @@ class AppState extends ChangeNotifier {
         sliceCommandData: row.sliceCommandData,
         mixerCommandData: row.mixerCommandData,
         insertFxCommandData: row.insertFxCommandData,
+        pitchRampData: row.pitchRampData,
       );
     }
   }
@@ -3035,6 +3042,7 @@ class AppState extends ChangeNotifier {
         sliceCommandData: row.sliceCommandData,
         mixerCommandData: row.mixerCommandData,
         insertFxCommandData: row.insertFxCommandData,
+        pitchRampData: row.pitchRampData,
       );
     }
 
@@ -3194,6 +3202,11 @@ class AppState extends ChangeNotifier {
             pattern.tracks.length,
             null,
           );
+      _carrySlideByTrack =
+          List<({int startNote, int endNote, int totalLines, int linesElapsed})?>.filled(
+            pattern.tracks.length,
+            null,
+          );
       _carryInstrumentParamsByTrack = List<Map<int, int>>.generate(
         pattern.tracks.length,
         (_) => {},
@@ -3223,6 +3236,10 @@ class AppState extends ChangeNotifier {
     // Pending ARP events: flat list [sampleOffset, trackIdx, note, ...]
     // passed directly to the C++ engine as pitch-only updates.
     final List<int> arpQueue = [];
+    // Pending SLU/SLD pitch ramp events: collected as (trackIdx, endNote, totalLines)
+    // during the per-track loop, then converted to [trackIdx, note, durationSamples]
+    // after lineSamples is known.
+    final List<({int track, int note, int lines})> pendingPitchRamps = [];
     // Pending ARP events: trackIndex → (expanded cycle, notesPerLine, phase).
     final Map<int, ({List<int> cycle, int notesPerLine, int phase})>
     pendingArp = {};
@@ -3265,6 +3282,8 @@ class AppState extends ChangeNotifier {
       int arcOctaveLayers = 0;
       int arcNotesPerLine = 0;
       int? chancePct;
+      // SLU/SLD: set when slide FX is found on a note row this tick.
+      ({int endNote, int totalLines})? pendingSlide;
 
       if (playheadRow < track.cells.length) {
         final cell = track.cells[playheadRow];
@@ -3366,6 +3385,22 @@ class AppState extends ChangeNotifier {
           if (fx.command == kFxARC && fx.value != null) {
             arcOctaveLayers = (fx.value! ~/ 10).clamp(0, 9);
             arcNotesPerLine = (fx.value! % 10).clamp(0, 9);
+          }
+          // SLU/SLD XY: X (tens) = lines to slide over, Y (ones) = semitones.
+          // Only takes effect on a row that also has a note.
+          if ((fx.command == kFxSLU || fx.command == kFxSLD) &&
+              fx.value != null &&
+              noteCmd >= 0) {
+            final xy = fx.value!.clamp(1, 99);
+            final lines = (xy ~/ 10).clamp(1, 9);
+            final semitones = xy % 10;
+            if (semitones > 0) {
+              final dir = fx.command == kFxSLU ? 1 : -1;
+              pendingSlide = (
+                endNote: (noteCmd + dir * semitones).clamp(0, 127),
+                totalLines: lines,
+              );
+            }
           }
           if (fx.command != null &&
               fx.command! >= kFxSL0 &&
@@ -3507,6 +3542,48 @@ class AppState extends ChangeNotifier {
         // RET on held rows retriggers the last carried note.
         noteCmd = retBaseNote;
         volCmd = retBaseVolume;
+      }
+
+      // SLU/SLD slide carry: start on note rows, advance pitch on hold rows.
+      if (pendingSlide != null && noteCmd >= 0) {
+        // New note + slide FX: (re)start the slide carry.
+        if (t < _carrySlideByTrack.length) {
+          _carrySlideByTrack[t] = (
+            startNote: noteCmd,
+            endNote: pendingSlide.endNote,
+            totalLines: pendingSlide.totalLines,
+            linesElapsed: 0,
+          );
+        }
+      } else if (noteCmd == -2 || noteCmd >= 0) {
+        // Note-off or new note without slide: cancel any active slide.
+        if (t < _carrySlideByTrack.length) _carrySlideByTrack[t] = null;
+      } else if (noteCmd == -1 &&
+          t < _carrySlideByTrack.length &&
+          _carrySlideByTrack[t] != null &&
+          !isMixerMuted) {
+        // Hold row with active slide.
+        final slide = _carrySlideByTrack[t]!;
+        final nextElapsed = slide.linesElapsed + 1;
+        if (slide.linesElapsed == 0) {
+          // First hold row: queue a linear pitch ramp spanning the full slide
+          // duration. lineSamples is computed after the per-track loop, so we
+          // collect (trackIdx, endNote, totalLines) and finalize below.
+          pendingPitchRamps.add((
+            track: t,
+            note: slide.endNote,
+            lines: slide.totalLines,
+          ));
+        }
+        // noteCmd stays -1 (hold); the C++ ramp drives pitch continuously.
+        _carrySlideByTrack[t] = nextElapsed >= slide.totalLines
+            ? null
+            : (
+                startNote: slide.startNote,
+                endNote: slide.endNote,
+                totalLines: slide.totalLines,
+                linesElapsed: nextElapsed,
+              );
       }
 
       // ARP carry: resolve noteCmd before building the segment/rowData.
@@ -3654,6 +3731,13 @@ class AppState extends ChangeNotifier {
       });
     }
 
+    // Convert pending pitch ramps to [trackIdx, targetMidiNote, durationSamples] triples
+    // now that lineSamples is known.
+    final List<int> pitchRampQueue = [];
+    for (final r in pendingPitchRamps) {
+      pitchRampQueue.addAll([r.track, r.note, r.lines * lineSamples]);
+    }
+
     final scheduled = _ScheduledPlaybackRow(
       rowData: List<int>.unmodifiable(rowData),
       immediateKillMask: anyImmediateKill
@@ -3666,6 +3750,7 @@ class AppState extends ChangeNotifier {
       sliceCommandData: List<int>.unmodifiable(sliceCommandQueue),
       mixerCommandData: List<int>.unmodifiable(mixerCommandQueue),
       insertFxCommandData: List<int>.unmodifiable(insertFxCommandQueue),
+      pitchRampData: List<int>.unmodifiable(pitchRampQueue),
       lineSamples: lineSamples,
     );
 

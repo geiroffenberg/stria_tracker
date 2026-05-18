@@ -578,7 +578,13 @@ class _NumericActions extends StatelessWidget {
 // ─── FX-CMD: chip picker ──────────────────────────────────────────────────
 
 class _FxCmdActions extends StatelessWidget {
-  static const int _classicCount = 10;
+  // Explicit list of classic FX command IDs shown in the picker.
+  // To add a new chip: append its kFxXxx constant here.
+  static const List<int> _classicCommands = [
+    kFxARP, kFxCHA, kFxDEL, kFxKIL, kFxPAN,
+    kFxRAN, kFxRET, kFxREV, kFxVIB, kFxVOL,
+    kFxSLU, kFxSLD, kFxARC, kFxSLC,
+  ];
 
   final AppState state;
   final int row;
@@ -962,11 +968,7 @@ class _FxCmdActions extends StatelessWidget {
                 children: [
                   _sectionLabel('Classic FX'),
                   const SizedBox(height: 3),
-                  _commandStrip([
-                    ...List<int>.generate(_classicCount, (i) => i),
-                    kFxARC,
-                    kFxSLC,
-                  ], current),
+                  _commandStrip(_classicCommands, current),
                   ...() {
                     final slots = _getOccupiedInsertSlots();
                     if (slots.isEmpty) return <Widget>[];

@@ -27,334 +27,105 @@ class FxSlot {
       v == null ? '--' : (v % 100).toString().padLeft(2, '0');
 }
 
-/// 3-letter display names for FX command bytes.
-/// Index 0 = first real command; null/out-of-range = '---'.
-const List<String> kFxCommandNames = [
-  'ARP', // 00 – arpeggio
-  'CHA', // 01 – chance
-  'DEL', // 02 – delay
-  'KIL', // 03 – kill note
-  'PAN', // 04 – stereo pan
-  'RAN', // 05 – randomise
-  'RET', // 06 – retrigger
-  'REV', // 07 – reverse
-  'VIB', // 08 – vibrato
-  'VOL', // 09 – volume ramp
-  // Instrument synth FX (Axx)
-  'A01',
-  'A02',
-  'A03',
-  'A04',
-  'A05',
-  'A06',
-  // Instrument sample FX (Sxx)
-  'S01',
-  'S02',
-  'S03',
-  'S04',
-  'S05',
-  'S06',
-  // Sample slicer select FX (SLx)
-  'SL0',
-  'SL1',
-  'SL2',
-  'SL3',
-  'SL4',
-  'SL5',
-  'SL6',
-  'SL7',
-  'SL8',
-  'SL9',
-  // Mixer channel-strip FX (32-193): Master (32-33) + 16 channels * 10 slots (34-193)
-  'M01', // 32 – master mute
-  'M02', // 33 – master volume
-  // Channel 1 (34-43): M11-M1A (1-4 implemented, 5-A reserved)
-  'M11', 'M12', 'M13', 'M14', 'M15', 'M16', 'M17', 'M18', 'M19', 'M1A',
-  // Channel 2 (44-53)
-  'M21', 'M22', 'M23', 'M24', 'M25', 'M26', 'M27', 'M28', 'M29', 'M2A',
-  // Channel 3 (54-63)
-  'M31', 'M32', 'M33', 'M34', 'M35', 'M36', 'M37', 'M38', 'M39', 'M3A',
-  // Channel 4 (64-73)
-  'M41', 'M42', 'M43', 'M44', 'M45', 'M46', 'M47', 'M48', 'M49', 'M4A',
-  // Channel 5 (74-83)
-  'M51', 'M52', 'M53', 'M54', 'M55', 'M56', 'M57', 'M58', 'M59', 'M5A',
-  // Channel 6 (84-93)
-  'M61', 'M62', 'M63', 'M64', 'M65', 'M66', 'M67', 'M68', 'M69', 'M6A',
-  // Channel 7 (94-103)
-  'M71', 'M72', 'M73', 'M74', 'M75', 'M76', 'M77', 'M78', 'M79', 'M7A',
-  // Channel 8 (104-113)
-  'M81', 'M82', 'M83', 'M84', 'M85', 'M86', 'M87', 'M88', 'M89', 'M8A',
-  // Channel 9 (114-123)
-  'M91', 'M92', 'M93', 'M94', 'M95', 'M96', 'M97', 'M98', 'M99', 'M9A',
-  // Channel 10 (124-133)
-  'MA1', 'MA2', 'MA3', 'MA4', 'MA5', 'MA6', 'MA7', 'MA8', 'MA9', 'MAA',
-  // Channel 11 (134-143)
-  'MB1', 'MB2', 'MB3', 'MB4', 'MB5', 'MB6', 'MB7', 'MB8', 'MB9', 'MBA',
-  // Channel 12 (144-153)
-  'MC1', 'MC2', 'MC3', 'MC4', 'MC5', 'MC6', 'MC7', 'MC8', 'MC9', 'MCA',
-  // Channel 13 (154-163)
-  'MD1', 'MD2', 'MD3', 'MD4', 'MD5', 'MD6', 'MD7', 'MD8', 'MD9', 'MDA',
-  // Channel 14 (164-173)
-  'ME1', 'ME2', 'ME3', 'ME4', 'ME5', 'ME6', 'ME7', 'ME8', 'ME9', 'MEA',
-  // Channel 15 (174-183)
-  'MF1', 'MF2', 'MF3', 'MF4', 'MF5', 'MF6', 'MF7', 'MF8', 'MF9', 'MFA',
-  // Channel 16 (184-193)
-  'MG1', 'MG2', 'MG3', 'MG4', 'MG5', 'MG6', 'MG7', 'MG8', 'MG9', 'MGA',
-  // Master insert routing (numeric)
-  '101',
-  '201',
-  '301',
-  '401',
-  '501',
-  '601',
-  '701',
-  '801',
-  '901',
-  'ARC', // octave span + arp speed config
-  'SLC', // sample slice command (unified slice player)
-];
+/// Fixed command ID → 3-letter display name.
+/// IDs are stable: inserting a new entry never shifts any existing command.
+/// Mixer (32–194), insert FX (kFxInsertStart–kFxInsertEnd), and Pxx params
+/// (kFxPParamStart–kFxPParamEnd) are resolved by their own helpers first.
+/// To add a new FX command: pick an unused ID above 206 and add it here.
+const Map<int, String> kFxCommandNames = {
+  // ── Classic FX (0–9) ─────────────────────────────────────────────────
+   0: 'ARP', //  arpeggio
+   1: 'CHA', //  chance
+   2: 'DEL', //  delay
+   3: 'KIL', //  kill note
+   4: 'PAN', //  stereo pan
+   5: 'RAN', //  randomise
+   6: 'RET', //  retrigger
+   7: 'REV', //  reverse
+   8: 'VIB', //  vibrato
+   9: 'VOL', //  volume ramp
+  // ── Instrument synth FX (10–15) ──────────────────────────────────────
+  10: 'A01',  11: 'A02',  12: 'A03',  13: 'A04',  14: 'A05',  15: 'A06',
+  // ── Instrument sample FX (16–21) ─────────────────────────────────────
+  16: 'S01',  17: 'S02',  18: 'S03',  19: 'S04',  20: 'S05',  21: 'S06',
+  // ── Sample slice select (22–31) ──────────────────────────────────────
+  22: 'SL0',  23: 'SL1',  24: 'SL2',  25: 'SL3',  26: 'SL4',
+  27: 'SL5',  28: 'SL6',  29: 'SL7',  30: 'SL8',  31: 'SL9',
+  // ── Mixer (32–194) — handled by isMixerValueCommand / mixerValueName ─
+  // (no entries here; adding them would be unreachable)
+  // ── Arp config / slice command (203–204) ─────────────────────────────
+  203: 'ARC', // arp config: X=octave layers, Y=notes per line
+  204: 'SLC', // slice command: X=mode (0=slice,1=thru), Y=slice index
+  // ── New classic FX — add below; IDs never shift existing entries ──────
+  205: 'SLU', // slide up:   X=lines, Y=semitones
+  206: 'SLD', // slide down: X=lines, Y=semitones
+};
 
-const List<String> kFxCommandDescriptions = [
-  'Arpeggio — XY: X=1st interval, Y=2nd interval (1-9 = semitones above root)',
-  'Chance — 00=never play, 99=always play, 50=50% chance',
-  'Delay — 00=line start, 99=line end (note-on offset within row)',
-  'Kill — cut note at % through row (00=immediate, 99=end of row)',
-  'Pan — set stereo position (00=left, 50=centre, 99=right)',
-  'Random slice — 00=off, 01-99=chance % to pick a random active slice',
-  'Retrigger — XY: X=volume curve, Y=retrigs per line',
-  'Reverse — play sample/slice backwards',
-  'Vibrato — XY: X=speed (0-9), Y=depth (0-9), pitch LFO',
-  'Volume — set level for this row only (00=silent, 99=full)',
-  'Synth FX A01 (reserved)',
-  'Synth FX A02 (reserved)',
-  'Synth FX A03 (reserved)',
-  'Synth FX A04 (reserved)',
-  'Synth FX A05 (reserved)',
-  'Synth FX A06 (reserved)',
-  'Sample FX S01 (reserved)',
-  'Sample FX S02 (reserved)',
-  'Sample FX S03 (reserved)',
-  'Sample FX S04 (reserved)',
-  'Sample FX S05 (reserved)',
-  'Sample FX S06 (reserved)',
-  'Select Slice 0 (sample start)',
-  'Select Slice 1',
-  'Select Slice 2',
-  'Select Slice 3',
-  'Select Slice 4',
-  'Select Slice 5',
-  'Select Slice 6',
-  'Select Slice 7',
-  'Select Slice 8',
-  'Select Slice 9',
-  // Mixer channel-strip FX (32-193): Master + 16 channels * 10 slots
-  'Master mute (00=off, >00=on)',
-  'Master volume (00-99)',
-  // Channel 1 (34-43): M11-M1A
-  'Channel 1 pan (00=left, 50=centre, 99=right)',
-  'Channel 1 mute (00=off, >00=on)',
-  'Channel 1 solo (00=off, >00=on)',
-  'Channel 1 volume (00-99)',
-  'Channel 1 reserved M15',
-  'Channel 1 reserved M16',
-  'Channel 1 reserved M17',
-  'Channel 1 reserved M18',
-  'Channel 1 reserved M19',
-  'Channel 1 reserved M1A',
-  // Channel 2 (44-53): M21-M2A
-  'Channel 2 pan (00=left, 50=centre, 99=right)',
-  'Channel 2 mute (00=off, >00=on)',
-  'Channel 2 solo (00=off, >00=on)',
-  'Channel 2 volume (00-99)',
-  'Channel 2 reserved M25',
-  'Channel 2 reserved M26',
-  'Channel 2 reserved M27',
-  'Channel 2 reserved M28',
-  'Channel 2 reserved M29',
-  'Channel 2 reserved M2A',
-  // Channel 3 (54-63): M31-M3A
-  'Channel 3 pan (00=left, 50=centre, 99=right)',
-  'Channel 3 mute (00=off, >00=on)',
-  'Channel 3 solo (00=off, >00=on)',
-  'Channel 3 volume (00-99)',
-  'Channel 3 reserved M35',
-  'Channel 3 reserved M36',
-  'Channel 3 reserved M37',
-  'Channel 3 reserved M38',
-  'Channel 3 reserved M39',
-  'Channel 3 reserved M3A',
-  // Channel 4 (64-73): M41-M4A
-  'Channel 4 pan (00=left, 50=centre, 99=right)',
-  'Channel 4 mute (00=off, >00=on)',
-  'Channel 4 solo (00=off, >00=on)',
-  'Channel 4 volume (00-99)',
-  'Channel 4 reserved M45',
-  'Channel 4 reserved M46',
-  'Channel 4 reserved M47',
-  'Channel 4 reserved M48',
-  'Channel 4 reserved M49',
-  'Channel 4 reserved M4A',
-  // Channel 5 (74-83): M51-M5A
-  'Channel 5 pan (00=left, 50=centre, 99=right)',
-  'Channel 5 mute (00=off, >00=on)',
-  'Channel 5 solo (00=off, >00=on)',
-  'Channel 5 volume (00-99)',
-  'Channel 5 reserved M55',
-  'Channel 5 reserved M56',
-  'Channel 5 reserved M57',
-  'Channel 5 reserved M58',
-  'Channel 5 reserved M59',
-  'Channel 5 reserved M5A',
-  // Channel 6 (84-93): M61-M6A
-  'Channel 6 pan (00=left, 50=centre, 99=right)',
-  'Channel 6 mute (00=off, >00=on)',
-  'Channel 6 solo (00=off, >00=on)',
-  'Channel 6 volume (00-99)',
-  'Channel 6 reserved M65',
-  'Channel 6 reserved M66',
-  'Channel 6 reserved M67',
-  'Channel 6 reserved M68',
-  'Channel 6 reserved M69',
-  'Channel 6 reserved M6A',
-  // Channel 7 (94-103): M71-M7A
-  'Channel 7 pan (00=left, 50=centre, 99=right)',
-  'Channel 7 mute (00=off, >00=on)',
-  'Channel 7 solo (00=off, >00=on)',
-  'Channel 7 volume (00-99)',
-  'Channel 7 reserved M75',
-  'Channel 7 reserved M76',
-  'Channel 7 reserved M77',
-  'Channel 7 reserved M78',
-  'Channel 7 reserved M79',
-  'Channel 7 reserved M7A',
-  // Channel 8 (104-113): M81-M8A
-  'Channel 8 pan (00=left, 50=centre, 99=right)',
-  'Channel 8 mute (00=off, >00=on)',
-  'Channel 8 solo (00=off, >00=on)',
-  'Channel 8 volume (00-99)',
-  'Channel 8 reserved M85',
-  'Channel 8 reserved M86',
-  'Channel 8 reserved M87',
-  'Channel 8 reserved M88',
-  'Channel 8 reserved M89',
-  'Channel 8 reserved M8A',
-  // Channel 9 (114-123): M91-M9A
-  'Channel 9 pan (00=left, 50=centre, 99=right)',
-  'Channel 9 mute (00=off, >00=on)',
-  'Channel 9 solo (00=off, >00=on)',
-  'Channel 9 volume (00-99)',
-  'Channel 9 reserved M95',
-  'Channel 9 reserved M96',
-  'Channel 9 reserved M97',
-  'Channel 9 reserved M98',
-  'Channel 9 reserved M99',
-  'Channel 9 reserved M9A',
-  // Channel 10 (124-133): MA1-MAA
-  'Channel 10 pan (00=left, 50=centre, 99=right)',
-  'Channel 10 mute (00=off, >00=on)',
-  'Channel 10 solo (00=off, >00=on)',
-  'Channel 10 volume (00-99)',
-  'Channel 10 reserved MA5',
-  'Channel 10 reserved MA6',
-  'Channel 10 reserved MA7',
-  'Channel 10 reserved MA8',
-  'Channel 10 reserved MA9',
-  'Channel 10 reserved MAA',
-  // Channel 11 (134-143): MB1-MBA
-  'Channel 11 pan (00=left, 50=centre, 99=right)',
-  'Channel 11 mute (00=off, >00=on)',
-  'Channel 11 solo (00=off, >00=on)',
-  'Channel 11 volume (00-99)',
-  'Channel 11 reserved MB5',
-  'Channel 11 reserved MB6',
-  'Channel 11 reserved MB7',
-  'Channel 11 reserved MB8',
-  'Channel 11 reserved MB9',
-  'Channel 11 reserved MBA',
-  // Channel 12 (144-153): MC1-MCA
-  'Channel 12 pan (00=left, 50=centre, 99=right)',
-  'Channel 12 mute (00=off, >00=on)',
-  'Channel 12 solo (00=off, >00=on)',
-  'Channel 12 volume (00-99)',
-  'Channel 12 reserved MC5',
-  'Channel 12 reserved MC6',
-  'Channel 12 reserved MC7',
-  'Channel 12 reserved MC8',
-  'Channel 12 reserved MC9',
-  'Channel 12 reserved MCA',
-  // Channel 13 (154-163): MD1-MDA
-  'Channel 13 pan (00=left, 50=centre, 99=right)',
-  'Channel 13 mute (00=off, >00=on)',
-  'Channel 13 solo (00=off, >00=on)',
-  'Channel 13 volume (00-99)',
-  'Channel 13 reserved MD5',
-  'Channel 13 reserved MD6',
-  'Channel 13 reserved MD7',
-  'Channel 13 reserved MD8',
-  'Channel 13 reserved MD9',
-  'Channel 13 reserved MDA',
-  // Channel 14 (164-173): ME1-MEA
-  'Channel 14 pan (00=left, 50=centre, 99=right)',
-  'Channel 14 mute (00=off, >00=on)',
-  'Channel 14 solo (00=off, >00=on)',
-  'Channel 14 volume (00-99)',
-  'Channel 14 reserved ME5',
-  'Channel 14 reserved ME6',
-  'Channel 14 reserved ME7',
-  'Channel 14 reserved ME8',
-  'Channel 14 reserved ME9',
-  'Channel 14 reserved MEA',
-  // Channel 15 (174-183): MF1-MFA
-  'Channel 15 pan (00=left, 50=centre, 99=right)',
-  'Channel 15 mute (00=off, >00=on)',
-  'Channel 15 solo (00=off, >00=on)',
-  'Channel 15 volume (00-99)',
-  'Channel 15 reserved MF5',
-  'Channel 15 reserved MF6',
-  'Channel 15 reserved MF7',
-  'Channel 15 reserved MF8',
-  'Channel 15 reserved MF9',
-  'Channel 15 reserved MFA',
-  // Channel 16 (184-193): MG1-MGA
-  'Channel 16 pan (00=left, 50=centre, 99=right)',
-  'Channel 16 mute (00=off, >00=on)',
-  'Channel 16 solo (00=off, >00=on)',
-  'Channel 16 volume (00-99)',
-  'Channel 16 reserved MG5',
-  'Channel 16 reserved MG6',
-  'Channel 16 reserved MG7',
-  'Channel 16 reserved MG8',
-  'Channel 16 reserved MG9',
-  'Channel 16 reserved MGA',
-  // Master insert routing (194+)
-  'Insert 1 param 01 (reserved)',
-  'Insert 2 param 01 (reserved)',
-  'Insert 3 param 01 (reserved)',
-  'Insert 4 param 01 (reserved)',
-  'Insert 5 param 01 (reserved)',
-  'Insert 6 param 01 (reserved)',
-  'Insert 7 param 01 (reserved)',
-  'Insert 8 param 01 (reserved)',
-  'Insert 9 param 01 (reserved)',
-  'Arp config XY (X=octave layers, Y=notes/line, Y0=full cycle)',
-  'Slice command — XY: X=mode (0=slice, 1=thru), Y=slice (1-9)',
-];
+/// Fixed command ID → full description string. Same key space as kFxCommandNames.
+/// Mixer and insert FX descriptions come from their own helper functions.
+const Map<int, String> kFxCommandDescriptions = {
+   0: 'Arpeggio — XY: X=1st interval, Y=2nd interval (1-9 = semitones above root)',
+   1: 'Chance — 00=never play, 99=always play, 50=50% chance',
+   2: 'Delay — 00=line start, 99=line end (note-on offset within row)',
+   3: 'Kill — cut note at % through row (00=immediate, 99=end of row)',
+   4: 'Pan — set stereo position (00=left, 50=centre, 99=right)',
+   5: 'Random slice — 00=off, 01-99=chance % to pick a random active slice',
+   6: 'Retrigger — XY: X=volume curve, Y=retrigs per line',
+   7: 'Reverse — play sample/slice backwards',
+   8: 'Vibrato — XY: X=speed (0-9), Y=depth (0-9), pitch LFO',
+   9: 'Volume — set level for this row only (00=silent, 99=full)',
+  10: 'Synth FX A01 (reserved)',
+  11: 'Synth FX A02 (reserved)',
+  12: 'Synth FX A03 (reserved)',
+  13: 'Synth FX A04 (reserved)',
+  14: 'Synth FX A05 (reserved)',
+  15: 'Synth FX A06 (reserved)',
+  16: 'Sample FX S01 (reserved)',
+  17: 'Sample FX S02 (reserved)',
+  18: 'Sample FX S03 (reserved)',
+  19: 'Sample FX S04 (reserved)',
+  20: 'Sample FX S05 (reserved)',
+  21: 'Sample FX S06 (reserved)',
+  22: 'Select Slice 0 (sample start)',
+  23: 'Select Slice 1',
+  24: 'Select Slice 2',
+  25: 'Select Slice 3',
+  26: 'Select Slice 4',
+  27: 'Select Slice 5',
+  28: 'Select Slice 6',
+  29: 'Select Slice 7',
+  30: 'Select Slice 8',
+  31: 'Select Slice 9',
+  // Mixer (32–194) descriptions → mixerValueDescription(cmd)
+  203: 'Arp config XY (X=octave layers, Y=notes/line, Y0=full cycle)',
+  204: 'Slice command — XY: X=mode (0=slice, 1=thru), Y=slice (1-9)',
+  205: 'Slide Up — XY: X=lines to slide over (1-9), Y=semitones up (1-9)',
+  206: 'Slide Down — XY: X=lines to slide over (1-9), Y=semitones down (1-9)',
+  // ── Add new FX descriptions below ────────────────────────────────────
+};
 
-/// FX command byte constants (indices into kFxCommandNames).
-const int kFxARP = 0;
-const int kFxCHA = 1;
-const int kFxDEL = 2;
-const int kFxKIL = 3;
-const int kFxPAN = 4;
-const int kFxRAN = 5;
-const int kFxRET = 6;
-const int kFxREV = 7;
-const int kFxVIB = 8;
-const int kFxVOL = 9;
-const int kFxSL0 = 22;
-const int kFxSL9 = 31;
-const int kFxARC = 203;
-const int kFxSLC = 204;
+/// FX command ID constants — match the keys in kFxCommandNames / kFxCommandDescriptions.
+/// These are the stable integers stored in pattern data. Never renumber them.
+const int kFxARP =   0;
+const int kFxCHA =   1;
+const int kFxDEL =   2;
+const int kFxKIL =   3;
+const int kFxPAN =   4;
+const int kFxRAN =   5;
+const int kFxRET =   6;
+const int kFxREV =   7;
+const int kFxVIB =   8;
+const int kFxVOL =   9;
+// Instrument FX: A-series (10–15), S-series (16–21)
+// Slice select: SL0 (22) … SL9 (31)
+const int kFxSL0 =  22;
+const int kFxSL9 =  31;
+// Mixer (32–194) handled by isMixerValueCommand / mixerValueName
+const int kFxARC = 203; // arp config
+const int kFxSLC = 204; // slice command
+const int kFxSLU = 205; // slide up:   X=lines, Y=semitones
+const int kFxSLD = 206; // slide down: X=lines, Y=semitones
+// → To add a new FX: pick an ID > 206, add to kFxCommandNames + kFxCommandDescriptions
 const int kFxInsertStart = 340;
 const int kFxInsertEnd = 399; // 6 slots × 10 functions (0–9) = 60 commands
 
@@ -763,8 +534,8 @@ String fxCommandName(int? cmd) {
   if (isPParamCommand(cmd)) {
     return 'P${pParamIndex(cmd).toString().padLeft(2, '0')}';
   }
-  if (cmd < kFxCommandNames.length) return kFxCommandNames[cmd];
-  return cmd.toRadixString(16).toUpperCase().padLeft(3, '0');
+  return kFxCommandNames[cmd] ??
+      cmd.toRadixString(16).toUpperCase().padLeft(3, '0');
 }
 
 /// Returns the description for an FX command.
@@ -785,10 +556,7 @@ String fxCommandDescription(int? cmd) {
     }
     return 'P${idx.toString().padLeft(2, '0')} — instrument param (meaning set by instrument type in IN cell)';
   }
-  if (cmd >= 0 && cmd < kFxCommandDescriptions.length) {
-    return kFxCommandDescriptions[cmd];
-  }
-  return '';
+  return kFxCommandDescriptions[cmd] ?? '';
 }
 
 /// One row in a track: note + instrument + volume + pan + 3 FX slots.

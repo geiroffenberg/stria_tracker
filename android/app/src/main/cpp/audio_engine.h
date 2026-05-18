@@ -35,9 +35,12 @@ struct Voice {
     float  pendingGainTarget = 0.0f; // gainTarget to restore after waveform swap
     float  instrumentVolume  = 0.8f; // from instrument editor (0..1)
     float  detuneNorm        = 0.5f; // 0..1 mapped to -12..+12 semitones (0.5 = 0)
-    float  currentFreq       = 0.0f; // Hz, slewed toward targetFreq for glide
-    float  targetFreq        = 0.0f; // Hz from current midi note
-    float  glideSec          = 0.0f; // 0 = instant, >0 = portamento time
+    float  currentFreq            = 0.0f; // Hz, slewed toward targetFreq for glide
+    float  targetFreq            = 0.0f; // Hz from current midi note
+    float  glideSec              = 0.0f; // 0 = instant, >0 = portamento time
+    // Linear pitch ramp for SLU/SLD: runs at sample granularity, overrides glideSec slew.
+    float  pitchRampFreqPerSample = 0.0f; ///< Hz added per sample (signed)
+    int    pitchRampSamplesLeft   = 0;    ///< samples remaining; 0 = ramp inactive
     float  cutoffNorm        = 0.7f; // 0..1 filter cutoff control
     float  resonanceNorm     = 0.2f; // 0..1 filter resonance control
     int    filterMode        = 0;    // 0=LP, 1=HP, 2=BP
@@ -193,6 +196,9 @@ struct QueuedPlaybackRow {
     std::vector<int> sliceCommandData;
     std::vector<int> mixerCommandData;
     std::vector<int> insertFxCommandData;
+    /// Linear pitch ramp commands: groups of 3 ints — [trackIdx, targetMidiNote, durationSamples].
+    /// Applied at row-fire time to start smooth cent-level slides (SLU/SLD).
+    std::vector<int> pitchRampData;
     int32_t lineSamples = 0;
 };
 
@@ -639,6 +645,7 @@ private:
     void queueSliceCommandsLocked(const std::vector<int>& data);
     void queueMixerCommandsLocked(const std::vector<int>& data);
     void queueInsertFxCommandsLocked(const std::vector<int>& data);
+    void applyPitchRampsLocked(const std::vector<int>& data);
     void applyQueuedPlaybackRowLocked(const QueuedPlaybackRow& row);
     bool primeNextQueuedPlaybackRowLocked();
 

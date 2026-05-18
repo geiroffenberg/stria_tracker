@@ -101,6 +101,8 @@ class AudioEnginePlugin : FlutterPlugin, MethodCallHandler {
                 val mixerCommandData = call.argument<List<Int>>("mixerCommandData") ?: emptyList()
                 @Suppress("UNCHECKED_CAST")
                 val insertFxCommandData = call.argument<List<Int>>("insertFxCommandData") ?: emptyList()
+                @Suppress("UNCHECKED_CAST")
+                val pitchRampData = call.argument<List<Int>>("pitchRampData") ?: emptyList()
                 if (enginePtr != 0L) {
                     nativeEnqueuePlaybackRow(
                         enginePtr,
@@ -114,6 +116,7 @@ class AudioEnginePlugin : FlutterPlugin, MethodCallHandler {
                         sliceCommandData.toIntArray(),
                         mixerCommandData.toIntArray(),
                         insertFxCommandData.toIntArray(),
+                        pitchRampData.toIntArray(),
                     )
                 }
                 result.success(null)
@@ -547,6 +550,7 @@ class AudioEnginePlugin : FlutterPlugin, MethodCallHandler {
         sliceCommandData: IntArray,
         mixerCommandData: IntArray,
         insertFxCommandData: IntArray,
+        pitchRampData: IntArray,
     )
     private external fun nativeSetRowData(ptr: Long, data: IntArray)
     private external fun nativeKillVoices(ptr: Long, mask: IntArray)
