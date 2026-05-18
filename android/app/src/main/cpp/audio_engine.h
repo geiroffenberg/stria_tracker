@@ -114,6 +114,9 @@ struct Voice {
     int    sampleSlot        = -1;
     double samplePos         = 0.0;
     double sampleStep        = 1.0;
+    // Linear sampleStep ramp for SLU/SLD on sampler tracks.
+    float  sampleStepRampPerSample = 0.0f; ///< sampleStep delta per sample (signed)
+    float  sampleStepTarget        = 1.0f; ///< target sampleStep at ramp end
     int    loopMode          = 0;    // 0=off 1=forward 2=ping-pong
     bool   samplePingDir     = false; // false=forward true=backward (ping-pong or reverse)
     bool   sampleReverse     = false; // true = REV FX: play region backward from end

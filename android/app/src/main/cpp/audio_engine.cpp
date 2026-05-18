@@ -964,6 +964,8 @@ void AudioEngine::triggerRowLocked(const std::vector<int>& rowData) {
                 const auto& s = mSamplerSlots[v.sampleSlot];
                 if (!s.mono.empty()) {
                     v.midiNote = n;
+                    // Cancel any in-flight SLU/SLD step ramp — new note takes over.
+                    v.pitchRampSamplesLeft = 0;
                     const float detuneSemitones = (v.detuneNorm - 0.5f) * 24.0f;
                     const float semis = static_cast<float>(n - 60) + detuneSemitones;
                     v.sampleStep = std::pow(2.0f, semis / 12.0f);
@@ -1215,8 +1217,19 @@ void AudioEngine::applyPitchRampsLocked(const std::vector<int>& data) {
         const int durationSamples = std::max(1, data[i + 2]);
         if (trackIdx < 0 || trackIdx >= static_cast<int>(mVoices.size())) continue;
         Voice& v = mVoices[trackIdx];
-        if (v.currentFreq <= 0.0f) continue; // no note playing — nothing to ramp
         const float detuneSemitones = (v.detuneNorm - 0.5f) * 24.0f;
+        if (v.samplerMode) {
+            // Sampler: ramp sampleStep (playback speed ratio) rather than currentFreq.
+            if (!v.sampleActive) continue;
+            const float semis = static_cast<float>(targetNote - 60) + detuneSemitones;
+            const float targetStep = std::pow(2.0f, semis / 12.0f);
+            v.sampleStepTarget        = targetStep;
+            v.sampleStepRampPerSample = (targetStep - static_cast<float>(v.sampleStep)) /
+                static_cast<float>(durationSamples);
+            v.pitchRampSamplesLeft = durationSamples;
+            continue;
+        }
+        if (v.currentFreq <= 0.0f) continue; // no synth note playing — nothing to ramp
         const float targetFreq = static_cast<float>(midiToFreq(targetNote)) *
             std::pow(2.0f, detuneSemitones / 12.0f);
         v.targetFreq = targetFreq;
@@ -2467,10 +2480,17 @@ oboe::DataCallbackResult AudioEngine::onAudioReady(
                 v.samplePos = regionStart;
             }
 
-            const double ratio =
-                (static_cast<double>(s.sampleRate) / sampleRate) * v.sampleStep;
+            const double srRatio = static_cast<double>(s.sampleRate) / sampleRate;
 
             for (int i = 0; i < numFrames; ++i) {
+                // Apply SLU/SLD pitch ramp: interpolate sampleStep per sample.
+                if (v.pitchRampSamplesLeft > 0) {
+                    v.sampleStep += static_cast<double>(v.sampleStepRampPerSample);
+                    if (--v.pitchRampSamplesLeft == 0) {
+                        v.sampleStep = static_cast<double>(v.sampleStepTarget);
+                    }
+                }
+                const double ratio = srRatio * v.sampleStep;
                 int idx = static_cast<int>(v.samplePos);
                 if (idx < startFrame || idx >= endFrame) {
                     if (v.loopMode == 1 && regionLen > 1.0) {
