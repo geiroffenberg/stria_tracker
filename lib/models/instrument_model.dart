@@ -544,6 +544,11 @@ class SamplerParams {
   double release; // 0..1  (fade-out length, 0 = instant)
   List<int> sliceStarts; // 9 x 0..999, where 0 = unused
 
+  // ── Stretch ────────────────────────────────────────────────────────────────
+  bool stretchEnabled;    // false = off (passthrough)
+  int stretchBeats;       // 1..99
+  bool stretchPreservePitch; // true = time-stretch only; false = pitch follows rate
+
   // keep legacy bool getter so existing code using p.loop still compiles
   bool get loop => loopMode != SamplerLoopMode.off;
 
@@ -558,6 +563,9 @@ class SamplerParams {
     this.attack = 0.0,
     this.release = 0.05,
     List<int>? sliceStarts,
+    this.stretchEnabled = false,
+    this.stretchBeats = 4,
+    this.stretchPreservePitch = true,
   }) : sliceStarts = _normalizedSliceStarts(sliceStarts);
 
   static List<int> _normalizedSliceStarts(List<int>? values) {
@@ -640,6 +648,9 @@ class SamplerParams {
     'release': release,
     'sliceStarts': sliceStarts,
     'sliceVersion': 2, // 2 = range 0-999; 1 (absent) = legacy 0-99
+    'stretchEnabled': stretchEnabled,
+    'stretchBeats': stretchBeats,
+    'stretchPreservePitch': stretchPreservePitch,
   };
 
   factory SamplerParams.fromJson(Map<String, dynamic> j) => SamplerParams(
@@ -660,6 +671,9 @@ class SamplerParams {
       final isLegacy = ((j['sliceVersion'] as int?) ?? 1) < 2;
       return isLegacy ? (v * 10).clamp(0, 999) : v;
     }).toList(),
+    stretchEnabled: (j['stretchEnabled'] as bool?) ?? false,
+    stretchBeats: (j['stretchBeats'] as int?) ?? 4,
+    stretchPreservePitch: (j['stretchPreservePitch'] as bool?) ?? true,
   );
 
   /// Create a deep copy of this sampler configuration.
@@ -674,6 +688,9 @@ class SamplerParams {
     attack: attack,
     release: release,
     sliceStarts: List<int>.from(sliceStarts),
+    stretchEnabled: stretchEnabled,
+    stretchBeats: stretchBeats,
+    stretchPreservePitch: stretchPreservePitch,
   );
 
   /// Highest Pxx param index supported for sampler instruments.

@@ -1,4 +1,5 @@
 #include "audio_engine.h"
+#include "stria_sola_stretcher.hpp"
 #include <android/log.h>
 #include <algorithm>
 #include <fstream>
@@ -586,6 +587,7 @@ bool AudioEngine::setSamplerSample(int slot, const std::string& path) {
     if (path.empty()) {
         std::lock_guard<std::mutex> lock(mVoiceMutex);
         mSamplerSlots[safe].mono.clear();
+        mSamplerSlots[safe].originalMono.clear();
         mSamplerSlots[safe].sampleRate = 44100;
         LOGI("Sampler: cleared slot %d", safe);
         return true;
@@ -596,6 +598,8 @@ bool AudioEngine::setSamplerSample(int slot, const std::string& path) {
         LOGE("Sampler: load failed for slot %d path=%s", safe, path.c_str());
         return false;
     }
+    // Keep a permanent copy of the original for re-baking stretch.
+    loaded.originalMono = loaded.mono;
 
     {
         std::lock_guard<std::mutex> lock(mVoiceMutex);
@@ -604,6 +608,82 @@ bool AudioEngine::setSamplerSample(int slot, const std::string& path) {
     LOGI("Sampler: loaded slot %d (%zu frames @ %d Hz) from %s",
          safe, mSamplerSlots[safe].mono.size(), mSamplerSlots[safe].sampleRate, path.c_str());
     return true;
+}
+
+void AudioEngine::updateStretch(int slot, bool enabled, int beats, float bpm, bool preservePitch) {
+    const int safe = std::clamp(slot, 0, static_cast<int>(mSamplerSlots.size()) - 1);
+
+    // --- Grab a local copy of the original buffer (under lock, then release) ---
+    std::vector<float> src;
+    int srcSampleRate = 44100;
+    {
+        std::lock_guard<std::mutex> lock(mVoiceMutex);
+        src           = mSamplerSlots[safe].originalMono; // copy
+        srcSampleRate = mSamplerSlots[safe].sampleRate;
+    }
+
+    if (src.empty()) {
+        LOGI("Stretch: slot %d has no sample, skipping", safe);
+        return;
+    }
+
+    if (!enabled) {
+        // Restore original buffer — instant, no DSP needed.
+        std::lock_guard<std::mutex> lock(mVoiceMutex);
+        mSamplerSlots[safe].mono = mSamplerSlots[safe].originalMono;
+        LOGI("Stretch: slot %d restored to original (%zu frames)", safe, mSamplerSlots[safe].mono.size());
+        return;
+    }
+
+    if (bpm <= 0.0f || beats <= 0) {
+        LOGE("Stretch: invalid bpm=%.2f beats=%d for slot %d", bpm, beats, safe);
+        return;
+    }
+
+    // --- Compute target length ---
+    const size_t origFrames   = src.size();
+    const double targetSecs   = (static_cast<double>(beats) * 60.0) / static_cast<double>(bpm);
+    const size_t targetFrames = static_cast<size_t>(targetSecs * static_cast<double>(srcSampleRate));
+
+    if (targetFrames < 2) {
+        LOGE("Stretch: target too short (%zu frames) for slot %d", targetFrames, safe);
+        return;
+    }
+
+    LOGI("Stretch: slot %d  orig=%zu  target=%zu  beats=%d  bpm=%.2f  preservePitch=%d",
+         safe, origFrames, targetFrames, beats, bpm, preservePitch ? 1 : 0);
+
+    std::vector<float> stretched;
+
+    if (preservePitch) {
+        // ── Method B: WSOLA pitch-preserved time-stretch (license-free) ──────
+        const double stretchRatio = static_cast<double>(targetFrames) /
+                                    static_cast<double>(origFrames);
+        StriaSolaStretcher sola(srcSampleRate);
+        stretched = sola.process(src, stretchRatio);
+        LOGI("Stretch(SOLA): slot %d  orig=%zu  out=%zu  target=%zu",
+             safe, origFrames, stretched.size(), targetFrames);
+
+    } else {
+        // ── Method A: linear-interpolation resampler (speed/pitch linked) ─────
+        stretched.resize(targetFrames);
+        const double ratio = static_cast<double>(origFrames - 1) /
+                             static_cast<double>(targetFrames - 1);
+        for (size_t i = 0; i < targetFrames; ++i) {
+            const double srcIdx  = static_cast<double>(i) * ratio;
+            const size_t idxLow  = static_cast<size_t>(srcIdx);
+            const size_t idxHigh = (idxLow + 1 < origFrames) ? idxLow + 1 : idxLow;
+            const float  t       = static_cast<float>(srcIdx - static_cast<double>(idxLow));
+            stretched[i] = src[idxLow] + t * (src[idxHigh] - src[idxLow]);
+        }
+    }
+
+    // --- Atomic swap under lock (audio callback reads mono under the same lock) ---
+    {
+        std::lock_guard<std::mutex> lock(mVoiceMutex);
+        mSamplerSlots[safe].mono = std::move(stretched);
+    }
+    LOGI("Stretch: slot %d done (%zu frames out)", safe, mSamplerSlots[safe].mono.size());
 }
 
 void AudioEngine::triggerRow(const std::vector<int>& rowData) {

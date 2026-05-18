@@ -218,7 +218,7 @@ const TrackerPalette kPaletteRainbow = TrackerPalette(
   bgBeat: Color.fromARGB(255, 43, 36, 0),
   bgBar: Color.fromARGB(255, 43, 36, 0),
   bgSelected: Color(0xFF1A0A1F),
-  bgPlayhead: Color(0xFF2A0D28),
+  bgPlayhead: Color.fromARGB(255, 0, 95, 5),
   bgHeader: Color(0xFF0B0B0B),
   bgTrackHeader: Color(0xFF0E0E0E),
   bgTopNav: Color(0xFF0C0C0C),

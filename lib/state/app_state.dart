@@ -3807,6 +3807,24 @@ class AppState extends ChangeNotifier {
     }
   }
 
+  /// Bake (or un-bake) time-stretching for the current instrument's sampler slot.
+  ///
+  /// Called whenever the user changes stretchEnabled, stretchBeats, or
+  /// stretchPreservePitch in the sampler UI. The current project BPM is
+  /// snapshotted at bake time — BPM changes later have no effect unless the
+  /// user manually re-bakes.
+  Future<void> applyStretch() async {
+    final sp = currentInstrument.sampler;
+    if (sp.samplePath == null) return;
+    await AudioEngine.instance.updateStretch(
+      slot: currentInstrumentIndex,
+      enabled: sp.stretchEnabled,
+      beats: sp.stretchBeats,
+      bpm: bpm,
+      preservePitch: sp.stretchPreservePitch,
+    );
+  }
+
   /// Returns empty string on success, or an error description on failure.
   Future<String?> loadSamplerSampleFromLibrary(String fileName) async {
     try {
@@ -4333,6 +4351,10 @@ class AppState extends ChangeNotifier {
       currentInstrumentIndex,
       outPath,
     );
+
+    // If stretch is enabled, re-bake it against the newly cropped originalMono.
+    if (src.stretchEnabled) await applyStretch();
+
     _notifyListenersSafe();
     return null;
   }

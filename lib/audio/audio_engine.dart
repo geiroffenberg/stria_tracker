@@ -563,6 +563,33 @@ class AudioEngine {
     return result ?? false;
   }
 
+  /// Apply (or remove) offline beat-sync time-stretching for a sampler slot.
+  ///
+  /// [slot] — instrument slot index (0-based).
+  /// [enabled] — true = stretch to [beats]; false = restore original audio.
+  /// [beats] — target beat length (1–99).
+  /// [bpm] — project BPM snapshot at the moment of baking (not live-linked).
+  /// [preservePitch] — reserved for future SoundTouch integration; currently
+  ///                   ignored (speed and pitch are linked in Method A).
+  ///
+  /// Runs on a Kotlin background thread; awaiting this future blocks until done.
+  Future<void> updateStretch({
+    required int slot,
+    required bool enabled,
+    required int beats,
+    required double bpm,
+    required bool preservePitch,
+  }) async {
+    if (!_initialised) return;
+    await _channel.invokeMethod<void>('updateStretch', {
+      'slot': slot,
+      'enabled': enabled,
+      'beats': beats,
+      'bpm': bpm,
+      'preservePitch': preservePitch,
+    });
+  }
+
   /// Open the mic input stream and keep it warm (no accumulation).
   /// Call when entering the recording UI. Avoids Android duplex-mode transients
   /// that would otherwise appear at the start of the first RECORD take.

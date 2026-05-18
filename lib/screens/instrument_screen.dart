@@ -2361,6 +2361,214 @@ class _SamplerEditorState extends State<_SamplerEditor>
     }
   }
 
+  // ── STRETCH card ──────────────────────────────────────────────────────────
+
+  Widget _buildStretchEditor(SamplerParams p) {
+    return _Section(
+      title: 'STRETCH',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // ── Row 1: ON/OFF + beat count ────────────────────────────────────
+          Row(
+            children: [
+              // ON / OFF toggle
+              _OscOnOffButton(
+                on: p.stretchEnabled,
+                onTap: _busy
+                    ? () {}
+                    : () async {
+                        setState(() {
+                          p.stretchEnabled = !p.stretchEnabled;
+                          _busy = true;
+                        });
+                        state.instrumentParamsChanged();
+                        await state.applyStretch();
+                        if (mounted) setState(() => _busy = false);
+                      },
+              ),
+              const SizedBox(width: 16),
+              Text(
+                'BEATS',
+                style: kStyleHeader.copyWith(fontSize: 11, color: kColHeader),
+              ),
+              const SizedBox(width: 8),
+              // ── Decrement beat ─────────────────────────────────────────────
+              GestureDetector(
+                onTap: (!_busy && p.stretchEnabled && p.stretchBeats > 1)
+                    ? () async {
+                        setState(() {
+                          p.stretchBeats = (p.stretchBeats - 1).clamp(1, 99);
+                          _busy = true;
+                        });
+                        state.instrumentParamsChanged();
+                        await state.applyStretch();
+                        if (mounted) setState(() => _busy = false);
+                      }
+                    : null,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
+                  child: Icon(
+                    Icons.remove_circle_outline,
+                    size: 28,
+                    color: (!_busy && p.stretchEnabled && p.stretchBeats > 1)
+                        ? kColHeader
+                        : kColInactive.withAlpha(60),
+                  ),
+                ),
+              ),
+              // ── Beat count display (tap to type) ──────────────────────────
+              GestureDetector(
+                onTap: (!_busy && p.stretchEnabled)
+                    ? () async {
+                        final result = await showDialog<int>(
+                          context: context,
+                          builder: (ctx) => _BeatInputDialog(
+                            initial: p.stretchBeats,
+                          ),
+                        );
+                        if (result != null) {
+                          setState(() {
+                            p.stretchBeats = result.clamp(1, 99);
+                            _busy = true;
+                          });
+                          state.instrumentParamsChanged();
+                          await state.applyStretch();
+                          if (mounted) setState(() => _busy = false);
+                        }
+                      }
+                    : null,
+                child: Container(
+                  width: 58,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 8,
+                  ),
+                  decoration: BoxDecoration(
+                    color: kBgColor.withAlpha(60),
+                    border: Border.all(
+                      color: p.stretchEnabled
+                          ? kColInactive.withAlpha(120)
+                          : kColInactive.withAlpha(40),
+                    ),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: _busy && p.stretchEnabled
+                      ? SizedBox(
+                          width: 22,
+                          height: 22,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.amber.shade600,
+                          ),
+                        )
+                      : Text(
+                          p.stretchBeats.toString().padLeft(2, '0'),
+                          textAlign: TextAlign.center,
+                          style: kStyleBase.copyWith(
+                            fontSize: 22,
+                            fontWeight: FontWeight.w700,
+                            color: p.stretchEnabled
+                                ? Colors.amber.shade600
+                                : kColInactive,
+                          ),
+                        ),
+                ),
+              ),
+              // ── Increment beat ─────────────────────────────────────────────
+              GestureDetector(
+                onTap: (!_busy && p.stretchEnabled && p.stretchBeats < 99)
+                    ? () async {
+                        setState(() {
+                          p.stretchBeats = (p.stretchBeats + 1).clamp(1, 99);
+                          _busy = true;
+                        });
+                        state.instrumentParamsChanged();
+                        await state.applyStretch();
+                        if (mounted) setState(() => _busy = false);
+                      }
+                    : null,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
+                  child: Icon(
+                    Icons.add_circle_outline,
+                    size: 28,
+                    color: (!_busy && p.stretchEnabled && p.stretchBeats < 99)
+                        ? kColHeader
+                        : kColInactive.withAlpha(60),
+                  ),
+                ),
+              ),
+              const Spacer(),
+              // ── Preserve pitch checkbox ────────────────────────────────────
+              GestureDetector(
+                onTap: (!_busy && p.stretchEnabled)
+                    ? () async {
+                        setState(() {
+                          p.stretchPreservePitch = !p.stretchPreservePitch;
+                          _busy = true;
+                        });
+                        state.instrumentParamsChanged();
+                        await state.applyStretch();
+                        if (mounted) setState(() => _busy = false);
+                      }
+                    : null,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: Checkbox(
+                        value: p.stretchPreservePitch,
+                        onChanged: (!_busy && p.stretchEnabled)
+                            ? (v) async {
+                                setState(() {
+                                  p.stretchPreservePitch = v ?? true;
+                                  _busy = true;
+                                });
+                                state.instrumentParamsChanged();
+                                await state.applyStretch();
+                                if (mounted) setState(() => _busy = false);
+                              }
+                            : null,
+                        activeColor: kColAccent,
+                        side: BorderSide(
+                          color: p.stretchEnabled
+                              ? kColHeader
+                              : kColInactive.withAlpha(80),
+                        ),
+                        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        visualDensity: VisualDensity.compact,
+                      ),
+                    ),
+                    const SizedBox(width: 5),
+                    Text(
+                      'PITCH',
+                      style: kStyleHeader.copyWith(
+                        fontSize: 11,
+                        color: p.stretchEnabled ? kColHeader : kColInactive,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          // ── Info note ─────────────────────────────────────────────────────
+          Text(
+            'Stretch is applied offline in the sampler.',
+            style: kStyleBase.copyWith(
+              fontSize: 10,
+              color: kColInactive,
+              fontStyle: FontStyle.italic,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildSliceEditor(SamplerParams p) {
     return _Section(
       title: 'SLICES',
@@ -2688,6 +2896,7 @@ class _SamplerEditorState extends State<_SamplerEditor>
             ),
           ),
           _buildSliceEditor(p),
+          _buildStretchEditor(p),
           _Section(
             title: 'PARAMS',
             child: Column(
@@ -3046,6 +3255,84 @@ class _Section extends StatelessWidget {
           child,
         ],
       ),
+    );
+  }
+}
+
+// ── Beat manual-entry dialog ──────────────────────────────────────────────────
+
+class _BeatInputDialog extends StatefulWidget {
+  final int initial;
+  const _BeatInputDialog({required this.initial});
+
+  @override
+  State<_BeatInputDialog> createState() => _BeatInputDialogState();
+}
+
+class _BeatInputDialogState extends State<_BeatInputDialog> {
+  late final TextEditingController _ctrl;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = TextEditingController(text: widget.initial.toString());
+    _ctrl.selection = TextSelection(
+      baseOffset: 0,
+      extentOffset: _ctrl.text.length,
+    );
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  void _submit() {
+    final v = int.tryParse(_ctrl.text.trim());
+    if (v != null) {
+      Navigator.of(context).pop(v.clamp(1, 99));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      backgroundColor: kBgTrackHeader,
+      title: Text(
+        'BEATS  (1 – 99)',
+        style: kStyleHeader.copyWith(color: kColAccent, letterSpacing: 1.2),
+      ),
+      content: TextField(
+        controller: _ctrl,
+        autofocus: true,
+        keyboardType: TextInputType.number,
+        style: kStyleBase.copyWith(
+          fontSize: 22,
+          fontWeight: FontWeight.w700,
+          color: Colors.amber.shade600,
+        ),
+        textAlign: TextAlign.center,
+        decoration: InputDecoration(
+          enabledBorder: OutlineInputBorder(
+            borderSide: BorderSide(color: kColInactive.withAlpha(120)),
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderSide: BorderSide(color: kColAccent),
+          ),
+        ),
+        onSubmitted: (_) => _submit(),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(null),
+          child: Text('CANCEL', style: kStyleHeader.copyWith(color: kColInactive)),
+        ),
+        TextButton(
+          onPressed: _submit,
+          child: Text('OK', style: kStyleHeader.copyWith(color: kColAccent)),
+        ),
+      ],
     );
   }
 }

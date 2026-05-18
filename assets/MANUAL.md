@@ -14,6 +14,7 @@
 6. [Mixer Screen](#6-mixer-screen)
 7. [Instruments](#7-instruments)
    - 7.1 [Sampler](#71-sampler)
+     - 7.1.1 [Stretch](#711-stretch)
    - 7.2 [Simple Synth](#72-simple-synth)
    - 7.3 [Karplus-Strong](#73-karplus-strong)
 8. [FX Commands](#8-fx-commands)
@@ -319,6 +320,40 @@ The first 9 chromatic notes of octave 0 are reserved as slice triggers on sample
 | G#0 | Slice 9 |
 
 Writing one of these notes on a sampler track is exactly equivalent to writing `C-4` with `FX: SLC VAL: 0N`. The sample always plays at normal (C4) pitch. To play the whole sample from start to end, use `C-4` or any note above `A#0`.
+
+#### 7.1.1 Stretch
+
+The STRETCH card locks the sample to an exact beat length, independent of the sample's original duration. The stretching is done **offline** — it pre-processes the audio buffer once when you press apply and stores the result. Playback reads the processed buffer with zero runtime overhead.
+
+| Control | Description |
+|---|---|
+| ON / OFF | Enable or disable time-stretching. Turning off instantly restores the original unprocessed sample. |
+| BEATS | How many beats the sample should fill at the current pattern BPM. Tap the value box to type a number, or use the − / + buttons. Range: 1–99. |
+| PITCH checkbox | When checked, pitch is preserved — the sample plays at its original pitch regardless of how much it is stretched or compressed. When unchecked, pitch shifts with speed (classic tape effect). |
+
+Tapping any of the three controls immediately triggers the stretch calculation. A spinner appears in the value box while the engine is working; the app remains responsive during this time.
+
+**How it works (PITCH checked)**
+
+Stria uses a WSOLA (Waveform Similarity Overlap-Add) algorithm. The sample is sliced into short overlapping grains (~30 ms each). Each grain is placed in the output at a shifted position and cross-faded using a Hann window. Before placing each grain, a short cross-correlation scan finds the input position that most closely matches the waveform already written — this minimises phase discontinuities (clicks, flanging, hollow-sounding artefacts). The result plays back at the correct pitch regardless of tempo.
+
+**How it works (PITCH unchecked)**
+
+Simple linear resampling — the waveform is stretched or compressed by interpolation. Slowing down lowers the pitch; speeding up raises it. Faster and artefact-free, but pitch and speed are linked.
+
+**BPM is captured at bake time**
+
+When you apply stretch, the engine takes a snapshot of the current pattern BPM and bakes the sample to fit `beats × (60 ÷ BPM)` seconds. Changing the pattern BPM afterwards does **not** automatically re-stretch — the baked buffer stays as-is until you change a stretch control again. This is intentional: it lets you set the BPM and stretch the sample once, then freely adjust tempo for arrangement purposes without the buffer changing under you.
+
+To re-bake at a new BPM, change any stretch control (e.g. toggle PITCH or nudge BEATS and back) while the new BPM is active.
+
+**Crop interaction**
+
+If you **CROP** the sample while STRETCH is ON, the stretch is automatically re-applied to the cropped material after the crop completes. Start/end points and slice markers are stored as fractional positions and continue to work correctly on the stretched buffer without any recalculation.
+
+**Turning stretch off**
+
+Toggling OFF instantly swaps the stretched buffer back to the original unmodified sample. No quality is lost — the original is always kept in memory.
 
 ---
 

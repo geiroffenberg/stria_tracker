@@ -4,6 +4,7 @@ project(tracker_audio VERSION 1.0.0)
 # Oboe is provided via Prefab (AAR dependency in build.gradle.kts)
 find_package(oboe REQUIRED CONFIG)
 
+# ── Main audio library ────────────────────────────────────────────────────────
 add_library(tracker_audio SHARED
     audio_engine.cpp
     jni_bridge.cpp

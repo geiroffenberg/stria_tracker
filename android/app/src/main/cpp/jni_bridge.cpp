@@ -364,6 +364,18 @@ Java_com_metamind_stria_AudioEnginePlugin_nativeSetSamplerSample(
 }
 
 JNIEXPORT void JNICALL
+Java_com_metamind_stria_AudioEnginePlugin_nativeUpdateStretch(
+        JNIEnv*, jobject, jlong ptr,
+        jint slot, jboolean enabled, jint beats, jfloat bpm, jboolean preservePitch) {
+    reinterpret_cast<AudioEngine*>(ptr)->updateStretch(
+        slot,
+        static_cast<bool>(enabled),
+        static_cast<int>(beats),
+        static_cast<float>(bpm),
+        static_cast<bool>(preservePitch));
+}
+
+JNIEXPORT void JNICALL
 Java_com_metamind_stria_AudioEnginePlugin_nativeDispose(JNIEnv*, jobject, jlong ptr) {
     delete reinterpret_cast<AudioEngine*>(ptr);
 }

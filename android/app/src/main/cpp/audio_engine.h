@@ -121,7 +121,8 @@ struct Voice {
 };
 
 struct SampleData {
-    std::vector<float> mono; // normalized [-1..1]
+    std::vector<float> mono;         // normalized [-1..1] — what the audio callback reads
+    std::vector<float> originalMono; // unchanged original (always kept for re-baking)
     int sampleRate = 44100;
 };
 
@@ -471,6 +472,15 @@ public:
     /// Assign a sample file to an instrument slot for sampler playback.
     /// Pass empty path to clear assignment.
     bool setSamplerSample(int slot, const std::string& path);
+
+    /// Apply (or remove) beat-sync time-stretching on a sampler slot.
+    /// If enabled=false the slot is restored to its original un-stretched audio.
+    /// If enabled=true the original audio is resampled via linear interpolation
+    /// to fit exactly (beats * 60 / bpm) seconds — computed on the calling thread
+    /// (call from a worker thread in Kotlin to keep the UI responsive).
+    /// preservePitch is stored for future SoundTouch integration; currently ignored
+    /// (Method A: speed/pitch linked).
+    void updateStretch(int slot, bool enabled, int beats, float bpm, bool preservePitch);
 
     /// Open the mic input stream and keep it running silently (no accumulation).
     /// Call once when entering the recording UI so the stream is warm before
