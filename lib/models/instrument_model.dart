@@ -633,7 +633,10 @@ class SamplerParams {
       final next = sliceStarts[i];
       if (next > 0) return next / 999.0;
     }
-    return 1.0;
+    // No next slice found — fall back to the instrument's configured end point
+    // so the last slice respects the end knob rather than playing to the raw
+    // audio file boundary (which caused looping/run-on for the last slice).
+    return end;
   }
 
   Map<String, dynamic> toJson() => {

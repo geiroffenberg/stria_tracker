@@ -27,7 +27,7 @@ class _MainScreenState extends State<MainScreen> {
 
     return ValueListenableBuilder<TrackerPalette>(
       valueListenable: paletteNotifier,
-      builder: (_, __, ___) => Scaffold(
+      builder: (_, _, _) => Scaffold(
         backgroundColor: kBgColor,
         body: NotificationListener<OpenPatternTrackNotification>(
           onNotification: (notification) {
