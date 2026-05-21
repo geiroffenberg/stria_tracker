@@ -629,7 +629,7 @@ class _FxCmdActions extends StatelessWidget {
   static const List<int> _classicCommands = [
     kFxARP, kFxCHA, kFxDEL, kFxKIL, kFxPAN,
     kFxRAN, kFxRET, kFxREV, kFxVIB, kFxVOL,
-    kFxSLU, kFxSLD, kFxARC, kFxSLC,
+    kFxSLU, kFxSLD, kFxARC, kFxSLC, kFxTRE, kFxGAT,
   ];
 
   final AppState state;

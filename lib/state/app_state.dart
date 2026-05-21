@@ -3109,7 +3109,7 @@ class AppState extends ChangeNotifier {
     _resetInstrumentCarry();
 
     await AudioEngine.instance.clearQueuedPlaybackRows();
-    await AudioEngine.instance.setQueuedPlaybackLooping(true);
+    await AudioEngine.instance.setQueuedPlaybackLooping(_loopPlaybackEnabled);
     for (final row in scheduledRows) {
       await AudioEngine.instance.enqueuePlaybackRow(
         lineSamples: row.lineSamples,
@@ -3143,11 +3143,9 @@ class AppState extends ChangeNotifier {
       final newRowRaw = playheadRow + advanced;
       final didLoop = newRowRaw >= rowCount;
       playheadRow = newRowRaw % rowCount;
-      if (didLoop && _loopPlaybackEnabled) {
-        // Rebuild the native queue from the current live pattern so any
-        // changes made during the previous loop pass are picked up now.
-        await _loadNativePatternPlaybackQueue(startRow: 0);
-        if (isPlaying) await AudioEngine.instance.start();
+      if (didLoop && !_loopPlaybackEnabled) {
+        stop();
+        return;
       }
       notifyListeners();
     } finally {
