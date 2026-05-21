@@ -22,6 +22,7 @@ enum _SongMenuAction {
   changePalette,
   exportWav,
   showManual,
+  autosave,
 }
 
 /// Song arrangement screen.
@@ -384,45 +385,64 @@ class _SongScreenState extends State<SongScreen> {
                   icon: Icon(Icons.menu, size: 28, color: kColAccent),
                   onSelected: (action) =>
                       _handleSongMenuAction(ctx, state, action),
-                  itemBuilder: (_) => const [
-                    PopupMenuItem(
+                  itemBuilder: (_) => [
+                    const PopupMenuItem(
                       value: _SongMenuAction.newSong,
                       child: Text('New Song', style: TextStyle(fontSize: 16)),
                     ),
-                    PopupMenuItem(
+                    const PopupMenuItem(
                       value: _SongMenuAction.saveSong,
                       child: Text('Save Song', style: TextStyle(fontSize: 16)),
                     ),
-                    PopupMenuItem(
+                    const PopupMenuItem(
                       value: _SongMenuAction.loadSong,
                       child: Text('Load Song', style: TextStyle(fontSize: 16)),
                     ),
-                    PopupMenuItem(
+                    const PopupMenuItem(
                       value: _SongMenuAction.chooseProjectFolder,
                       child: Text(
                         'Project Folder',
                         style: TextStyle(fontSize: 16),
                       ),
                     ),
-                    PopupMenuItem(
+                    const PopupMenuItem(
                       value: _SongMenuAction.showProjectPath,
                       child: Text('Show Path', style: TextStyle(fontSize: 16)),
                     ),
-                    PopupMenuDivider(),
-                    PopupMenuItem(
+                    const PopupMenuDivider(),
+                    const PopupMenuItem(
                       value: _SongMenuAction.changePalette,
                       child: Text(
                         'Color Palette',
                         style: TextStyle(fontSize: 16),
                       ),
                     ),
-                    PopupMenuDivider(),
                     PopupMenuItem(
+                      value: _SongMenuAction.autosave,
+                      child: Row(
+                        children: [
+                          Icon(
+                            state.autosaveEnabled
+                                ? Icons.check_box
+                                : Icons.check_box_outline_blank,
+                            size: 18,
+                            color: kColAccent,
+                          ),
+                          const SizedBox(width: 8),
+                          const Text(
+                            'Autosave (10 min)',
+                            style: TextStyle(fontSize: 16),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const PopupMenuDivider(),
+                    const PopupMenuItem(
                       value: _SongMenuAction.exportWav,
                       child: Text('Export WAV', style: TextStyle(fontSize: 16)),
                     ),
-                    PopupMenuDivider(),
-                    PopupMenuItem(
+                    const PopupMenuDivider(),
+                    const PopupMenuItem(
                       value: _SongMenuAction.showManual,
                       child: Text('How to Use', style: TextStyle(fontSize: 16)),
                     ),
@@ -644,6 +664,9 @@ class _SongScreenState extends State<SongScreen> {
         break;
       case _SongMenuAction.showManual:
         _showManual(ctx);
+        break;
+      case _SongMenuAction.autosave:
+        state.setAutosaveEnabled(!state.autosaveEnabled);
         break;
     }
   }

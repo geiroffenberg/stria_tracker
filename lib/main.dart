@@ -1,5 +1,9 @@
+import 'dart:async';
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'audio/audio_engine.dart';
 import 'screens/main_screen.dart';
@@ -34,6 +38,16 @@ void main() async {
   // Initialise Oboe (non-fatal if native side is unavailable)
   await AudioEngine.instance.initialize();
 
+  // Request storage permission early so sample files on external storage
+  // can be loaded when a project is opened (Android revokes this on reinstall).
+  if (Platform.isAndroid) {
+    // Android 13+ uses READ_MEDIA_AUDIO; older versions use READ_EXTERNAL_STORAGE.
+    final audioOk = await Permission.audio.request();
+    if (!audioOk.isGranted) {
+      await Permission.storage.request();
+    }
+  }
+
   runApp(const TrackerApp());
 }
 
@@ -52,19 +66,29 @@ class TrackerApp extends StatefulWidget {
   State<TrackerApp> createState() => _TrackerAppState();
 }
 
-class _TrackerAppState extends State<TrackerApp> {
+class _TrackerAppState extends State<TrackerApp> with WidgetsBindingObserver {
   final _appState = AppState();
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     paletteNotifier.addListener(_onPaletteChanged);
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.detached) {
+      unawaited(_appState.autosaveOnFocusLost());
+    }
   }
 
   void _onPaletteChanged() => setState(() {});
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     paletteNotifier.removeListener(_onPaletteChanged);
     AudioEngine.instance.dispose();
     super.dispose();

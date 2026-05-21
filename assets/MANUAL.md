@@ -457,17 +457,21 @@ FX commands are entered in the FX column of a pattern cell. Each command takes a
 
 | Command | Value (XY) | Description |
 |---|---|---|
-| `ARP` | XY | Arpeggio. X = first interval (semitones), Y = second interval |
+| `ARP` | XY | Arpeggio. X = first interval (semitones), Y = second interval. Carries through hold rows. |
 | `CHA` | 00–99 | Chance. 00 = never play, 99 = always play, 50 = 50% |
 | `DEL` | 00–99 | Delay note-on by % of the row duration (00 = start, 99 = end) |
+| `GAT` | XY | Gate. X = speed (0–9), Y = depth (0–9). Square-wave volume LFO. Carries through hold rows. |
 | `KIL` | 00–99 | Kill note at % through row (00 = immediately, 99 = end of row) |
-| `PAN` | 00–99 | Set stereo pan (00 = full left, 50 = centre, 99 = full right) |
+| `PAN` | 00–99 | Set stereo pan (00 = full left, 50 = centre, 99 = full right). Carries through hold rows. |
 | `RAN` | 01–99 | Random active slice — chance % to override the slice with a random one |
 | `RET` | XY | Retrigger. X = volume curve mode, Y = number of retrigs per line |
 | `REV` | — | Reverse — play sample/slice backwards |
-| `VIB` | XY | Vibrato. X = speed (0–9), Y = depth (0–9) |
-| `VOL` | 00–99 | Override volume for this row only (does not carry to next row) |
 | `SLC` | XY | Slice player. X = play mode (0 = slice only, 1 = play through), Y = slice number (1–9) |
+| `SLD` | XY | Slide Down. X = lines to slide over (1–9), Y = semitones down (1–9). Works on hold rows. |
+| `SLU` | XY | Slide Up. X = lines to slide over (1–9), Y = semitones up (1–9). Works on hold rows. |
+| `TRE` | XY | Tremolo. X = speed (0–9), Y = depth (0–9). Sine-wave volume LFO. Carries through hold rows. |
+| `VIB` | XY | Vibrato. X = speed (0–9), Y = depth (0–9). Pitch LFO. Carries through hold rows. |
+| `VOL` | 00–99 | Override volume. Carries through hold rows until note-off. |
 | `ARC` | XY | Octave arp config. X = octave layers, Y = notes per line |
 
 #### ARP — Arpeggio Detail
@@ -476,12 +480,49 @@ The arp cycles through root → root+X → root+Y semitones. Values 0–9 are ch
 
 `0`=unison, `1`=m2, `2`=M2, `3`=m3, `4`=M3, `5`=P4, `6`=tritone, `7`=P5, `8`=m6, `9`=M6
 
+ARP can be placed on a hold row to start arpeggiation mid-note.
+
 #### RET — Retrigger Volume Curves
 
 | X digit | Curve |
 |---|---|
 | 0 | Flat (same volume each retrig) |
 | 1–9 | *TBD — document curve shapes* |
+
+#### SLU / SLD — Pitch Slide Detail
+
+Slide Up and Slide Down linearly move the pitch over X rows by Y semitones. The slide is sample-accurate within each row.
+
+- `SLU 23` — slide up 3 semitones over 2 rows
+- `SLD 14` — slide down 4 semitones over 1 row
+
+Placing SLU/SLD on a **hold row** slides from the currently held pitch, allowing pitch changes without retriggering the note.
+
+#### VIB / TRE / GAT — LFO Carry Behaviour
+
+All three LFO commands carry their speed and depth values forward through subsequent hold rows and stop when a note-off is reached. This means:
+
+- Place the command on a **note row** to start the effect from the very beginning of the note.
+- Place it on a **hold row** to add it mid-note without retriggering.
+- Leave the hold rows bare — the last-set speed and depth stay active automatically.
+- A `===` (note-off) resets the carry.
+
+`VIB` and `TRE`/`GAT` are independent and can be combined on the same note: VIB modulates pitch while TRE/GAT modulates amplitude.
+
+#### TRE — Tremolo Detail
+
+Tremolo applies a **sine-wave** volume LFO. The volume oscillates smoothly between full and attenuated based on the depth setting.
+
+- X = 0 → very slow (0.1 Hz); X = 9 → fast (≈20 Hz)
+- Y = 0 → no effect; Y = 9 → maximum depth (volume dips to silence at the trough)
+
+#### GAT — Gate Detail
+
+Gate applies a **square-wave** volume LFO, creating a rhythmic stutter or gating effect. The volume switches abruptly between full and attenuated.
+
+- Same speed (X) and depth (Y) encoding as TRE.
+- At high depths, the signal cuts fully in and out — classic trance-gate / sidechain-compression imitation.
+- At lower depths, the cuts are partial, producing a pumping texture.
 
 ---
 

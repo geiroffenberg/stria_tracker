@@ -60,11 +60,16 @@ struct Voice {
     float  decaySec          = 0.20f;
     float  sustainLevel      = 0.80f;
     float  releaseSec        = 0.25f;
-    // LFO
+    // LFO (VIB FX — pitch/filter/amp modulation)
     double lfoPhase          = 0.0;  // radians, accumulated per sample
     float  lfoRateNorm       = 0.2f; // 0..1 → 0.1..20 Hz
     float  lfoDepth          = 0.0f; // 0..1
     int    lfoTarget         = 0;    // 0=pitch, 1=filter, 2=amp
+    // Tremolo/Gate LFO (TRE/GAT FX — independent volume modulation)
+    double trePhase          = 0.0;  // radians, accumulated per sample
+    float  treSpeedNorm      = 0.0f; // 0..1 → Hz via normToLfoHz
+    float  treDepth          = 0.0f; // 0..1
+    int    treMode           = 0;    // 0=off, 1=sine (TRE), 2=square (GAT)
     // Drive / saturation
     float  drive             = 0.0f; // 0..1
 

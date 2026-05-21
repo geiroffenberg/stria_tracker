@@ -51,7 +51,10 @@ class CellActionBar extends StatelessWidget {
       height = 56;
     } else if (selRow != null) {
       body = _RowActions(state: state, row: selRow);
-      height = 56;
+      final selRange = state.selectedRowRange;
+      final hasMulti =
+          selRange != null && (selRange.$2 - selRange.$1) > 0;
+      height = hasMulti ? 112 : 56;
     } else if (selCell != null) {
       body = _buildForColumn(state, selCell.row, selCell.column);
       // FX cmd uses stacked horizontal strips for command categories.
@@ -154,9 +157,10 @@ class _RowActions extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final selectedRange = state.selectedRowRange;
-    final hasMultiLineSelection = selectedRange != null && (selectedRange.$2 - selectedRange.$1) > 0;
+    final hasMultiLineSelection =
+        selectedRange != null && (selectedRange.$2 - selectedRange.$1) > 0;
 
-    return Padding(
+    final mainRow = Padding(
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
       child: Row(
         children: [
@@ -217,6 +221,48 @@ class _RowActions extends StatelessWidget {
         ],
       ),
     );
+
+    if (!hasMultiLineSelection) return mainRow;
+
+    final randRow = Padding(
+      padding: const EdgeInsets.fromLTRB(6, 0, 6, 6),
+      child: Row(
+        children: [
+          _ActionBtn(
+            label: 'SHUF',
+            onTap: () => state.shuffleSelectedRows(),
+          ),
+          _ActionBtn(
+            label: 'SCAT',
+            onTap: () => state.scatterSelectedRows(),
+          ),
+          _ActionBtn(
+            label: 'RAND',
+            onTap: () => state.randomizePitchInSelection(),
+          ),
+          const SizedBox(width: 4),
+          _ActionBtn(
+            label: '+OCT',
+            onTap: () => state.transposeSelectionBySemitones(12),
+          ),
+          _ActionBtn(
+            label: '-OCT',
+            onTap: () => state.transposeSelectionBySemitones(-12),
+          ),
+          _ActionBtn(
+            label: '+ST',
+            onTap: () => state.transposeSelectionBySemitones(1),
+          ),
+          _ActionBtn(
+            label: '-ST',
+            onTap: () => state.transposeSelectionBySemitones(-1),
+          ),
+          const Spacer(),
+        ],
+      ),
+    );
+
+    return Column(children: [mainRow, randRow]);
   }
 }
 
@@ -901,8 +947,9 @@ class _FxCmdActions extends StatelessWidget {
     final cell = state.currentTrack.cells[row];
     final fx = cell.fxSlots[_fxIndex()];
     final current = fx.command;
-    // Resolve instrument type from the IN cell for Pxx name/desc display.
-    final instrNum = (cell.instrument ?? 0).clamp(1, state.instruments.length);
+    // Resolve instrument type: use the cell's IN value if set, otherwise scan
+    // backwards to the last used instrument on this track (same logic as playback).
+    final instrNum = state.effectiveInstrumentAtRow(row).clamp(1, state.instruments.length);
     final instrType = state.instruments[instrNum - 1].type;
     // Override descriptions for command families that are context-sensitive.
     final currentInsertEffect = (current != null && isInsertFxCommand(current))

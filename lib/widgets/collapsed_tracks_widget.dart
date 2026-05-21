@@ -18,9 +18,7 @@ import 'cell_widget.dart';
 ///   The row-number column stays put on the left.
 ///   The track header and the cell area share a horizontal scroll controller.
 class CollapsedTracksWidget extends StatefulWidget {
-  final ValueChanged<int> onTrackTap;
-
-  const CollapsedTracksWidget({super.key, required this.onTrackTap});
+  const CollapsedTracksWidget({super.key});
 
   static const double wNote = 38.0;
   static const double wInst = 34.0;
@@ -161,6 +159,7 @@ class _CollapsedTracksWidgetState extends State<CollapsedTracksWidget> {
   // ── Header content ────────────────────────────────────────────────────────
 
   Widget _buildTrackLabels(List<TrackModel> tracks) {
+    final state = AppStateScope.of(context);
     return Container(
       color: kBgHeader,
       child: Row(
@@ -170,13 +169,13 @@ class _CollapsedTracksWidgetState extends State<CollapsedTracksWidget> {
               width: CollapsedTracksWidget.wNote + CollapsedTracksWidget.wInst,
               child: GestureDetector(
                 behavior: HitTestBehavior.opaque,
-                onTap: () {
-                  widget.onTrackTap(i);
-                },
+                onTap: () => state.toggleTrackMixerSolo(i),
                 child: Center(
                   child: Text(
                     'T${(i + 1).toString().padLeft(2, '0')}',
-                    style: kStyleHeader.copyWith(color: kColAccent),
+                    style: kStyleHeader.copyWith(
+                      color: tracks[i].mixerSolo ? kColStopBtn : kColAccent,
+                    ),
                   ),
                 ),
               ),

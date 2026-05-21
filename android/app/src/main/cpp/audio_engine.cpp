@@ -782,11 +782,12 @@ void AudioEngine::triggerRowLocked(const std::vector<int>& rowData) {
     mPendingArp.clear();
     mPendingDelays.clear();
     mPendingKills.clear();
-    // Current canonical stride is 39 (as of oct feature):
-    // [note, vol, pan, wave, instrumentType, 34 params].
-    // Fall back to legacy stride 36 / 34 / 25 / 24 / 23 / 18 / 4 packets.
+    // Current canonical stride is 42 (as of TRE/GAT feature):
+    // [note, vol, pan, wave, instrumentType, 37 params].
+    // Fall back to legacy stride 39 / 36 / 34 / 25 / 24 / 23 / 18 / 4 packets.
     int stride = 4;
-    if      (rowData.size() % 39 == 0) stride = 39;
+    if      (rowData.size() % 42 == 0) stride = 42;
+    else if (rowData.size() % 39 == 0) stride = 39;
     else if (rowData.size() % 36 == 0) stride = 36;
     else if (rowData.size() % 34 == 0) stride = 34;
     else if (rowData.size() % 25 == 0) stride = 25;
@@ -865,6 +866,9 @@ void AudioEngine::triggerRowLocked(const std::vector<int>& rowData) {
         const int osc1OctRaw  = (stride >= 39) ? (int)rowData[pBase + 31] - 2 : 0;
         const int osc2OctRaw  = (stride >= 39) ? (int)rowData[pBase + 32] - 2 : 0;
         const int osc3OctRaw  = (stride >= 39) ? (int)rowData[pBase + 33] - 2 : 0;
+        const int treSpeedRaw = (stride >= 42) ? rowData[pBase + 34] : 0;
+        const int treDepthRaw = (stride >= 42) ? rowData[pBase + 35] : 0;
+        const int treModeRaw  = (stride >= 42) ? rowData[pBase + 36] : 0;
         auto& v = mVoices[i];
 
         // note encoding:
@@ -896,12 +900,20 @@ void AudioEngine::triggerRowLocked(const std::vector<int>& rowData) {
         v.releaseSec = normToReleaseSec(byteToNorm(rel));
         v.glideSec = normToGlideSec(byteToNorm(glide));
         v.instrumentVolume = byteToNorm(instVol);
-        // lfoRate/lfoDepth/lfoTarget are only updated on note-on so that
-        // FX like VIB persist across hold rows without being reset.
-        if (n >= 0) {
+        // LFO params are updated on every row (note-on and hold) so that
+        // a VIB command placed on a hold row can take effect mid-note.
+        // The Dart carry system propagates VIB values forward through all
+        // subsequent hold rows, so there is no risk of accidental reset.
+        // Note-off (n == -2) is excluded as the voice is silenced anyway.
+        if (n != -2) {
             v.lfoRateNorm = byteToNorm(lfoRate);
             v.lfoDepth    = byteToNorm(lfoDepth);
             v.lfoTarget   = std::clamp(lfoTgt, 0, 2);
+            // TRE/GAT tremolo/gate: updated on every non-note-off row so that
+            // TRE/GAT on hold rows takes effect mid-note (same as VIB).
+            v.treSpeedNorm = byteToNorm(treSpeedRaw);
+            v.treDepth     = byteToNorm(treDepthRaw);
+            v.treMode      = std::clamp(treModeRaw, 0, 2);
         }
         v.drive = byteToNorm(drive);
         v.osc1Gain       = byteToNorm(osc1GainRaw);
@@ -2481,6 +2493,7 @@ oboe::DataCallbackResult AudioEngine::onAudioReady(
             }
 
             const double srRatio = static_cast<double>(s.sampleRate) / sampleRate;
+            const double trePhaseInc = 2.0 * M_PI * normToLfoHz(v.treSpeedNorm) / sampleRate;
 
             for (int i = 0; i < numFrames; ++i) {
                 // Apply SLU/SLD pitch ramp: interpolate sampleStep per sample.
@@ -2531,7 +2544,18 @@ oboe::DataCallbackResult AudioEngine::onAudioReady(
                     }
                 }
 
-                const float dry = s.mono[idx] * v.level * v.instrumentVolume * v.sampleGain * envGain;
+                // TRE/GAT: independent volume LFO (sine = TRE, square = GAT).
+                float treAmpMod = 1.0f;
+                if (v.treMode > 0 && v.treDepth > 0.001f) {
+                    const float treVal = (v.treMode == 2)
+                        ? ((v.trePhase < M_PI) ? 1.0f : -1.0f)
+                        : static_cast<float>(std::sin(v.trePhase));
+                    treAmpMod = 1.0f - v.treDepth * (0.5f - treVal * 0.5f);
+                    v.trePhase += trePhaseInc;
+                    if (v.trePhase >= 2.0 * M_PI) v.trePhase -= 2.0 * M_PI;
+                }
+
+                const float dry = s.mono[idx] * v.level * v.instrumentVolume * v.sampleGain * envGain * treAmpMod;
 
                 const float pan01 = std::clamp(v.pan, 0.0f, 1.0f);
                 const float angle = pan01 * 1.57079632679f;
@@ -2562,6 +2586,7 @@ oboe::DataCallbackResult AudioEngine::onAudioReady(
             const float bodyBlend = karplusBodyBlend(v.karplusBodyNorm);
             const float driveAmount = karplusDriveAmount(v.karplusDriveNorm);
             const int bufSize = static_cast<int>(v.karplusBuf.size());
+            const double trePhaseInc = 2.0 * M_PI * normToLfoHz(v.treSpeedNorm) / sampleRate;
 
             for (int i = 0; i < numFrames; ++i) {
                 v.gain += smoothK * (v.gainTarget - v.gain);
@@ -2589,7 +2614,17 @@ oboe::DataCallbackResult AudioEngine::onAudioReady(
                     const float boosted = sample * (1.0f + driveAmount * 6.0f);
                     sample = boosted / (1.0f + std::fabs(boosted));
                 }
-                sample = sample * v.gain * v.level * v.instrumentVolume * 0.35f;
+                // TRE/GAT: independent volume LFO (sine = TRE, square = GAT).
+                float treAmpMod = 1.0f;
+                if (v.treMode > 0 && v.treDepth > 0.001f) {
+                    const float treVal = (v.treMode == 2)
+                        ? ((v.trePhase < M_PI) ? 1.0f : -1.0f)
+                        : static_cast<float>(std::sin(v.trePhase));
+                    treAmpMod = 1.0f - v.treDepth * (0.5f - treVal * 0.5f);
+                    v.trePhase += trePhaseInc;
+                    if (v.trePhase >= 2.0 * M_PI) v.trePhase -= 2.0 * M_PI;
+                }
+                sample = sample * v.gain * v.level * v.instrumentVolume * 0.35f * treAmpMod;
 
                 const float pan01 = std::clamp(v.pan, 0.0f, 1.0f);
                 const float angle = pan01 * 1.57079632679f;
@@ -2624,6 +2659,8 @@ oboe::DataCallbackResult AudioEngine::onAudioReady(
             : 1.0f;
         const float lfoHz = normToLfoHz(v.lfoRateNorm);
         const double lfoPhaseInc = 2.0 * M_PI * lfoHz / sampleRate;
+        const float treHz = normToLfoHz(v.treSpeedNorm);
+        const double trePhaseInc = 2.0 * M_PI * treHz / sampleRate;
         // Chamberlin SVF damping: map resonance to a musically useful Q range.
         // Keeping this <= 1.0 avoids over-damping that can turn high-cutoff
         // content into mostly transients/clicks.
@@ -2742,6 +2779,16 @@ oboe::DataCallbackResult AudioEngine::onAudioReady(
                 } else { // amp tremolo
                     lfoAmpMod = 1.0f - v.lfoDepth * (0.5f - lfoVal * 0.5f);
                 }
+            }
+
+            // TRE/GAT: independent volume LFO (sine = TRE, square = GAT).
+            if (v.treMode > 0 && v.treDepth > 0.001f) {
+                const float treVal = (v.treMode == 2)
+                    ? ((v.trePhase < M_PI) ? 1.0f : -1.0f)   // GAT: square wave
+                    : static_cast<float>(std::sin(v.trePhase)); // TRE: sine wave
+                lfoAmpMod *= 1.0f - v.treDepth * (0.5f - treVal * 0.5f);
+                v.trePhase += trePhaseInc;
+                if (v.trePhase >= 2.0 * M_PI) v.trePhase -= 2.0 * M_PI;
             }
 
             // ── OSC 3: compute first (FM source for OSC 2) ─────────────────────────

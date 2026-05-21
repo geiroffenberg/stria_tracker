@@ -233,6 +233,36 @@ class MainActivity : FlutterActivity(), AudioManager.OnAudioFocusChangeListener 
 						result.error("write_failed", e.message, null)
 					}
 				}
+				"readProjectBinaryFile" -> {
+					val treeUriRaw = call.argument<String>("treeUri")
+					val folderNameRaw = call.argument<String>("folderName")
+					val fileNameRaw = call.argument<String>("fileName")
+					if (treeUriRaw.isNullOrBlank() || folderNameRaw.isNullOrBlank() || fileNameRaw.isNullOrBlank()) {
+						result.error("bad_args", "Missing treeUri/folderName/fileName", null)
+						return@setMethodCallHandler
+					}
+					try {
+						val root = DocumentFile.fromTreeUri(this, Uri.parse(treeUriRaw))
+						if (root == null || !root.isDirectory) {
+							result.success(null)
+							return@setMethodCallHandler
+						}
+						val folder = findDirectoryByName(root, folderNameRaw.trim())
+						if (folder == null) {
+							result.success(null)
+							return@setMethodCallHandler
+						}
+						val file = findChildByName(folder, fileNameRaw.trim())
+						if (file == null || !file.isFile) {
+							result.success(null)
+							return@setMethodCallHandler
+						}
+						val bytes = contentResolver.openInputStream(file.uri)?.use { it.readBytes() }
+						result.success(bytes)
+					} catch (e: Exception) {
+						result.error("read_failed", e.message, null)
+					}
+				}
 				else -> result.notImplemented()
 			}
 		}

@@ -65,17 +65,7 @@ class _PatternScreenState extends State<PatternScreen> {
         _buildTrackHeader(context, state),
         Expanded(
           child: state.collapsedView
-              ? CollapsedTracksWidget(
-                  onTrackTap: (trackIndex) {
-                    state.selectTrack(trackIndex);
-                    state.toggleCollapsedView();
-                    WidgetsBinding.instance.addPostFrameCallback((_) {
-                      if (_pageCtrl.hasClients) {
-                        _pageCtrl.jumpToPage(trackIndex);
-                      }
-                    });
-                  },
-                )
+              ? const CollapsedTracksWidget()
               : PageView.builder(
                   key: ValueKey<int>(state.currentPatternIndex),
                   controller: _pageCtrl,
@@ -139,6 +129,11 @@ class _PatternScreenState extends State<PatternScreen> {
               onTap: () => _goToTrack(state, trackIdx + 1),
               enabled: trackIdx < state.trackCount - 1,
             ),
+            const SizedBox(width: 8),
+            _SoloBtn(
+              soloed: state.currentPattern.tracks[trackIdx].mixerSolo,
+              onTap: () => state.toggleTrackMixerSolo(trackIdx),
+            ),
           ] else ...[
             Expanded(
               child: Text(
@@ -187,6 +182,41 @@ class _PatternScreenState extends State<PatternScreen> {
     ),
       Container(height: 1, color: kColActive.withAlpha(160)),
     ],
+    );
+  }
+}
+
+class _SoloBtn extends StatelessWidget {
+  final bool soloed;
+  final VoidCallback onTap;
+
+  const _SoloBtn({required this.soloed, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: 22,
+        height: 22,
+        decoration: BoxDecoration(
+          color: soloed ? kColStopBtn.withAlpha(40) : Colors.transparent,
+          border: Border.all(
+            color: soloed ? kColStopBtn : kColInactive,
+            width: 1,
+          ),
+          borderRadius: BorderRadius.circular(3),
+        ),
+        alignment: Alignment.center,
+        child: Text(
+          'S',
+          style: kStyleBase.copyWith(
+            fontSize: 12,
+            color: soloed ? kColStopBtn : kColInactive,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+      ),
     );
   }
 }

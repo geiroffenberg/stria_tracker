@@ -46,6 +46,41 @@ class InstrumentScreen extends StatelessWidget {
               ),
             },
           ),
+          if (ins.type != InstrumentType.empty)
+            Material(
+              color: kBgTrackHeader,
+              child: InkWell(
+                onTap: () async {
+                  final dest = await state.copyInstrumentToFreeSlot(
+                    state.currentInstrumentIndex,
+                  );
+                  if (!context.mounted) return;
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(
+                        dest == -1
+                            ? 'No free instrument slot available.'
+                            : 'Copied to slot ${(dest + 1).toString().padLeft(2, '0')}.',
+                      ),
+                      duration: const Duration(seconds: 2),
+                    ),
+                  );
+                },
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 10),
+                  child: Center(
+                    child: Text(
+                      'COPY TO NEW SLOT',
+                      style: kStyleHeader.copyWith(
+                        color: kColAccent,
+                        fontSize: 13,
+                        letterSpacing: 1.2,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
         ],
       ),
     );
@@ -2959,7 +2994,7 @@ class _SamplerEditorState extends State<_SamplerEditor>
           ),
           _Section(
             title: (p.sampleName != null && p.sampleName!.isNotEmpty)
-                ? p.sampleName!
+                ? (p.samplePath == null ? '⚠ ${p.sampleName!}' : p.sampleName!)
                 : 'PREVIEW',
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,

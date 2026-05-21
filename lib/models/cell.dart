@@ -59,6 +59,8 @@ const Map<int, String> kFxCommandNames = {
   // ── New classic FX — add below; IDs never shift existing entries ──────
   205: 'SLU', // slide up:   X=lines, Y=semitones
   206: 'SLD', // slide down: X=lines, Y=semitones
+  207: 'TRE', // tremolo: XY speed+depth, sine wave volume LFO
+  208: 'GAT', // gate: XY speed+depth, square wave volume LFO
 };
 
 /// Fixed command ID → full description string. Same key space as kFxCommandNames.
@@ -101,6 +103,8 @@ const Map<int, String> kFxCommandDescriptions = {
   204: 'Slice command — XY: X=mode (0=slice, 1=thru), Y=slice (1-9)',
   205: 'Slide Up — XY: X=lines to slide over (1-9), Y=semitones up (1-9)',
   206: 'Slide Down — XY: X=lines to slide over (1-9), Y=semitones down (1-9)',
+  207: 'Tremolo — XY: X=speed (0-9), Y=depth (0-9), sine wave volume LFO',
+  208: 'Gate — XY: X=speed (0-9), Y=depth (0-9), square wave volume gate',
   // ── Add new FX descriptions below ────────────────────────────────────
 };
 
@@ -125,7 +129,9 @@ const int kFxARC = 203; // arp config
 const int kFxSLC = 204; // slice command
 const int kFxSLU = 205; // slide up:   X=lines, Y=semitones
 const int kFxSLD = 206; // slide down: X=lines, Y=semitones
-// → To add a new FX: pick an ID > 206, add to kFxCommandNames + kFxCommandDescriptions
+const int kFxTRE = 207; // tremolo: XY speed+depth, sine wave volume LFO
+const int kFxGAT = 208; // gate: XY speed+depth, square wave volume LFO
+// → To add a new FX: pick an ID > 208, add to kFxCommandNames + kFxCommandDescriptions
 const int kFxInsertStart = 340;
 const int kFxInsertEnd = 399; // 6 slots × 10 functions (0–9) = 60 commands
 

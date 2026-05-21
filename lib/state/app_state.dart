@@ -103,7 +103,7 @@ class _ScheduledPlaybackRow {
 
 class AppState extends ChangeNotifier {
   static const int _audioVoiceCount = kMaxTracks;
-  static const int _audioRowStride = 39;
+  static const int _audioRowStride = 42;
 
   AppState() {
     _loadAppSettings();
@@ -170,6 +170,13 @@ class AppState extends ChangeNotifier {
   String? _projectRootFolder;
   String? _projectRootTreeUri;
   String? _lastLoadError;
+  bool _autosaveEnabled = false;
+  Timer? _autosaveTimer;
+  Timer? _instrumentParamRebuildTimer;
+  bool _liveRebuildInFlight = false;
+  // Tracks the active navigation tab (0=SONG, 1=PATTERN, 2=INST, 3=MIXER).
+  // Used by play() to determine song-follow vs pattern-loop mode.
+  int _activeTabIndex = 1; // default matches MainScreen's initial _tabIndex
 
   static const String kDefaultProjectsFolderName = 'STRIA_PROJECTS';
   static const MethodChannel _projectStorageChannel = MethodChannel(
@@ -226,6 +233,11 @@ class AppState extends ChangeNotifier {
   List<int?> _carryVolumeByTrack = const [];
   List<double?> _carryVibSpeedByTrack = const [];
   List<double?> _carryVibDepthByTrack = const [];
+  List<int?> _carryVolFxByTrack = const [];
+  List<int?> _carryPanFxByTrack = const [];
+  List<double?> _carryTreSpeedByTrack = const [];
+  List<double?> _carryTreDepthByTrack = const [];
+  List<int?> _carryTreModeByTrack = const [];
   List<({List<int> cycle, int notesPerLine, int phase})?> _carryArpByTrack =
       const [];
   // Per-track pitch-slide carry (SLU/SLD).
@@ -263,6 +275,7 @@ class AppState extends ChangeNotifier {
   bool get hasProjectRootFolder =>
       (_projectRootFolder != null && _projectRootFolder!.isNotEmpty) ||
       (_projectRootTreeUri != null && _projectRootTreeUri!.isNotEmpty);
+  bool get autosaveEnabled => _autosaveEnabled;
   int get songStateVersion => _songStateVersion;
   List<List<bool>> get trackInsertOccupied => _trackInsertOccupied;
   List<List<String?>> get trackInsertEffectNames => _trackInsertEffectNames;
@@ -642,9 +655,61 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Copy the instrument at [fromIndex] to the next empty slot (wraps around).
+  /// Returns the destination slot index, or -1 if no free slot is available.
+  Future<int> copyInstrumentToFreeSlot(int fromIndex) async {
+    final total = instruments.length;
+    int? dest;
+    for (int i = 1; i < total; i++) {
+      final candidate = (fromIndex + i) % total;
+      if (instruments[candidate].type == InstrumentType.empty) {
+        dest = candidate;
+        break;
+      }
+    }
+    if (dest == null) return -1;
+
+    // Deep-copy via JSON round-trip.
+    final copy = InstrumentModel.fromJson(instruments[fromIndex].toJson());
+    instruments[dest] = copy;
+
+    // For samplers, load the sample into the audio engine at the new slot.
+    if (copy.type == InstrumentType.sampler &&
+        copy.sampler.samplePath != null &&
+        copy.sampler.samplePath!.isNotEmpty) {
+      await AudioEngine.instance.setSamplerSample(
+        dest,
+        copy.sampler.samplePath,
+      );
+    }
+
+    notifyListeners();
+    return dest;
+  }
+
   /// Trigger a UI rebuild after the instrument editors mutate parameters
   /// directly. (They mutate plain fields; this just notifies listeners.)
-  void instrumentParamsChanged() => notifyListeners();
+  void instrumentParamsChanged() {
+    notifyListeners();
+    if (isPlaying && !_playbackFollowsSong) {
+      _instrumentParamRebuildTimer?.cancel();
+      _instrumentParamRebuildTimer = Timer(
+        const Duration(milliseconds: 150),
+        () => unawaited(_doLiveInstrumentRebuild()),
+      );
+    }
+  }
+
+  Future<void> _doLiveInstrumentRebuild() async {
+    if (!isPlaying || _playbackFollowsSong || _liveRebuildInFlight) return;
+    _liveRebuildInFlight = true;
+    try {
+      await _loadNativePatternPlaybackQueue(startRow: playheadRow);
+      if (isPlaying && !_playbackFollowsSong) await AudioEngine.instance.start();
+    } finally {
+      _liveRebuildInFlight = false;
+    }
+  }
 
   void selectTrack(int index) {
     _currentTrackIndex = index.clamp(0, currentPattern.tracks.length - 1);
@@ -1601,6 +1666,14 @@ class AppState extends ChangeNotifier {
     return def;
   }
 
+  /// Returns the effective instrument number (1-based) for [row] on the
+  /// current track: uses the cell's own IN value if set, otherwise scans
+  /// backwards to the last row that has one, defaulting to 1.
+  int effectiveInstrumentAtRow(int row) {
+    final track = currentTrack;
+    return track.cells[row].instrument ?? _defaultInstrumentForRow(track, row);
+  }
+
   /// Resets a cell column to its default value (always writes a value).
   void resetColumnToDefault(int row, CellColumn column) {
     final track = currentTrack;
@@ -2035,6 +2108,130 @@ class AppState extends ChangeNotifier {
     pasteRows(insertRow);
   }
 
+  // ── Row randomisers ───────────────────────────────────────────────────────
+
+  /// SHUF: Shuffle whole cells between rows that already have an actual note.
+  /// Empty rows, hold rows, and note-off rows stay in place.
+  void shuffleSelectedRows() {
+    final range = selectedRowRange;
+    if (range == null) return;
+    final cells = currentTrack.cells;
+    final rnd = math.Random();
+
+    final noteIndices = <int>[];
+    for (int r = range.$1; r <= range.$2; r++) {
+      if (cells[r].note.isNote) noteIndices.add(r);
+    }
+    if (noteIndices.length < 2) return;
+
+    final noteCells = noteIndices.map((r) => cells[r].copy()).toList();
+    // Fisher-Yates shuffle
+    for (int i = noteCells.length - 1; i > 0; i--) {
+      final j = rnd.nextInt(i + 1);
+      final tmp = noteCells[i];
+      noteCells[i] = noteCells[j];
+      noteCells[j] = tmp;
+    }
+    for (int i = 0; i < noteIndices.length; i++) {
+      cells[noteIndices[i]] = noteCells[i];
+    }
+    notifyListeners();
+  }
+
+  /// SCAT: Scatter whole note cells to random positions within the selection.
+  /// Empty rows can receive cells; total note-cell count is preserved.
+  void scatterSelectedRows() {
+    final range = selectedRowRange;
+    if (range == null) return;
+    final cells = currentTrack.cells;
+    final rnd = math.Random();
+
+    final noteCells = <TrackerCell>[];
+    for (int r = range.$1; r <= range.$2; r++) {
+      if (cells[r].note.isNote) noteCells.add(cells[r].copy());
+    }
+    if (noteCells.isEmpty) return;
+
+    // Pick random target rows (no duplicates) from the full range
+    final rowPool = List<int>.generate(
+      range.$2 - range.$1 + 1,
+      (i) => range.$1 + i,
+    );
+    for (int i = rowPool.length - 1; i > 0; i--) {
+      final j = rnd.nextInt(i + 1);
+      final tmp = rowPool[i];
+      rowPool[i] = rowPool[j];
+      rowPool[j] = tmp;
+    }
+
+    // Clear every row in range, then place note cells at the first N targets
+    for (int r = range.$1; r <= range.$2; r++) {
+      cells[r] = TrackerCell.empty();
+    }
+    for (int i = 0; i < noteCells.length; i++) {
+      cells[rowPool[i]] = noteCells[i];
+    }
+    notifyListeners();
+  }
+
+  /// RAND: Note positions stay fixed; pitch changes to a random MIDI value
+  /// within the min–max range of notes already in the selection.
+  void randomizePitchInSelection() {
+    final range = selectedRowRange;
+    if (range == null) return;
+    final cells = currentTrack.cells;
+    final rnd = math.Random();
+
+    // Collect note row indices and find min/max pitch
+    final noteRows = <int>[];
+    int? minMidi, maxMidi;
+    for (int r = range.$1; r <= range.$2; r++) {
+      if (!cells[r].note.isNote) continue;
+      noteRows.add(r);
+      final midi = cells[r].note.midiNote;
+      if (minMidi == null || midi < minMidi) minMidi = midi;
+      if (maxMidi == null || midi > maxMidi) maxMidi = midi;
+    }
+    if (minMidi == null || maxMidi == null || minMidi == maxMidi) return;
+
+    // Build pitch list: anchor min and max so the range never collapses,
+    // then fill the remaining slots with random values within the range.
+    final span = maxMidi - minMidi;
+    final pitches = <int>[minMidi, maxMidi];
+    for (int i = 2; i < noteRows.length; i++) {
+      pitches.add(minMidi + rnd.nextInt(span + 1));
+    }
+    // Shuffle so anchored pitches land at random positions
+    for (int i = pitches.length - 1; i > 0; i--) {
+      final j = rnd.nextInt(i + 1);
+      final tmp = pitches[i];
+      pitches[i] = pitches[j];
+      pitches[j] = tmp;
+    }
+
+    for (int i = 0; i < noteRows.length; i++) {
+      // scrollIndex = midiNote - 11  (C-0 MIDI 12 → scrollIndex 1)
+      cells[noteRows[i]].note = NoteValue.fromScrollIndex(pitches[i] - 11);
+    }
+    notifyListeners();
+  }
+
+  /// Transpose every note row in the selection by [delta] semitones.
+  /// Notes at the edge of the range are clamped (not wrapped).
+  /// Empty, hold, and note-off rows are left unchanged.
+  void transposeSelectionBySemitones(int delta) {
+    final range = selectedRowRange;
+    if (range == null) return;
+    final cells = currentTrack.cells;
+    for (int r = range.$1; r <= range.$2; r++) {
+      if (!cells[r].note.isNote) continue;
+      final newScroll = (cells[r].note.scrollIndex + delta).clamp(1, 120);
+      cells[r].note = NoteValue.fromScrollIndex(newScroll);
+    }
+    notifyListeners();
+  }
+
+
   void deleteBoxSelection() {
     final sel = _boxSelection;
     if (sel == null) return;
@@ -2284,24 +2481,10 @@ class AppState extends ChangeNotifier {
         : patternIndex;
   }
 
-  void setPlaybackFollowsSong(bool enabled) {
-    if (_playbackFollowsSong == enabled) return;
-    _playbackFollowsSong = enabled;
-    if (!_playbackFollowsSong) {
-      _queuedArrangementSlot = null;
-    }
-    if (isPlaying) {
-      if (_playbackFollowsSong) {
-        _playheadArrangementSlot = _currentArrangementSlotIndex.clamp(
-          0,
-          song.patterns.length - 1,
-        );
-        _syncCurrentPatternToSongPlayhead();
-        playheadRow = 0;
-      }
-      _restartPlayheadTimerIfNeeded();
-    }
-    notifyListeners();
+  /// Called by MainScreen whenever the user switches tabs.
+  /// This is the sole source of truth for which mode play() will use next.
+  void setActiveTabIndex(int index) {
+    _activeTabIndex = index;
   }
 
   // ── Transport ────────────────────────────────────────────────────────────
@@ -2352,6 +2535,9 @@ class AppState extends ChangeNotifier {
     bool samplerReverse = false,
     double? vibSpeedNorm, // VIB: overrides lfoRate (pitch target)
     double? vibDepthNorm, // VIB: overrides lfoDepth
+    double? treSpeedNorm, // TRE/GAT: tremolo/gate speed
+    double? treDepthNorm, // TRE/GAT: tremolo/gate depth
+    int? treMode, // TRE/GAT: 0=off, 1=sine (TRE), 2=square (GAT)
   }) {
     final safe = slot.clamp(0, instruments.length - 1);
     final ins = instruments[safe];
@@ -2414,6 +2600,9 @@ class AppState extends ChangeNotifier {
         2, // osc1Oct (0=−2..4=+2; 2=0)
         2, // osc2Oct
         2, // osc3Oct
+        _norm01ToAudio255(treSpeedNorm ?? 0.0), // treSpeed (TRE/GAT)
+        _norm01ToAudio255(treDepthNorm ?? 0.0), // treDepth
+        treMode ?? 0, // treMode: 0=off, 1=TRE(sine), 2=GAT(square)
       ];
     }
     if (ins.type == InstrumentType.karplusStrong) {
@@ -2454,6 +2643,9 @@ class AppState extends ChangeNotifier {
         2, // osc1Oct (0=−2..4=+2; 2=0)
         2, // osc2Oct
         2, // osc3Oct
+        _norm01ToAudio255(treSpeedNorm ?? 0.0), // treSpeed (TRE/GAT)
+        _norm01ToAudio255(treDepthNorm ?? 0.0), // treDepth
+        treMode ?? 0, // treMode: 0=off, 1=TRE(sine), 2=GAT(square)
       ];
     }
     final p = ins.synth;
@@ -2495,6 +2687,9 @@ class AppState extends ChangeNotifier {
       p.osc1Oct + 2, // −2..+2 → 0..4
       p.osc2Oct + 2,
       p.osc3Oct + 2,
+      _norm01ToAudio255(treSpeedNorm ?? 0.0), // treSpeed (TRE/GAT)
+      _norm01ToAudio255(treDepthNorm ?? 0.0), // treDepth
+      treMode ?? 0, // treMode: 0=off, 1=TRE(sine), 2=GAT(square)
     ];
   }
 
@@ -2653,6 +2848,11 @@ class AppState extends ChangeNotifier {
     _carryVolumeByTrack = const [];
     _carryVibSpeedByTrack = const [];
     _carryVibDepthByTrack = const [];
+    _carryVolFxByTrack = const [];
+    _carryPanFxByTrack = const [];
+    _carryTreSpeedByTrack = const [];
+    _carryTreDepthByTrack = const [];
+    _carryTreModeByTrack = const [];
     _carryArpByTrack = const [];
     _carrySlideByTrack = const [];
     _carryInstrumentParamsByTrack = const [];
@@ -2669,6 +2869,10 @@ class AppState extends ChangeNotifier {
 
   Future<void> play() async {
     if (isPlaying) return;
+    // Derive song-follow mode from whichever tab is currently active.
+    // SONG(0), INST(2), MIXER(3) → song follows arrangement;
+    // PATTERN(1) → loops current pattern only.
+    _playbackFollowsSong = (_activeTabIndex != 1);
     _queuedArrangementSlot = null;
     if (_playbackFollowsSong && song.patterns.isNotEmpty) {
       _playheadArrangementSlot = _currentArrangementSlotIndex.clamp(
@@ -3197,6 +3401,11 @@ class AppState extends ChangeNotifier {
       _carryVolumeByTrack = List<int?>.filled(pattern.tracks.length, null);
       _carryVibSpeedByTrack = List<double?>.filled(pattern.tracks.length, null);
       _carryVibDepthByTrack = List<double?>.filled(pattern.tracks.length, null);
+      _carryVolFxByTrack = List<int?>.filled(pattern.tracks.length, null);
+      _carryPanFxByTrack = List<int?>.filled(pattern.tracks.length, null);
+      _carryTreSpeedByTrack = List<double?>.filled(pattern.tracks.length, null);
+      _carryTreDepthByTrack = List<double?>.filled(pattern.tracks.length, null);
+      _carryTreModeByTrack = List<int?>.filled(pattern.tracks.length, null);
       _carryArpByTrack =
           List<({List<int> cycle, int notesPerLine, int phase})?>.filled(
             pattern.tracks.length,
@@ -3252,9 +3461,12 @@ class AppState extends ChangeNotifier {
       final track = pattern.tracks[t];
       var currentSlot = _carryInstrumentByTrack[t];
       int noteCmd = -1;
-      int volCmd = (track.mixerVolume.clamp(0.0, 1.0) * 255).round();
-      int panCmd = (((track.mixerPan.clamp(-1.0, 1.0) + 1.0) / 2.0) * 255)
-          .round();
+      int volCmd = (_carryVolFxByTrack.length > t && _carryVolFxByTrack[t] != null)
+          ? _carryVolFxByTrack[t]!
+          : (track.mixerVolume.clamp(0.0, 1.0) * 255).round();
+      int panCmd = (_carryPanFxByTrack.length > t && _carryPanFxByTrack[t] != null)
+          ? _carryPanFxByTrack[t]!
+          : (((track.mixerPan.clamp(-1.0, 1.0) + 1.0) / 2.0) * 255).round();
       int waveCmd = _waveCodeForInstrumentSlot(currentSlot);
       int instrumentTypeCmd = _instrumentTypeCodeForSlot(currentSlot);
       var synthParams = _synthParamsForInstrumentSlot(currentSlot);
@@ -3275,6 +3487,12 @@ class AppState extends ChangeNotifier {
       double? vibDepthNorm = _carryVibDepthByTrack.length > t
           ? _carryVibDepthByTrack[t]
           : null;
+      double? treSpeedNorm =
+          _carryTreSpeedByTrack.length > t ? _carryTreSpeedByTrack[t] : null;
+      double? treDepthNorm =
+          _carryTreDepthByTrack.length > t ? _carryTreDepthByTrack[t] : null;
+      int? treMode =
+          _carryTreModeByTrack.length > t ? _carryTreModeByTrack[t] : null;
       int retrigVolumeMode = 0;
       int retrigNotesPerLine = 0;
       int arpInterval1 = -1;
@@ -3305,9 +3523,14 @@ class AppState extends ChangeNotifier {
         }
 
         if (noteCmd == -2) {
-          // Note-off clears VIB carry for this track.
+          // Note-off clears per-note FX carries for this track.
           _carryVibSpeedByTrack[t] = null;
           _carryVibDepthByTrack[t] = null;
+          _carryVolFxByTrack[t] = null;
+          _carryPanFxByTrack[t] = null;
+          _carryTreSpeedByTrack[t] = null;
+          _carryTreDepthByTrack[t] = null;
+          _carryTreModeByTrack[t] = null;
         }
 
         // Proxy note shorthand for samplers: C-0..G#0 trigger slices 1..9.
@@ -3334,6 +3557,7 @@ class AppState extends ChangeNotifier {
         for (final fx in cell.fxSlots) {
           if (fx.command == kFxPAN && fx.value != null) {
             panCmd = ui99ToAudio255(fx.value!.clamp(0, 99));
+            _carryPanFxByTrack[t] = panCmd;
           }
           if (fx.command == kFxDEL && fx.value != null) {
             delayPct = fx.value!.clamp(0, 99);
@@ -3357,8 +3581,8 @@ class AppState extends ChangeNotifier {
             samplerReverse = true;
           }
           if (fx.command == kFxVOL && fx.value != null) {
-            // Override volume for this row only — does not update carry state.
             volCmd = ui99ToAudio255(fx.value!.clamp(0, 99));
+            _carryVolFxByTrack[t] = volCmd;
           }
           if (fx.command == kFxVIB && fx.value != null) {
             // XY: X = speed (tens digit, 0-9), Y = depth (ones digit, 0-9).
@@ -3370,6 +3594,20 @@ class AppState extends ChangeNotifier {
             // Carry VIB so it persists on subsequent hold rows.
             _carryVibSpeedByTrack[t] = vibSpeedNorm;
             _carryVibDepthByTrack[t] = vibDepthNorm;
+          }
+          if ((fx.command == kFxTRE || fx.command == kFxGAT) &&
+              fx.value != null) {
+            // XY: X = speed (tens digit, 0-9), Y = depth (ones digit, 0-9).
+            final xy = fx.value!.clamp(0, 99);
+            final x = xy ~/ 10; // speed digit
+            final y = xy % 10; // depth digit
+            treSpeedNorm = x / 9.0;
+            treDepthNorm = y / 9.0;
+            treMode = fx.command == kFxTRE ? 1 : 2; // 1=sine, 2=square
+            // Carry TRE/GAT so it persists on subsequent hold rows.
+            _carryTreSpeedByTrack[t] = treSpeedNorm;
+            _carryTreDepthByTrack[t] = treDepthNorm;
+            _carryTreModeByTrack[t] = treMode;
           }
           if (fx.command == kFxRET) {
             final value = (fx.value ?? 0).clamp(0, 99);
@@ -3387,19 +3625,23 @@ class AppState extends ChangeNotifier {
             arcNotesPerLine = (fx.value! % 10).clamp(0, 9);
           }
           // SLU/SLD XY: X (tens) = lines to slide over, Y (ones) = semitones.
-          // Only takes effect on a row that also has a note.
+          // Works on note rows and on hold rows that have an active carry note.
           if ((fx.command == kFxSLU || fx.command == kFxSLD) &&
-              fx.value != null &&
-              noteCmd >= 0) {
-            final xy = fx.value!.clamp(1, 99);
-            final lines = (xy ~/ 10).clamp(1, 9);
-            final semitones = xy % 10;
-            if (semitones > 0) {
-              final dir = fx.command == kFxSLU ? 1 : -1;
-              pendingSlide = (
-                endNote: (noteCmd + dir * semitones).clamp(0, 127),
-                totalLines: lines,
-              );
+              fx.value != null) {
+            final slideBase = noteCmd >= 0
+                ? noteCmd
+                : (_carryNoteByTrack.length > t ? _carryNoteByTrack[t] : null);
+            if (slideBase != null) {
+              final xy = fx.value!.clamp(1, 99);
+              final lines = (xy ~/ 10).clamp(1, 9);
+              final semitones = xy % 10;
+              if (semitones > 0) {
+                final dir = fx.command == kFxSLU ? 1 : -1;
+                pendingSlide = (
+                  endNote: (slideBase + dir * semitones).clamp(0, 127),
+                  totalLines: lines,
+                );
+              }
             }
           }
           if (fx.command != null &&
@@ -3489,6 +3731,9 @@ class AppState extends ChangeNotifier {
           samplerReverse: samplerReverse,
           vibSpeedNorm: vibSpeedNorm,
           vibDepthNorm: vibDepthNorm,
+          treSpeedNorm: treSpeedNorm,
+          treDepthNorm: treDepthNorm,
+          treMode: treMode,
         );
 
         if (killPct == 0) immediateKill = true;
@@ -3544,12 +3789,17 @@ class AppState extends ChangeNotifier {
         volCmd = retBaseVolume;
       }
 
-      // SLU/SLD slide carry: start on note rows, advance pitch on hold rows.
-      if (pendingSlide != null && noteCmd >= 0) {
-        // New note + slide FX: (re)start the slide carry.
+      // SLU/SLD slide carry: start on note/hold rows, advance pitch on hold rows.
+      if (pendingSlide != null) {
+        // Note or hold row with slide FX: (re)start the slide carry.
+        final startNote = noteCmd >= 0
+            ? noteCmd
+            : (_carryNoteByTrack.length > t
+                ? (_carryNoteByTrack[t] ?? pendingSlide.endNote)
+                : pendingSlide.endNote);
         if (t < _carrySlideByTrack.length) {
           _carrySlideByTrack[t] = (
-            startNote: noteCmd,
+            startNote: startNote,
             endNote: pendingSlide.endNote,
             totalLines: pendingSlide.totalLines,
             linesElapsed: 0,
@@ -3587,15 +3837,23 @@ class AppState extends ChangeNotifier {
       }
 
       // ARP carry: resolve noteCmd before building the segment/rowData.
-      if (arpInterval1 >= 0 && noteCmd >= 0) {
-        // New note with ARP: (re)start the carry.
+      // Mid-note ARP: ARP FX on a hold row can start arpeggiation on the
+      // currently sustaining note (using the carry note as the base pitch).
+      final midNoteArp = arpInterval1 >= 0 &&
+          noteCmd == -1 &&
+          _carryNoteByTrack.length > t &&
+          _carryNoteByTrack[t] != null &&
+          !isMixerMuted;
+      if (arpInterval1 >= 0 && (noteCmd >= 0 || midNoteArp)) {
+        // New note or mid-note hold row with ARP: (re)start the carry.
+        final baseNote = noteCmd >= 0 ? noteCmd : _carryNoteByTrack[t]!;
         final layers = arcOctaveLayers > 0 ? arcOctaveLayers : 1;
         final cycle = <int>[];
         for (int oct = 0; oct < layers; oct++) {
           final offset = 12 * oct;
-          cycle.add((noteCmd + offset).clamp(0, 127));
-          cycle.add((noteCmd + arpInterval1 + offset).clamp(0, 127));
-          cycle.add((noteCmd + arpInterval2 + offset).clamp(0, 127));
+          cycle.add((baseNote + offset).clamp(0, 127));
+          cycle.add((baseNote + arpInterval1 + offset).clamp(0, 127));
+          cycle.add((baseNote + arpInterval2 + offset).clamp(0, 127));
         }
         final notesPerLine = arcNotesPerLine > 0
             ? arcNotesPerLine
@@ -3606,6 +3864,10 @@ class AppState extends ChangeNotifier {
           phase: 0,
         );
         pendingArp[t] = _carryArpByTrack[t]!;
+        if (midNoteArp) {
+          // Fire the first ARP pitch immediately as a pitch-only update.
+          noteCmd = pitchOnlyNoteCmd(cycle[0]);
+        }
       } else if (noteCmd == -2 || noteCmd >= 0) {
         // Note-off or new note without ARP: clear carry.
         _carryArpByTrack[t] = null;
@@ -4926,6 +5188,21 @@ class AppState extends ChangeNotifier {
           Directory(folder).existsSync()) {
         _defaultSampleFolder = folder;
       }
+
+      final autosave = j['autosaveEnabled'] as bool? ?? false;
+      _autosaveEnabled = autosave;
+      _rescheduleAutosaveTimer();
+
+      // Restore the last open song automatically.
+      final lastSong = j['lastOpenSongName'] as String?;
+      if (lastSong != null && lastSong.isNotEmpty && hasProjectRootFolder) {
+        try {
+          await loadSongByName(lastSong);
+        } catch (_) {
+          // Non-fatal: start fresh if last session cannot be restored.
+        }
+      }
+
       _notifyListenersSafe();
     } catch (_) {
       // Ignore malformed/unavailable settings and keep defaults.
@@ -4939,11 +5216,46 @@ class AppState extends ChangeNotifier {
         'defaultSampleFolder': _defaultSampleFolder,
         'projectRootFolder': _projectRootFolder,
         'projectRootTreeUri': _projectRootTreeUri,
+        'autosaveEnabled': _autosaveEnabled,
+        'lastOpenSongName': song.name,
       });
       await file.writeAsString(payload, flush: true);
     } catch (_) {
       // Non-fatal: app continues with in-memory setting.
     }
+  }
+
+  Future<void> setAutosaveEnabled(bool enabled) async {
+    if (_autosaveEnabled == enabled) return;
+    _autosaveEnabled = enabled;
+    _rescheduleAutosaveTimer();
+    await _saveAppSettings();
+    _notifyListenersSafe();
+  }
+
+  void _rescheduleAutosaveTimer() {
+    _autosaveTimer?.cancel();
+    _autosaveTimer = null;
+    if (_autosaveEnabled) {
+      _autosaveTimer = Timer.periodic(
+        const Duration(minutes: 10),
+        (_) => unawaited(_doAutosave()),
+      );
+    }
+  }
+
+  Future<void> _doAutosave() async {
+    if (_disposed) return;
+    if (!_autosaveEnabled) return;
+    if (!hasProjectRootFolder) return;
+    await saveSong();
+  }
+
+  /// Called when the app loses focus. Silently saves if autosave is enabled.
+  Future<void> autosaveOnFocusLost() async {
+    if (!_autosaveEnabled) return;
+    if (!hasProjectRootFolder) return;
+    await saveSong();
   }
 
   Future<Directory> _projectDirForName(String name) async {
@@ -5050,6 +5362,75 @@ class AppState extends ChangeNotifier {
     return cleaned.isEmpty ? 'sample' : cleaned;
   }
 
+  /// Writes [bytes] as [fileName] into the SAF project folder [folderName].
+  /// Returns the local cache path where the file is also stored for playback.
+  Future<String?> _writeSafSample(
+    String folderName,
+    String fileName,
+    Uint8List bytes,
+  ) async {
+    try {
+      await _projectStorageChannel.invokeMethod<String>(
+        'writeProjectBinaryFile',
+        {
+          'treeUri': _projectRootTreeUri,
+          'folderName': folderName,
+          'fileName': fileName,
+          'bytes': bytes,
+        },
+      );
+    } catch (_) {
+      return null;
+    }
+    // Also cache locally so the audio engine can open it via POSIX path.
+    final cachePath = await _safSampleCachePath(folderName, fileName);
+    try {
+      final cacheFile = File(cachePath);
+      await cacheFile.parent.create(recursive: true);
+      await cacheFile.writeAsBytes(bytes, flush: true);
+    } catch (_) {
+      return null;
+    }
+    return cachePath;
+  }
+
+  /// Reads a sample stored inside a SAF project folder and caches it locally.
+  /// Returns the local cache path, or null if the file cannot be found.
+  Future<String?> _readSafSample(String folderName, String fileName) async {
+    // Return from cache if already there.
+    final cachePath = await _safSampleCachePath(folderName, fileName);
+    if (File(cachePath).existsSync()) return cachePath;
+
+    Uint8List? bytes;
+    try {
+      final raw = await _projectStorageChannel.invokeMethod<dynamic>(
+        'readProjectBinaryFile',
+        {
+          'treeUri': _projectRootTreeUri,
+          'folderName': folderName,
+          'fileName': fileName,
+        },
+      );
+      if (raw == null) return null;
+      bytes = raw is Uint8List ? raw : Uint8List.fromList(List<int>.from(raw as List));
+    } catch (_) {
+      return null;
+    }
+    try {
+      final cacheFile = File(cachePath);
+      await cacheFile.parent.create(recursive: true);
+      await cacheFile.writeAsBytes(bytes, flush: true);
+    } catch (_) {
+      return null;
+    }
+    return cachePath;
+  }
+
+  Future<String> _safSampleCachePath(String folderName, String fileName) async {
+    final tmp = await getTemporaryDirectory();
+    return '${tmp.path}/stria_sample_cache/$folderName/$fileName';
+  }
+
   Future<void> _persistSamplerAssetsForInstruments(
     List<InstrumentModel> sourceInstruments,
     Directory projectDir, {
@@ -5099,12 +5480,85 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> _persistSamplerAssetsForSong() async {
-    final projectDir = await _songSamplesDir();
-    await _persistSamplerAssetsForInstruments(
-      instruments,
-      projectDir,
-      syncEngine: true,
-    );
+    if (_usesProjectTreeStorage) {
+      await _persistSamplerAssetsForSongViaSaf();
+    } else {
+      final projectDir = await _songSamplesDir();
+      await _persistSamplerAssetsForInstruments(
+        instruments,
+        projectDir,
+        syncEngine: true,
+      );
+    }
+  }
+
+  /// SAF-mode save: copies each sampler WAV into the SAF project folder so it
+  /// survives app reinstall, and caches it locally for immediate engine use.
+  Future<void> _persistSamplerAssetsForSongViaSaf() async {
+    final slug = _slugify(song.name);
+    final folderName = slug.isEmpty ? 'untitled' : slug;
+
+    for (var i = 0; i < instruments.length; i++) {
+      final ins = instruments[i];
+      if (ins.type != InstrumentType.sampler) continue;
+
+      final srcPath = ins.sampler.samplePath;
+      if (srcPath == null || srcPath.isEmpty) continue;
+
+      // Bare filename: already persisted to SAF on a previous save — skip.
+      final isBare =
+          !srcPath.contains('/') &&
+          !srcPath.contains(Platform.pathSeparator);
+      if (isBare) continue;
+
+      final src = File(srcPath);
+      if (!src.existsSync()) continue;
+
+      final rawName =
+          ins.sampler.sampleName ?? srcPath.split(Platform.pathSeparator).last;
+      final dot = rawName.lastIndexOf('.');
+      final stem = _sanitizeFileStem(
+        dot > 0 ? rawName.substring(0, dot) : rawName,
+      );
+      final ext = dot > 0 ? rawName.substring(dot) : '.wav';
+      final candidate = '$stem$ext';
+
+      final bytes = await src.readAsBytes();
+      final cachePath = await _writeSafSample(folderName, candidate, bytes);
+      if (cachePath == null) continue;
+
+      // Update in-memory path: bare name in JSON, cache path for engine.
+      ins.sampler.samplePath = candidate;
+      ins.sampler.sampleName = candidate;
+      await AudioEngine.instance.setSamplerSample(i, cachePath);
+    }
+  }
+
+  /// Resolves a raw samplePath from JSON to a usable local filesystem path.
+  /// Bare filenames are SAF-relative (or filesystem-relative in non-SAF mode).
+  Future<String?> _resolveSamplePath(
+    String? rawPath,
+    String songName,
+  ) async {
+    if (rawPath == null || rawPath.isEmpty) return null;
+
+    final isBare =
+        !rawPath.contains('/') && !rawPath.contains(Platform.pathSeparator);
+
+    if (isBare) {
+      final slug = _slugify(songName);
+      final folderName = slug.isEmpty ? 'untitled' : slug;
+      if (_usesProjectTreeStorage) {
+        return _readSafSample(folderName, rawPath);
+      } else {
+        final dir = await _songSamplesDir(songName);
+        final path = '${dir.path}/$rawPath';
+        return File(path).existsSync() ? path : null;
+      }
+    }
+
+    // Absolute path: use directly if it exists.
+    return File(rawPath).existsSync() ? rawPath : null;
   }
 
   void renameSong(String name) {
@@ -5155,10 +5609,13 @@ class AppState extends ChangeNotifier {
             'text': payload,
           },
         );
+        if (ok == true) unawaited(_saveAppSettings());
         return ok == true;
       }
 
       await (await _songFile(song.name)).writeAsString(payload);
+      // Update last-open tracking (non-blocking).
+      unawaited(_saveAppSettings());
       return true;
     } catch (_) {
       return false;
@@ -5389,20 +5846,27 @@ class AppState extends ChangeNotifier {
         final ins = instruments[i];
         if (ins.type == InstrumentType.sampler) {
           try {
+            // Resolve bare filenames (SAF-relative or filesystem-relative)
+            // to a usable local path before passing to the audio engine.
+            final resolved = await _resolveSamplePath(
+              ins.sampler.samplePath,
+              loadedSong.name,
+            );
+            ins.sampler.samplePath = resolved;
             final ok = await AudioEngine.instance.setSamplerSample(
               i,
-              ins.sampler.samplePath,
+              resolved,
             );
             if (!ok) {
               // Keep loading the song even if a sampler file is unavailable.
+              // Clear samplePath (file missing) but keep sampleName so the UI
+              // can show which sample needs to be relinked via the BROWSE button.
               ins.sampler.samplePath = null;
-              ins.sampler.sampleName = null;
               await AudioEngine.instance.setSamplerSample(i, null);
             }
           } catch (_) {
             // Non-fatal: project data can still be loaded without the sample.
             ins.sampler.samplePath = null;
-            ins.sampler.sampleName = null;
             await AudioEngine.instance.setSamplerSample(i, null);
           }
         }
@@ -5427,6 +5891,8 @@ class AppState extends ChangeNotifier {
       _selectedRowEnd = null;
       _songStateVersion++;
       _notifyListenersSafe();
+      // Track this as the last open song (non-blocking).
+      unawaited(_saveAppSettings());
       return true;
     } catch (e) {
       _lastLoadError = e.toString();
@@ -5437,6 +5903,8 @@ class AppState extends ChangeNotifier {
   @override
   void dispose() {
     _disposed = true;
+    _autosaveTimer?.cancel();
+    _instrumentParamRebuildTimer?.cancel();
     _playheadTimer?.cancel();
     _previewAutoStopTimer?.cancel();
     _synthPreviewStopTimer?.cancel();
