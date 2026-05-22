@@ -2771,6 +2771,22 @@ class AppState extends ChangeNotifier {
             synthParams[16] = _ui99ToAudio255(rawVal); // lfoDepth
           case 13:
             overriddenWave = rawVal.clamp(0, 5); // waveform (direct)
+          case 14:
+            synthParams[22] = rawVal.clamp(0, 5); // osc2Wave (direct enum index)
+          case 15:
+            synthParams[23] = _ui99ToAudio255(rawVal); // osc2Detune
+          case 16:
+            synthParams[24] = _ui99ToAudio255(rawVal); // osc2Gain
+          case 17:
+            synthParams[29] = _ui99ToAudio255(rawVal); // osc2FmDepth
+          case 18:
+            synthParams[26] = rawVal.clamp(0, 5); // osc3Wave (direct enum index)
+          case 19:
+            synthParams[27] = _ui99ToAudio255(rawVal); // osc3Detune
+          case 20:
+            synthParams[28] = _ui99ToAudio255(rawVal); // osc3Gain
+          case 21:
+            synthParams[30] = _ui99ToAudio255(rawVal); // osc3FmDepth
         }
       }
     });
@@ -3115,24 +3131,22 @@ class AppState extends ChangeNotifier {
   Future<void> _loadNativePatternPlaybackQueue({required int startRow}) async {
     final scheduledRows = _buildScheduledRows(startRow: startRow);
     _nextPassScheduled = false;
-
-    await AudioEngine.instance.clearQueuedPlaybackRows();
-    await AudioEngine.instance.setQueuedPlaybackLooping(_loopPlaybackEnabled);
-    for (final row in scheduledRows) {
-      await AudioEngine.instance.enqueuePlaybackRow(
-        lineSamples: row.lineSamples,
-        rowData: row.rowData,
-        immediateKillMask: row.immediateKillMask,
-        retrigData: row.retrigData,
-        arpData: row.arpData,
-        delayData: row.delayData,
-        killData: row.killData,
-        sliceCommandData: row.sliceCommandData,
-        mixerCommandData: row.mixerCommandData,
-        insertFxCommandData: row.insertFxCommandData,
-        pitchRampData: row.pitchRampData,
-      );
-    }
+    await AudioEngine.instance.enqueueAllPlaybackRows(
+      loop: _loopPlaybackEnabled,
+      rows: scheduledRows.map((r) => {
+        'lineSamples': r.lineSamples,
+        'rowData': r.rowData,
+        'immediateKillMask': r.immediateKillMask,
+        'retrigData': r.retrigData,
+        'arpData': r.arpData,
+        'delayData': r.delayData,
+        'killData': r.killData,
+        'sliceCommandData': r.sliceCommandData,
+        'mixerCommandData': r.mixerCommandData,
+        'insertFxCommandData': r.insertFxCommandData,
+        'pitchRampData': r.pitchRampData,
+      }).toList(),
+    );
   }
 
   /// Pre-builds the next loop pass from the live pattern and loads it into
@@ -3273,24 +3287,24 @@ class AppState extends ChangeNotifier {
     _playheadArrangementSlot = originalPlayheadSlot;
     _resetInstrumentCarry();
 
-    // Upload to native.
-    await AudioEngine.instance.clearQueuedPlaybackRows();
-    await AudioEngine.instance.setQueuedPlaybackLooping(false);
-    for (final row in scheduledRows) {
-      await AudioEngine.instance.enqueuePlaybackRow(
-        lineSamples: row.lineSamples,
-        rowData: row.rowData,
-        immediateKillMask: row.immediateKillMask,
-        retrigData: row.retrigData,
-        arpData: row.arpData,
-        delayData: row.delayData,
-        killData: row.killData,
-        sliceCommandData: row.sliceCommandData,
-        mixerCommandData: row.mixerCommandData,
-        insertFxCommandData: row.insertFxCommandData,
-        pitchRampData: row.pitchRampData,
-      );
-    }
+    // Upload to native — all rows in one channel call to avoid per-row
+    // Dart→Kotlin→JNI overhead that caused multi-second play latency.
+    await AudioEngine.instance.enqueueAllPlaybackRows(
+      loop: false,
+      rows: scheduledRows.map((r) => {
+        'lineSamples': r.lineSamples,
+        'rowData': r.rowData,
+        'immediateKillMask': r.immediateKillMask,
+        'retrigData': r.retrigData,
+        'arpData': r.arpData,
+        'delayData': r.delayData,
+        'killData': r.killData,
+        'sliceCommandData': r.sliceCommandData,
+        'mixerCommandData': r.mixerCommandData,
+        'insertFxCommandData': r.insertFxCommandData,
+        'pitchRampData': r.pitchRampData,
+      }).toList(),
+    );
 
     _songRowMap = rowMap;
     _songFlatRowIndex = 0;
@@ -5576,8 +5590,11 @@ class AppState extends ChangeNotifier {
       final cachePath = await _writeSafSample(folderName, candidate, bytes);
       if (cachePath == null) continue;
 
-      // Update in-memory path: bare name in JSON, cache path for engine.
-      ins.sampler.samplePath = candidate;
+      // Keep the full cache path in memory so the waveform display can read
+      // the file immediately.  The bare filename is stored in sampleName and
+      // will be written to the JSON payload by saveSong() so that the project
+      // can be reloaded via SAF even after the local cache is cleared.
+      ins.sampler.samplePath = cachePath;
       ins.sampler.sampleName = candidate;
       await AudioEngine.instance.setSamplerSample(i, cachePath);
     }
@@ -5607,7 +5624,25 @@ class AppState extends ChangeNotifier {
     }
 
     // Absolute path: use directly if it exists.
-    return File(rawPath).existsSync() ? rawPath : null;
+    if (File(rawPath).existsSync()) return rawPath;
+
+    // Fallback: if the file is no longer at its stored absolute path (e.g.
+    // the project root was moved, or a symlink was resolved differently),
+    // try looking it up by filename inside the current song's samples dir.
+    final sep = Platform.pathSeparator;
+    final fileName = rawPath.split(sep).last;
+    if (fileName.isNotEmpty && !fileName.contains('/') && !fileName.contains(sep)) {
+      if (_usesProjectTreeStorage) {
+        final slug = _slugify(songName);
+        final folderName = slug.isEmpty ? 'untitled' : slug;
+        return _readSafSample(folderName, fileName);
+      } else {
+        final dir = await _songSamplesDir(songName);
+        final fallback = '${dir.path}/$fileName';
+        if (File(fallback).existsSync()) return fallback;
+      }
+    }
+    return null;
   }
 
   void renameSong(String name) {
@@ -5641,9 +5676,25 @@ class AppState extends ChangeNotifier {
     try {
       // Keep app-managed local copies of used sampler files for this song.
       await _persistSamplerAssetsForSong();
+      // For SAF projects, samplePath is kept as the full local cache path
+      // in memory (so waveform display works), but the JSON must store only
+      // the bare filename so the file can be re-read from SAF on reload.
+      final instrumentsJson = instruments.map((ins) {
+        final j = ins.toJson();
+        if (_usesProjectTreeStorage &&
+            ins.type == InstrumentType.sampler &&
+            ins.sampler.sampleName != null &&
+            ins.sampler.sampleName!.isNotEmpty) {
+          final sampler =
+              Map<String, dynamic>.from(j['sampler'] as Map<String, dynamic>? ?? {});
+          sampler['samplePath'] = ins.sampler.sampleName;
+          j['sampler'] = sampler;
+        }
+        return j;
+      }).toList();
       final payload = jsonEncode({
         'song': song.toJson(),
-        'instruments': instruments.map((i) => i.toJson()).toList(),
+        'instruments': instrumentsJson,
         'inserts': _insertSnapshot,
       });
 

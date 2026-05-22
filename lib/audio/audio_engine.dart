@@ -74,6 +74,24 @@ class AudioEngine {
     await _channel.invokeMethod('scheduleNextLoopRows', {'rows': rows});
   }
 
+  /// Atomically clear the active playback queue, set the loop flag, and load
+  /// all [rows] in a single platform-channel round-trip.
+  ///
+  /// This replaces the previous pattern of calling [clearQueuedPlaybackRows] +
+  /// [setQueuedPlaybackLooping] + N×[enqueuePlaybackRow] sequentially.  Sending
+  /// everything in one message eliminates the per-row Dart→Kotlin→JNI overhead
+  /// that caused multi-second delays when pressing play on large songs.
+  Future<void> enqueueAllPlaybackRows({
+    required bool loop,
+    required List<Map<String, dynamic>> rows,
+  }) async {
+    if (!_initialised) return;
+    await _channel.invokeMethod('enqueueAllPlaybackRows', {
+      'loop': loop,
+      'rows': rows,
+    });
+  }
+
   Future<void> enqueuePlaybackRow({
     required int lineSamples,
     required List<int> rowData,

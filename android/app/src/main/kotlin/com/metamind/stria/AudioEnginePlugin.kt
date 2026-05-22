@@ -121,6 +121,56 @@ class AudioEnginePlugin : FlutterPlugin, MethodCallHandler {
                 }
                 result.success(null)
             }
+            "enqueueAllPlaybackRows" -> {
+                // Atomically replaces the per-row loop: clear + set looping +
+                // enqueue all rows in one channel call so play() starts instantly.
+                val loop = call.argument<Boolean>("loop") ?: false
+                @Suppress("UNCHECKED_CAST")
+                val rows = call.argument<List<Map<String, Any>>>("rows") ?: emptyList()
+                if (enginePtr != 0L) {
+                    nativeClearQueuedPlaybackRows(enginePtr)
+                    nativeSetQueuedPlaybackLooping(enginePtr, loop)
+                    for (row in rows) {
+                        @Suppress("UNCHECKED_CAST")
+                        val lineSamples = (row["lineSamples"] as? Int) ?: 0
+                        @Suppress("UNCHECKED_CAST")
+                        val rowData = (row["rowData"] as? List<Int>) ?: emptyList()
+                        @Suppress("UNCHECKED_CAST")
+                        val immediateKillMask = (row["immediateKillMask"] as? List<Int>) ?: emptyList()
+                        @Suppress("UNCHECKED_CAST")
+                        val retrigData = (row["retrigData"] as? List<Int>) ?: emptyList()
+                        @Suppress("UNCHECKED_CAST")
+                        val arpData = (row["arpData"] as? List<Int>) ?: emptyList()
+                        @Suppress("UNCHECKED_CAST")
+                        val delayData = (row["delayData"] as? List<Int>) ?: emptyList()
+                        @Suppress("UNCHECKED_CAST")
+                        val killData = (row["killData"] as? List<Int>) ?: emptyList()
+                        @Suppress("UNCHECKED_CAST")
+                        val sliceCommandData = (row["sliceCommandData"] as? List<Int>) ?: emptyList()
+                        @Suppress("UNCHECKED_CAST")
+                        val mixerCommandData = (row["mixerCommandData"] as? List<Int>) ?: emptyList()
+                        @Suppress("UNCHECKED_CAST")
+                        val insertFxCommandData = (row["insertFxCommandData"] as? List<Int>) ?: emptyList()
+                        @Suppress("UNCHECKED_CAST")
+                        val pitchRampData = (row["pitchRampData"] as? List<Int>) ?: emptyList()
+                        nativeEnqueuePlaybackRow(
+                            enginePtr,
+                            lineSamples,
+                            rowData.toIntArray(),
+                            immediateKillMask.toIntArray(),
+                            retrigData.toIntArray(),
+                            arpData.toIntArray(),
+                            delayData.toIntArray(),
+                            killData.toIntArray(),
+                            sliceCommandData.toIntArray(),
+                            mixerCommandData.toIntArray(),
+                            insertFxCommandData.toIntArray(),
+                            pitchRampData.toIntArray(),
+                        )
+                    }
+                }
+                result.success(null)
+            }
             "scheduleNextLoopRows" -> {
                 @Suppress("UNCHECKED_CAST")
                 val rows = call.argument<List<Map<String, Any>>>("rows") ?: emptyList()
