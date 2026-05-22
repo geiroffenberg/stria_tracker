@@ -121,6 +121,52 @@ class AudioEnginePlugin : FlutterPlugin, MethodCallHandler {
                 }
                 result.success(null)
             }
+            "scheduleNextLoopRows" -> {
+                @Suppress("UNCHECKED_CAST")
+                val rows = call.argument<List<Map<String, Any>>>("rows") ?: emptyList()
+                if (enginePtr != 0L) {
+                    nativeBeginPendingRows(enginePtr)
+                    for (row in rows) {
+                        @Suppress("UNCHECKED_CAST")
+                        val lineSamples = (row["lineSamples"] as? Int) ?: 0
+                        @Suppress("UNCHECKED_CAST")
+                        val rowData = (row["rowData"] as? List<Int>) ?: emptyList()
+                        @Suppress("UNCHECKED_CAST")
+                        val immediateKillMask = (row["immediateKillMask"] as? List<Int>) ?: emptyList()
+                        @Suppress("UNCHECKED_CAST")
+                        val retrigData = (row["retrigData"] as? List<Int>) ?: emptyList()
+                        @Suppress("UNCHECKED_CAST")
+                        val arpData = (row["arpData"] as? List<Int>) ?: emptyList()
+                        @Suppress("UNCHECKED_CAST")
+                        val delayData = (row["delayData"] as? List<Int>) ?: emptyList()
+                        @Suppress("UNCHECKED_CAST")
+                        val killData = (row["killData"] as? List<Int>) ?: emptyList()
+                        @Suppress("UNCHECKED_CAST")
+                        val sliceCommandData = (row["sliceCommandData"] as? List<Int>) ?: emptyList()
+                        @Suppress("UNCHECKED_CAST")
+                        val mixerCommandData = (row["mixerCommandData"] as? List<Int>) ?: emptyList()
+                        @Suppress("UNCHECKED_CAST")
+                        val insertFxCommandData = (row["insertFxCommandData"] as? List<Int>) ?: emptyList()
+                        @Suppress("UNCHECKED_CAST")
+                        val pitchRampData = (row["pitchRampData"] as? List<Int>) ?: emptyList()
+                        nativeAppendPendingRow(
+                            enginePtr,
+                            lineSamples,
+                            rowData.toIntArray(),
+                            immediateKillMask.toIntArray(),
+                            retrigData.toIntArray(),
+                            arpData.toIntArray(),
+                            delayData.toIntArray(),
+                            killData.toIntArray(),
+                            sliceCommandData.toIntArray(),
+                            mixerCommandData.toIntArray(),
+                            insertFxCommandData.toIntArray(),
+                            pitchRampData.toIntArray(),
+                        )
+                    }
+                }
+                result.success(null)
+            }
             "setRowData" -> {
                 @Suppress("UNCHECKED_CAST")
                 val data = call.argument<List<Int>>("data") ?: emptyList()
@@ -539,6 +585,21 @@ class AudioEnginePlugin : FlutterPlugin, MethodCallHandler {
     private external fun nativeClearQueuedPlaybackRows(ptr: Long)
     private external fun nativeSetQueuedPlaybackLooping(ptr: Long, loop: Boolean)
     private external fun nativeEnqueuePlaybackRow(
+        ptr: Long,
+        lineSamples: Int,
+        rowData: IntArray,
+        immediateKillMask: IntArray,
+        retrigData: IntArray,
+        arpData: IntArray,
+        delayData: IntArray,
+        killData: IntArray,
+        sliceCommandData: IntArray,
+        mixerCommandData: IntArray,
+        insertFxCommandData: IntArray,
+        pitchRampData: IntArray,
+    )
+    private external fun nativeBeginPendingRows(ptr: Long)
+    private external fun nativeAppendPendingRow(
         ptr: Long,
         lineSamples: Int,
         rowData: IntArray,

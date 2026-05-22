@@ -69,6 +69,11 @@ class AudioEngine {
     await _channel.invokeMethod('setQueuedPlaybackLooping', {'loop': loop});
   }
 
+  Future<void> scheduleNextLoopRows(List<Map<String, dynamic>> rows) async {
+    if (!_initialised) return;
+    await _channel.invokeMethod('scheduleNextLoopRows', {'rows': rows});
+  }
+
   Future<void> enqueuePlaybackRow({
     required int lineSamples,
     required List<int> rowData,

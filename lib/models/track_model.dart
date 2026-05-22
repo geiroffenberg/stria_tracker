@@ -47,7 +47,7 @@ class TrackModel {
   }
 
   void setInstrument(int row, int? value) {
-    cells[row].instrument = value?.clamp(1, 99);
+    cells[row].instrument = value?.clamp(0, 99);
   }
 
   void setVolume(int row, int? value) {
@@ -123,7 +123,7 @@ class TrackModel {
         cells[row].note = NoteValue.fromScrollIndex(v ?? 0);
         break;
       case CellColumn.instrument:
-        cells[row].instrument = v?.clamp(1, 99);
+        cells[row].instrument = v?.clamp(0, 99);
         break;
       case CellColumn.volume:
         cells[row].volume = v;
@@ -166,7 +166,7 @@ class TrackModel {
 
   /// Min value for clamping scroll input.
   int minValue(CellColumn column) {
-    if (column == CellColumn.instrument) return 1;
+    if (column == CellColumn.instrument) return 0;
     return 0;
   }
 }

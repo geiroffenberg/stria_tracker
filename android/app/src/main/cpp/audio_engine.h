@@ -378,7 +378,7 @@ public:
     /// Reset the native playhead phase so the current row restarts its timing.
     void resetPlayheadPhase();
 
-    /// Clear any queued playback rows prepared by Dart.
+    /// Clear any queued playback rows prepared by Dart (also clears any pending next-loop rows).
     void clearQueuedPlaybackRows();
 
     /// Queue one fully built playback row for native sample-accurate playback.
@@ -386,6 +386,15 @@ public:
 
     /// Control whether queued playback rows loop when the queue end is reached.
     void setQueuedPlaybackLooping(bool loop);
+
+    /// Double-buffer API: clear the pending next-loop row buffer.
+    /// Call before a series of appendPendingRow() calls.
+    void beginPendingRows();
+
+    /// Double-buffer API: append one row to the pending next-loop buffer.
+    /// At the next native loop boundary the pending buffer is atomically
+    /// swapped into the live queue so playback continues without a gap.
+    void appendPendingRow(const QueuedPlaybackRow& row);
 
     /// Queue sample-accurate retrigger events for the current row.
     /// [data] is packed in groups of 4: [sampleOffset, trackIdx, note, volume].
@@ -604,6 +613,7 @@ private:
     std::vector<QueuedPlaybackRow> mQueuedPlaybackRows;
     size_t                   mQueuedPlaybackRowIndex = 0;
     bool                     mQueuedPlaybackLoop = false;
+    std::vector<QueuedPlaybackRow> mPendingNextLoopRows; // double-buffer: swapped in at each loop boundary
 
     // Recording state
     std::mutex                       mRecordingMutex;

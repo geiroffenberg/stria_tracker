@@ -1125,6 +1125,7 @@ void AudioEngine::clearQueuedPlaybackRows() {
     std::lock_guard<std::mutex> lock(mVoiceMutex);
     mQueuedPlaybackRows.clear();
     mQueuedPlaybackRowIndex = 0;
+    mPendingNextLoopRows.clear(); // discard any pre-built next pass
 }
 
 void AudioEngine::enqueuePlaybackRow(const QueuedPlaybackRow& row) {
@@ -1135,6 +1136,16 @@ void AudioEngine::enqueuePlaybackRow(const QueuedPlaybackRow& row) {
 void AudioEngine::setQueuedPlaybackLooping(bool loop) {
     std::lock_guard<std::mutex> lock(mVoiceMutex);
     mQueuedPlaybackLoop = loop;
+}
+
+void AudioEngine::beginPendingRows() {
+    std::lock_guard<std::mutex> lock(mVoiceMutex);
+    mPendingNextLoopRows.clear();
+}
+
+void AudioEngine::appendPendingRow(const QueuedPlaybackRow& row) {
+    std::lock_guard<std::mutex> lock(mVoiceMutex);
+    mPendingNextLoopRows.push_back(row);
 }
 
 void AudioEngine::applyQueuedPlaybackRowLocked(const QueuedPlaybackRow& row) {
@@ -1158,6 +1169,11 @@ bool AudioEngine::primeNextQueuedPlaybackRowLocked() {
     if (mQueuedPlaybackRowIndex >= mQueuedPlaybackRows.size()) {
         if (!mQueuedPlaybackLoop) {
             return false;
+        }
+        // Double-buffer swap: if a new pass was pre-built by Dart, use it.
+        if (!mPendingNextLoopRows.empty()) {
+            mQueuedPlaybackRows = std::move(mPendingNextLoopRows);
+            mPendingNextLoopRows.clear();
         }
         mQueuedPlaybackRowIndex = 0;
     }

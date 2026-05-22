@@ -113,6 +113,7 @@ class AppState extends ChangeNotifier {
   bool _disposed = false;
   bool _notifyQueued = false;
   bool _playheadPollInFlight = false;
+  bool _nextPassScheduled = false; // double-buffer: true once next loop pass is in C++ pending queue
   bool _songPollInFlight = false;
   Timer? _playheadTimer;
   Timer?
@@ -1671,7 +1672,8 @@ class AppState extends ChangeNotifier {
   /// backwards to the last row that has one, defaulting to 1.
   int effectiveInstrumentAtRow(int row) {
     final track = currentTrack;
-    return track.cells[row].instrument ?? _defaultInstrumentForRow(track, row);
+    final inst = track.cells[row].instrument;
+    return (inst != null && inst > 0) ? inst : _defaultInstrumentForRow(track, row);
   }
 
   /// Resets a cell column to its default value (always writes a value).
@@ -1682,11 +1684,7 @@ class AppState extends ChangeNotifier {
         track.setNote(row, NoteValue.fromScrollIndex(49)); // C-4
         break;
       case CellColumn.instrument:
-        track.writeColumnValue(
-          row,
-          column,
-          _defaultInstrumentForRow(track, row),
-        );
+        track.cells[row].instrument = null; // clear to empty
         break;
       case CellColumn.volume:
         track.writeColumnValue(row, column, 80);
@@ -1722,12 +1720,8 @@ class AppState extends ChangeNotifier {
         final noteValue = _parseNoteDisplay(noteDisplay);
         track.setNote(row, noteValue);
       case CellColumn.instrument:
-        // Use the last instrument value
-        track.writeColumnValue(
-          row,
-          column,
-          lastInstrument,
-        );
+        // Use the last instrument value (same behaviour as note recall).
+        track.writeColumnValue(row, column, lastInstrument);
       case CellColumn.volume:
         track.writeColumnValue(row, column, 80);
       case CellColumn.fx0cmd:
@@ -2906,6 +2900,12 @@ class AppState extends ChangeNotifier {
   void setLoopPlaybackEnabled(bool enabled) {
     if (_loopPlaybackEnabled == enabled) return;
     _loopPlaybackEnabled = enabled;
+    if (isPlaying && !_playbackFollowsSong) {
+      // Sync the native looping flag immediately so the engine stops/continues
+      // at the current pass boundary without waiting for the next poll.
+      unawaited(AudioEngine.instance.setQueuedPlaybackLooping(enabled));
+      if (!enabled) _nextPassScheduled = false;
+    }
     notifyListeners();
   }
 
@@ -3084,7 +3084,9 @@ class AppState extends ChangeNotifier {
     return Duration(microseconds: microsPerLine);
   }
 
-  Future<void> _loadNativePatternPlaybackQueue({required int startRow}) async {
+  /// Builds the scheduled row list for the current pattern from [startRow].
+  /// Pure Dart computation — no channel calls.
+  List<_ScheduledPlaybackRow> _buildScheduledRows({int startRow = 0}) {
     final originalSong = song;
     final originalPlayheadRow = playheadRow;
     final clonedSong = SongModel.fromJson(song.toJson());
@@ -3107,6 +3109,12 @@ class AppState extends ChangeNotifier {
     song = originalSong;
     playheadRow = originalPlayheadRow;
     _resetInstrumentCarry();
+    return scheduledRows;
+  }
+
+  Future<void> _loadNativePatternPlaybackQueue({required int startRow}) async {
+    final scheduledRows = _buildScheduledRows(startRow: startRow);
+    _nextPassScheduled = false;
 
     await AudioEngine.instance.clearQueuedPlaybackRows();
     await AudioEngine.instance.setQueuedPlaybackLooping(_loopPlaybackEnabled);
@@ -3127,6 +3135,28 @@ class AppState extends ChangeNotifier {
     }
   }
 
+  /// Pre-builds the next loop pass from the live pattern and loads it into
+  /// the C++ pending buffer. At the next native loop boundary the engine
+  /// swaps it in atomically — zero gap, edits picked up every pass.
+  Future<void> _scheduleNextLoopPass() async {
+    final rows = _buildScheduledRows(startRow: 0);
+    await AudioEngine.instance.scheduleNextLoopRows(
+      rows.map((r) => {
+        'lineSamples': r.lineSamples,
+        'rowData': r.rowData,
+        'immediateKillMask': r.immediateKillMask,
+        'retrigData': r.retrigData,
+        'arpData': r.arpData,
+        'delayData': r.delayData,
+        'killData': r.killData,
+        'sliceCommandData': r.sliceCommandData,
+        'mixerCommandData': r.mixerCommandData,
+        'insertFxCommandData': r.insertFxCommandData,
+        'pitchRampData': r.pitchRampData,
+      }).toList(),
+    );
+  }
+
   void _startNativePatternPlayheadPoller() {
     _playheadTimer?.cancel();
     _playheadTimer = Timer.periodic(const Duration(milliseconds: 16), (_) {
@@ -3143,9 +3173,23 @@ class AppState extends ChangeNotifier {
       final newRowRaw = playheadRow + advanced;
       final didLoop = newRowRaw >= rowCount;
       playheadRow = newRowRaw % rowCount;
-      if (didLoop && !_loopPlaybackEnabled) {
-        stop();
-        return;
+      if (didLoop) {
+        if (!_loopPlaybackEnabled) {
+          stop();
+          return;
+        }
+        // Loop happened: the C++ engine already swapped in the pending pass
+        // (or replayed old rows if no pending pass was ready). Reset the flag
+        // so we pre-build and schedule the *next* pass immediately.
+        _nextPassScheduled = false;
+      }
+      // Pre-build the next pass when we are 2 rows from the end of the
+      // current pass — enough lead time for the single channel call to
+      // complete before the native loop boundary.
+      if (_loopPlaybackEnabled && !_nextPassScheduled &&
+          playheadRow >= rowCount - 2) {
+        _nextPassScheduled = true;
+        unawaited(_scheduleNextLoopPass());
       }
       notifyListeners();
     } finally {
@@ -3504,20 +3548,26 @@ class AppState extends ChangeNotifier {
       if (playheadRow < track.cells.length) {
         final cell = track.cells[playheadRow];
 
-        if (cell.instrument != null) {
+        if (cell.instrument != null && cell.instrument! > 0) {
+          // Explicit instrument 01-99: switch slot and update carry.
           currentSlot = (cell.instrument! - 1).clamp(0, instruments.length - 1);
           _carryInstrumentByTrack[t] = currentSlot;
           waveCmd = _waveCodeForInstrumentSlot(currentSlot);
           instrumentTypeCmd = _instrumentTypeCodeForSlot(currentSlot);
           synthParams = _synthParamsForInstrumentSlot(currentSlot);
         }
+        // instrument == null or 0 ('00'): carry forward last slot.
+        // '00' is reserved for future use.
 
         final note = cell.note;
-        final playable = instruments[currentSlot].type != InstrumentType.empty;
         if (note.isOff) {
           noteCmd = -2;
-        } else if (note.isNote && playable) {
+        } else if (note.isNote && cell.instrument != null && cell.instrument! > 0) {
+          // Explicit instrument (01-99): full note trigger.
           noteCmd = note.midiNote;
+        } else if (note.isNote && cell.instrument == 0) {
+          // IN = '00': pitch-change only — no retrigger, glide is respected.
+          noteCmd = pitchOnlyNoteCmd(note.midiNote);
         }
 
         if (noteCmd == -2) {
@@ -4789,8 +4839,9 @@ class AppState extends ChangeNotifier {
     final note = cell.note;
     if (!note.isNote) return;
 
-    final instNum =
-        cell.instrument ?? _defaultInstrumentForRow(track, row);
+    final instNum = (cell.instrument != null && cell.instrument! > 0)
+        ? cell.instrument!
+        : _defaultInstrumentForRow(track, row);
     final slot = (instNum - 1).clamp(0, instruments.length - 1);
 
     final waveCmd = _waveCodeForInstrumentSlot(slot);

@@ -110,6 +110,50 @@ Java_com_metamind_stria_AudioEnginePlugin_nativeEnqueuePlaybackRow(
 }
 
 JNIEXPORT void JNICALL
+Java_com_metamind_stria_AudioEnginePlugin_nativeBeginPendingRows(
+        JNIEnv*, jobject, jlong ptr) {
+    reinterpret_cast<AudioEngine*>(ptr)->beginPendingRows();
+}
+
+JNIEXPORT void JNICALL
+Java_com_metamind_stria_AudioEnginePlugin_nativeAppendPendingRow(
+        JNIEnv* env,
+        jobject,
+        jlong ptr,
+        jint lineSamples,
+        jintArray rowData,
+        jintArray immediateKillMask,
+        jintArray retrigData,
+        jintArray arpData,
+        jintArray delayData,
+        jintArray killData,
+        jintArray sliceCommandData,
+        jintArray mixerCommandData,
+        jintArray insertFxCommandData,
+        jintArray pitchRampData) {
+    auto toVector = [env](jintArray array) {
+        jsize len = env->GetArrayLength(array);
+        jint* elms = env->GetIntArrayElements(array, nullptr);
+        std::vector<int> vec(elms, elms + len);
+        env->ReleaseIntArrayElements(array, elms, JNI_ABORT);
+        return vec;
+    };
+    QueuedPlaybackRow row;
+    row.lineSamples = static_cast<int32_t>(lineSamples);
+    row.rowData = toVector(rowData);
+    row.immediateKillMask = toVector(immediateKillMask);
+    row.retrigData = toVector(retrigData);
+    row.arpData = toVector(arpData);
+    row.delayData = toVector(delayData);
+    row.killData = toVector(killData);
+    row.sliceCommandData = toVector(sliceCommandData);
+    row.mixerCommandData = toVector(mixerCommandData);
+    row.insertFxCommandData = toVector(insertFxCommandData);
+    row.pitchRampData = toVector(pitchRampData);
+    reinterpret_cast<AudioEngine*>(ptr)->appendPendingRow(row);
+}
+
+JNIEXPORT void JNICALL
 Java_com_metamind_stria_AudioEnginePlugin_nativeSetRowData(
         JNIEnv* env, jobject, jlong ptr, jintArray data) {
     jsize        len  = env->GetArrayLength(data);

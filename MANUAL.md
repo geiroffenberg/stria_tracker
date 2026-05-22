@@ -92,19 +92,31 @@ Like BPM, **LPB is stored per pattern**. Every pattern can have a different rhyt
 
 ---
 
-### 2.4 Instrument Carry
+### 2.4 Instrument Column (IN)
 
-The INST column in the pattern grid does not need to be filled on every row. Once an instrument number is written, it **carries forward** on that track until a new number is explicitly written. This keeps patterns clean.
+The IN column controls both *which instrument slot* is active and *whether a note triggers at all*.
+
+| IN value | Effect |
+|---|---|
+| `--` (empty) | No trigger. The last-used instrument slot is silently carried. Any note in the NOTE column is ignored — the row acts as a hold. |
+| `00` | No trigger. If a note is written on this row, the pitch of the currently playing voice is updated immediately — the amplitude envelope is **not** retriggered. If the instrument has **Glide** set, the pitch transition is smoothed. |
+| `01`–`99` | Switch to that instrument slot and trigger the note (if one is present in NOTE). |
+
+**Key rule:** a note only fires when IN is `01`–`99`. Every new note-on must carry an explicit instrument number. This makes every trigger unambiguous.
+
+`00` is a compact portamento shorthand: write a destination note with IN = `00` to glide to a new pitch without restarting the envelope.
 
 ---
 
 ### 2.5 Note Hold vs. Note Off
 
-| Cell content | Meaning |
-|---|---|
-| `---` | Empty — the current note keeps playing (hold) |
-| `OFF` | Send a note-off to the instrument on this track |
-| Any note | Trigger a new note (re-triggers the instrument) |
+| NOTE column | IN column | Meaning |
+|---|---|---|
+| `---` | any | Empty note — the current note keeps playing (hold) |
+| `OFF` | any | Send a note-off, silence the track |
+| Note (e.g. `C-4`) | `--` (empty) | No trigger — acts as a hold. The note value is ignored. |
+| Note | `00` | Pitch-change only — no retrigger; glide applies if set on the instrument |
+| Note | `01`–`99` | Full note-on — triggers with the specified instrument slot |
 
 ---
 
@@ -187,7 +199,7 @@ C-4    01     75    PAN  50
 | Field | Description |
 |---|---|
 | NOTE | The note to play (`C-4`, `D#3`, `OFF`, `---`) |
-| INST | Instrument number (01–16). Carries forward if empty |
+| INST | `--` = hold/carry (no trigger); `00` = pitch-change only (no retrigger, glide applies); `01`–`16` = trigger with that instrument slot |
 | VOL | Per-cell volume override (00–99) |
 | FX | Effect command (3-letter code) |
 | VAL | Effect value (00–99) |

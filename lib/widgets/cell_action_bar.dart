@@ -236,10 +236,6 @@ class _RowActions extends StatelessWidget {
             label: 'SCAT',
             onTap: () => state.scatterSelectedRows(),
           ),
-          _ActionBtn(
-            label: 'RAND',
-            onTap: () => state.randomizePitchInSelection(),
-          ),
           const SizedBox(width: 4),
           _ActionBtn(
             label: '+OCT',
