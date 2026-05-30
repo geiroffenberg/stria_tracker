@@ -340,9 +340,9 @@ public:
     void start();
     void stop();
     void close();
-    void restartStream();      // rebuild Oboe stream after device disconnect
-    void pauseOutputStream();  // stop stream output without resetting transport
-    void resumeOutputStream(); // resume stream output after focus regained
+    void restartStream();           // rebuild Oboe stream after device disconnect
+    void pauseOutputStream();       // stop stream output without resetting transport
+    void resumeOutputStream();      // resume stream output after focus regained
 
     void setTempo(double bpm);
 

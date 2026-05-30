@@ -395,20 +395,36 @@ class _NumericActions extends StatelessWidget {
     }
   }
 
+  bool get _isFxValColumn =>
+      column == CellColumn.fx0val ||
+      column == CellColumn.fx1val ||
+      column == CellColumn.fx2val;
+
   Future<void> _showManualValueDialog(
     BuildContext context,
     int current,
     int minV,
     int maxV,
   ) async {
-    final controller = TextEditingController(text: current.toString());
+    final isHex = _isFxValColumn;
+    final String initText = isHex
+        ? current.toRadixString(16).toUpperCase().padLeft(2, '0')
+        : current.toString();
+    final String rangeHint = isHex
+        ? '${minV.toRadixString(16).toUpperCase()}-${maxV.toRadixString(16).toUpperCase()}'
+        : '$minV-$maxV';
+    final controller = TextEditingController(text: initText);
+    int? parse(String raw) {
+      final s = raw.trim();
+      return isHex ? int.tryParse(s, radix: 16) : int.tryParse(s);
+    }
     final entered = await showDialog<int>(
       context: context,
       builder: (context) {
         return AlertDialog(
           backgroundColor: kBgTrackHeader,
           title: Text(
-            '${_entryLabel()} ($minV-$maxV)',
+            '${_entryLabel()} ($rangeHint)${isHex ? ' hex' : ''}',
             style: kStyleBase.copyWith(
               color: kColHeader,
               fontSize: 16,
@@ -418,14 +434,14 @@ class _NumericActions extends StatelessWidget {
           content: TextField(
             controller: controller,
             autofocus: true,
-            keyboardType: TextInputType.number,
+            keyboardType: TextInputType.text,
             style: kStyleBase.copyWith(
               color: kColHeader,
               fontSize: 18,
               fontWeight: FontWeight.w700,
             ),
             decoration: InputDecoration(
-              hintText: '$minV-$maxV',
+              hintText: rangeHint,
               hintStyle: kStyleBase.copyWith(color: kColInactive),
               enabledBorder: OutlineInputBorder(
                 borderSide: BorderSide(color: kColInactive),
@@ -435,7 +451,7 @@ class _NumericActions extends StatelessWidget {
               ),
             ),
             onSubmitted: (raw) {
-              final parsed = int.tryParse(raw.trim());
+              final parsed = parse(raw);
               if (parsed != null) {
                 Navigator.of(context).pop(parsed.clamp(minV, maxV));
               }
@@ -451,7 +467,7 @@ class _NumericActions extends StatelessWidget {
             ),
             TextButton(
               onPressed: () {
-                final parsed = int.tryParse(controller.text.trim());
+                final parsed = parse(controller.text);
                 Navigator.of(
                   context,
                 ).pop((parsed ?? current).clamp(minV, maxV));
@@ -503,7 +519,8 @@ class _NumericActions extends StatelessWidget {
       fxHint = 'Slot $slot - ${fxInsertFunctionHintForEffect(effectName, fn)}';
     } else {
       fxHint = switch (fxCmd) {
-        kFxARP => 'XY: X=1st interval, Y=2nd interval (1-9=semitones above root)',
+        kFxARP => 'XY (hex): X=1st interval, Y=2nd interval (0-F semitones above root)',
+        // e.g. 47 = +4 and +7 semitones, A9 = +10 and +9 semitones
         kFxCHA => '00=never, 99=always, 50=50% chance to play',
         kFxDEL => '00=line start, 99=line end (delayed note-on)',
         kFxKIL => '00=immediate kill, 99=end of row',

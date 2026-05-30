@@ -21,10 +21,9 @@ class FxSlot {
   static String hexDisplay(int? v) =>
       v == null ? '--' : v.toRadixString(16).toUpperCase().padLeft(2, '0');
 
-  /// 2-digit decimal display for FX values (00–99), always shows 00 if empty.
-  /// 2-digit decimal display for FX values (00–99), or '--' if empty.
+  /// 2-digit hex display for FX values (00–FF), or '--' if empty.
   static String fxValueDisplay(int? v) =>
-      v == null ? '--' : (v % 100).toString().padLeft(2, '0');
+      v == null ? '--' : v.clamp(0, 255).toRadixString(16).toUpperCase().padLeft(2, '0');
 }
 
 /// Fixed command ID → 3-letter display name.

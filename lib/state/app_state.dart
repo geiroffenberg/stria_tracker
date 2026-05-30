@@ -3677,10 +3677,11 @@ class AppState extends ChangeNotifier {
             retrigNotesPerLine = (value % 10).clamp(0, 9);
           }
           if (fx.command == kFxARP && fx.value != null && fx.value! > 0) {
-            // Digits are chromatic semitones: 0=unison, 1=m2, 2=M2, 3=m3,
-            // 4=M3, 5=P4, 6=tritone, 7=P5, 8=m6, 9=M6.
-            arpInterval1 = (fx.value! ~/ 10).clamp(0, 9);
-            arpInterval2 = (fx.value! % 10).clamp(0, 9);
+            // Hex nibbles: X=high nibble, Y=low nibble. Each 0-F semitones.
+            // 0=unison, 1=m2, 2=M2, 3=m3, 4=M3, 5=P4, 6=tritone,
+            // 7=P5, 8=m6, 9=M6, A=m7, B=M7, C=octave, etc.
+            arpInterval1 = fx.value! >> 4;
+            arpInterval2 = fx.value! & 0x0F;
           }
           if (fx.command == kFxARC && fx.value != null) {
             arcOctaveLayers = (fx.value! ~/ 10).clamp(0, 9);

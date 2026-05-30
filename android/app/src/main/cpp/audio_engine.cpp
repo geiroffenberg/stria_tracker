@@ -371,9 +371,10 @@ bool AudioEngine::open() {
     oboe::AudioStreamBuilder builder;
     builder.setDirection(oboe::Direction::Output);
     builder.setPerformanceMode(oboe::PerformanceMode::LowLatency);
-    builder.setSharingMode(oboe::SharingMode::Exclusive);
+    builder.setSharingMode(oboe::SharingMode::Shared);  // Shared routes through AudioFlinger, enabling screen-recording capture
     builder.setFormat(oboe::AudioFormat::Float);
     builder.setChannelCount(oboe::ChannelCount::Stereo);
+    builder.setUsage(oboe::Usage::Media);
     builder.setDataCallback(this);
     builder.setErrorCallback(this);  // triggers onErrorAfterClose on device disconnect
 
@@ -473,19 +474,14 @@ void AudioEngine::restartStream() {
     oboe::AudioStreamBuilder builder;
     builder.setDirection(oboe::Direction::Output);
     builder.setPerformanceMode(oboe::PerformanceMode::LowLatency);
-    builder.setSharingMode(oboe::SharingMode::Exclusive);
+    builder.setSharingMode(oboe::SharingMode::Shared);  // Shared routes through AudioFlinger, enabling screen-recording capture
     builder.setFormat(oboe::AudioFormat::Float);
     builder.setChannelCount(oboe::ChannelCount::Stereo);
+    builder.setUsage(oboe::Usage::Media);
     builder.setDataCallback(this);
     builder.setErrorCallback(this);
 
     oboe::Result result = builder.openManagedStream(mStream);
-    if (result != oboe::Result::OK) {
-        // Exclusive mode may not be available on the new device — fall back to Shared.
-        builder.setSharingMode(oboe::SharingMode::Shared);
-        result = builder.openManagedStream(mStream);
-    }
-
     if (result == oboe::Result::OK) {
         mCachedSampleRate = static_cast<float>(mStream->getSampleRate());
         if (mHasFocus) {

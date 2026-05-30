@@ -155,11 +155,11 @@ class TrackModel {
     if (column == CellColumn.instrument || column == CellColumn.volume) {
       return 99;
     }
-    // FX value columns cap at 99; FX command columns allow full range.
+    // FX value columns use full byte range (hex 00–FF).
     if (column == CellColumn.fx0val ||
         column == CellColumn.fx1val ||
         column == CellColumn.fx2val) {
-      return 99;
+      return 255;
     }
     return kFxInsertEnd; // FX command columns
   }
