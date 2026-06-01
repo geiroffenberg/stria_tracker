@@ -16,12 +16,17 @@ class PatternModel {
   List<int?> beatLineOverrides;
   List<TrackModel> tracks;
   List<FxEnvelopeRun> fxEnvelopes;
+  /// Swing amount: 0.0 = straight, 1.0–99.0 = push even lines (0-indexed 1,
+  /// 3, 5…) later within each beat. Odd lines get proportionally longer,
+  /// even lines get proportionally shorter, so beat totals never drift.
+  double swing;
 
   PatternModel({
     required this.name,
     this.bpm = 120.0,
     this.beats = kDefaultBeats,
     this.linesPerBeat = kDefaultLinesPerBeat,
+    this.swing = 0.0,
     List<int?>? beatLineOverrides,
     List<TrackModel>? tracks,
     List<FxEnvelopeRun>? fxEnvelopes,
@@ -60,6 +65,17 @@ class PatternModel {
       remaining -= lines;
     }
     return beatCount - 1;
+  }
+
+  /// 0-based position of [row] within its beat.
+  int rowWithinBeat(int row) {
+    int remaining = row;
+    for (int b = 0; b < beatCount; b++) {
+      final lines = linesForBeat(b);
+      if (remaining < lines) return remaining;
+      remaining -= lines;
+    }
+    return 0;
   }
 
   /// Total rows = sum of linesForBeat across all beats.
@@ -149,6 +165,7 @@ class PatternModel {
       bpm: bpm ?? 120.0,
       beats: beatCount,
       linesPerBeat: lpb,
+      swing: swing,
       beatLineOverrides: List<int?>.from(beatLineOverrides),
       fxEnvelopes: fxEnvelopes
           .map((e) => FxEnvelopeRun.fromJson(e.toJson()))
@@ -173,6 +190,7 @@ class PatternModel {
     'bpm': bpm ?? 120.0,
     'beats': beats ?? kDefaultBeats,
     'lpb': linesPerBeat ?? kDefaultLinesPerBeat,
+    'swing': swing,
     'beatOverrides': beatLineOverrides,
     'fxEnvelopes': fxEnvelopes.map((e) => e.toJson()).toList(),
     'tracks': tracks.map((t) => t.toJson()).toList(),
@@ -199,6 +217,7 @@ class PatternModel {
       bpm: (j['bpm'] as num?)?.toDouble() ?? 120.0,
       beats: (j['beats'] as int?) ?? kDefaultBeats,
       linesPerBeat: (j['lpb'] as int?) ?? kDefaultLinesPerBeat,
+      swing: ((j['swing'] as num?)?.toDouble() ?? 0.0).clamp(0.0, 99.0),
       beatLineOverrides: overrides,
       fxEnvelopes: loadedEnvelopes,
       tracks: loadedTracks,

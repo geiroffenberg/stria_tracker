@@ -101,9 +101,95 @@ class _ScheduledPlaybackRow {
   });
 }
 
+/// Per-track playback carry state. Replaces what used to be 12 parallel
+/// `List<...>` fields indexed by track. Keeping it in one record makes it
+/// impossible to forget updating one of the fields when adding a new FX.
+class _TrackCarry {
+  int instrument = 0;
+  int? note;
+  int? volume;
+  double? vibSpeed;
+  double? vibDepth;
+  int? volFx;
+  int? panFx;
+  double? treSpeed;
+  double? treDepth;
+  int? treMode;
+  ({List<int> cycle, int notesPerLine, int phase})? arp;
+  ({int startNote, int endNote, int totalLines, int linesElapsed})? slide;
+  Map<int, int> instrumentParams = <int, int>{};
+}
+
+/// Per-pattern undo / redo history. Snapshots are JSON strings of the
+/// pattern's musical content (cells, beats, lpb, beat overrides, fx envelopes,
+/// bpm) so the user can rewind their edits without affecting mixer state on
+/// the tracks. Capped at [maxDepth] to bound memory.
+class _PatternUndoStack {
+  static const int maxDepth = 50;
+  // Each entry: (json snapshot of state BEFORE the mutation, human label).
+  final List<({String json, String label})> _undo = [];
+  final List<({String json, String label})> _redo = [];
+
+  bool get canUndo => _undo.isNotEmpty;
+  bool get canRedo => _redo.isNotEmpty;
+  String? get undoLabel => _undo.isEmpty ? null : _undo.last.label;
+  String? get redoLabel => _redo.isEmpty ? null : _redo.last.label;
+
+  void pushUndo(String json, String label) {
+    _undo.add((json: json, label: label));
+    if (_undo.length > maxDepth) {
+      _undo.removeRange(0, _undo.length - maxDepth);
+    }
+    _redo.clear();
+  }
+
+  /// Pop an undo entry. Caller passes the CURRENT state json so it can be
+  /// pushed onto the redo stack. Returns the snapshot to restore, or null.
+  ({String json, String label})? popUndoSwap(String currentJson) {
+    if (_undo.isEmpty) return null;
+    final entry = _undo.removeLast();
+    _redo.add((json: currentJson, label: entry.label));
+    if (_redo.length > maxDepth) {
+      _redo.removeRange(0, _redo.length - maxDepth);
+    }
+    return entry;
+  }
+
+  ({String json, String label})? popRedoSwap(String currentJson) {
+    if (_redo.isEmpty) return null;
+    final entry = _redo.removeLast();
+    _undo.add((json: currentJson, label: entry.label));
+    if (_undo.length > maxDepth) {
+      _undo.removeRange(0, _undo.length - maxDepth);
+    }
+    return entry;
+  }
+}
+
 class AppState extends ChangeNotifier {
   static const int _audioVoiceCount = kMaxTracks;
   static const int _audioRowStride = 42;
+
+  /// Max master fader gain (linear). 2.0 = +6 dB headroom for intentionally
+  /// driving the always-on safety limiter (makeup-style gain).
+  static const double kMaxMasterVolume = 2.0;
+
+  // ── Per-pattern undo / redo ────────────────────────────────────────────────
+  // Stack is keyed by PatternModel identity via Expando, so it follows the
+  // pattern across re-orderings and is auto-collected when the pattern dies.
+  final Expando<_PatternUndoStack> _patternUndo = Expando('patternUndo');
+  // Coalesces snapshots within a single user gesture: the first mutation in
+  // a synchronous burst pushes one snapshot; nested mutations skip. Flag
+  // resets on the next microtask.
+  bool _patternMutationInProgress = false;
+
+  // ── Song arrangement undo / redo ──────────────────────────────────────────
+  // Snapshots the full patterns list before each arrangement mutation
+  // (add, remove, move, duplicate, merge, double).
+  final _PatternUndoStack _songUndo = _PatternUndoStack();
+  // Prevents sub-operations (e.g. duplicatePattern inside doublePattern) from
+  // pushing a second snapshot for the same gesture.
+  bool _songMutationInProgress = false;
 
   AppState() {
     _loadAppSettings();
@@ -172,6 +258,8 @@ class AppState extends ChangeNotifier {
   String? _projectRootTreeUri;
   String? _lastLoadError;
   bool _autosaveEnabled = false;
+  // Always-on master safety limiter; user-toggleable from the master strip.
+  bool _masterLimiterEnabled = true;
   Timer? _autosaveTimer;
   Timer? _instrumentParamRebuildTimer;
   bool _liveRebuildInFlight = false;
@@ -228,23 +316,8 @@ class AppState extends ChangeNotifier {
   bool get hasRowClipboard =>
       _rowClipboard != null && _rowClipboard!.isNotEmpty;
 
-  // Playback carry state for IN column per track.
-  List<int> _carryInstrumentByTrack = const [];
-  List<int?> _carryNoteByTrack = const [];
-  List<int?> _carryVolumeByTrack = const [];
-  List<double?> _carryVibSpeedByTrack = const [];
-  List<double?> _carryVibDepthByTrack = const [];
-  List<int?> _carryVolFxByTrack = const [];
-  List<int?> _carryPanFxByTrack = const [];
-  List<double?> _carryTreSpeedByTrack = const [];
-  List<double?> _carryTreDepthByTrack = const [];
-  List<int?> _carryTreModeByTrack = const [];
-  List<({List<int> cycle, int notesPerLine, int phase})?> _carryArpByTrack =
-      const [];
-  // Per-track pitch-slide carry (SLU/SLD).
-  List<({int startNote, int endNote, int totalLines, int linesElapsed})?> _carrySlideByTrack = const [];
-  // Per-track Pxx automation carries: map of param-index → raw 00-99 value.
-  List<Map<int, int>> _carryInstrumentParamsByTrack = const [];
+  // Playback carry state, per track. One record per pattern track.
+  List<_TrackCarry> _trackCarry = const [];
   int _carryPatternIndex = -1;
 
   bool isPlaying = false;
@@ -277,6 +350,7 @@ class AppState extends ChangeNotifier {
       (_projectRootFolder != null && _projectRootFolder!.isNotEmpty) ||
       (_projectRootTreeUri != null && _projectRootTreeUri!.isNotEmpty);
   bool get autosaveEnabled => _autosaveEnabled;
+  bool get masterLimiterEnabled => _masterLimiterEnabled;
   int get songStateVersion => _songStateVersion;
   List<List<bool>> get trackInsertOccupied => _trackInsertOccupied;
   List<List<String?>> get trackInsertEffectNames => _trackInsertEffectNames;
@@ -485,6 +559,11 @@ class AppState extends ChangeNotifier {
     final last = _patternLastValues[_currentPatternIndex];
     return last?.instrument ?? 1;
   }
+
+  /// Returns the last instrument explicitly written in this pattern session,
+  /// or null if the user has never set an instrument in this pattern.
+  int? get explicitLastInstrument =>
+      _patternLastValues[_currentPatternIndex]?.instrument;
 
   /// Get the last volume value for the current pattern (default: 99)
   int get lastVolume {
@@ -1244,9 +1323,11 @@ class AppState extends ChangeNotifier {
 
   void _appendMasterMixerSnapshot(List<int> queue) {
     final muteValue = song.masterMute ? 1 : 0;
-    final volumeValue = (song.masterVolume * 99).round().clamp(0, 99);
     queue.addAll([0, 1, muteValue, 0]);
-    queue.addAll([0, 2, volumeValue, 0]);
+    // Master volume is pushed via the direct float path (setMasterVolumeLinear)
+    // because it can exceed unity and would otherwise be clipped by the 0..99
+    // mixer-command transport.
+    AudioEngine.instance.setMasterVolumeLinear(song.masterVolume);
   }
 
   void _appendTrackMixerSnapshot(
@@ -1584,6 +1665,7 @@ class AppState extends ChangeNotifier {
     final newMin = (min + delta).clamp(0, rowCount - rangeSize);
     if (newMin == min) return;
 
+    _pushPatternUndo('move rows');
     final cells = currentTrack.cells;
     if (delta > 0) {
       // Moving down: swap from right to left
@@ -1612,6 +1694,7 @@ class AppState extends ChangeNotifier {
 
   /// Cut row = copy + clear (current track only).
   void cutRow(int row) {
+    _pushPatternUndo('cut row');
     copyRow(row);
     deleteRow(row);
     clearRowSelection();
@@ -1621,6 +1704,7 @@ class AppState extends ChangeNotifier {
 
   /// Increment the value in a cell's column by [delta] (positive = higher).
   void nudgeCell(int row, CellColumn column, int delta) {
+    _pushPatternUndo('nudge cell');
     final track = currentTrack;
     final current = track.readColumnValue(row, column) ?? 0;
     final clamped = (current + delta).clamp(
@@ -1647,6 +1731,7 @@ class AppState extends ChangeNotifier {
   }
 
   void setNote(int row, NoteValue note) {
+    _pushPatternUndo('set note');
     currentTrack.setNote(row, note);
     if (note.isNote) {
       updateLastNote(note.display);
@@ -1678,6 +1763,7 @@ class AppState extends ChangeNotifier {
 
   /// Resets a cell column to its default value (always writes a value).
   void resetColumnToDefault(int row, CellColumn column) {
+    _pushPatternUndo('reset column');
     final track = currentTrack;
     switch (column) {
       case CellColumn.note:
@@ -1712,6 +1798,7 @@ class AppState extends ChangeNotifier {
 
   /// Inserts the column-specific default value into an empty cell.
   void insertDefaultValue(int row, CellColumn column) {
+    _pushPatternUndo('insert value');
     final track = currentTrack;
     switch (column) {
       case CellColumn.note:
@@ -1793,6 +1880,7 @@ class AppState extends ChangeNotifier {
 
   /// Clears a single column value (sets to empty/null). Ignored for fx val columns.
   void clearColumnValue(int row, CellColumn column) {
+    _pushPatternUndo('clear column');
     final track = currentTrack;
     _clearColumnValueInTrack(track, row, column);
     notifyListeners();
@@ -1831,6 +1919,7 @@ class AppState extends ChangeNotifier {
   }
 
   void clearCell(int row) {
+    _pushPatternUndo('clear cell');
     currentPattern.tracks[_currentTrackIndex].cells[row] = TrackerCell.empty();
     notifyListeners();
   }
@@ -1995,6 +2084,7 @@ class AppState extends ChangeNotifier {
   /// Re-bake the interior rows of [run] using a new [gamma] value and
   /// update [run.gamma]. Anchor rows (startRow / endRow) are not touched.
   void updateEnvelopeGamma(FxEnvelopeRun run, double newGamma) {
+    _pushPatternUndo('envelope gamma');
     run.gamma = newGamma.clamp(0.1, 4.0);
     final track = currentPattern.tracks[run.trackIndex];
     final tStart = currentPattern.rowTimeInBeats(run.startRow);
@@ -2011,6 +2101,7 @@ class AppState extends ChangeNotifier {
 
   /// Remove the envelope run from the pattern. Cell values are kept as-is.
   void deleteEnvelope(FxEnvelopeRun run) {
+    _pushPatternUndo('delete envelope');
     currentPattern.fxEnvelopes.remove(run);
     notifyListeners();
   }
@@ -2022,6 +2113,7 @@ class AppState extends ChangeNotifier {
 
   void pasteRow(int row) {
     if (_rowClipboard == null || _rowClipboard!.isEmpty) return;
+    _pushPatternUndo('paste row');
     // Paste at the specified row, using first row from clipboard
     currentTrack.cells[row] = _rowClipboard!.first.copy();
     // Select the pasted row
@@ -2031,6 +2123,7 @@ class AppState extends ChangeNotifier {
   }
 
   void deleteRow(int row) {
+    _pushPatternUndo('delete row');
     currentTrack.cells[row] = TrackerCell.empty();
     notifyListeners();
   }
@@ -2049,6 +2142,7 @@ class AppState extends ChangeNotifier {
 
   /// Cut multiple rows = copy + clear.
   void cutRows(int startRow, int endRow) {
+    _pushPatternUndo('cut rows');
     copyRows(startRow, endRow);
     deleteRows(startRow, endRow);
     clearRowSelection();
@@ -2057,6 +2151,7 @@ class AppState extends ChangeNotifier {
   /// Delete multiple rows (inclusive range) by clearing them to empty.
   void deleteRows(int startRow, int endRow) {
     if (startRow < 0 || endRow >= rowCount) return;
+    _pushPatternUndo('delete rows');
     final min = startRow < endRow ? startRow : endRow;
     final max = startRow < endRow ? endRow : startRow;
     for (int r = min; r <= max; r++) {
@@ -2072,6 +2167,7 @@ class AppState extends ChangeNotifier {
     if (_rowClipboard == null || _rowClipboard!.isEmpty) return;
     if (insertRow < 0 || insertRow >= rowCount) return;
 
+    _pushPatternUndo('paste rows');
     final cells = currentTrack.cells;
     final pastedCount = (_rowClipboard!.length).clamp(0, rowCount - insertRow);
 
@@ -2098,6 +2194,7 @@ class AppState extends ChangeNotifier {
     final insertRow = endRow + 1;
     if (insertRow >= rowCount) return;
 
+    _pushPatternUndo('duplicate rows');
     copyRows(startRow, endRow);
     pasteRows(insertRow);
   }
@@ -2109,6 +2206,7 @@ class AppState extends ChangeNotifier {
   void shuffleSelectedRows() {
     final range = selectedRowRange;
     if (range == null) return;
+    _pushPatternUndo('shuffle');
     final cells = currentTrack.cells;
     final rnd = math.Random();
 
@@ -2137,6 +2235,7 @@ class AppState extends ChangeNotifier {
   void scatterSelectedRows() {
     final range = selectedRowRange;
     if (range == null) return;
+    _pushPatternUndo('scatter');
     final cells = currentTrack.cells;
     final rnd = math.Random();
 
@@ -2173,6 +2272,7 @@ class AppState extends ChangeNotifier {
   void randomizePitchInSelection() {
     final range = selectedRowRange;
     if (range == null) return;
+    _pushPatternUndo('randomize pitch');
     final cells = currentTrack.cells;
     final rnd = math.Random();
 
@@ -2216,6 +2316,7 @@ class AppState extends ChangeNotifier {
   void transposeSelectionBySemitones(int delta) {
     final range = selectedRowRange;
     if (range == null) return;
+    _pushPatternUndo('transpose');
     final cells = currentTrack.cells;
     for (int r = range.$1; r <= range.$2; r++) {
       if (!cells[r].note.isNote) continue;
@@ -2229,6 +2330,7 @@ class AppState extends ChangeNotifier {
   void deleteBoxSelection() {
     final sel = _boxSelection;
     if (sel == null) return;
+    _pushPatternUndo('delete selection');
     final track = currentPattern.tracks[sel.trackIndex];
     for (int row = sel.minRow; row <= sel.maxRow; row++) {
       for (
@@ -2260,6 +2362,7 @@ class AppState extends ChangeNotifier {
   /// Append a new empty pattern to the end of the song.
   void appendNewPattern() {
     if (song.patterns.length >= kMaxSongPatterns) return;
+    _pushSongUndo('add pattern');
     final idx = song.addPattern();
     _copyProjectMixerStateToPattern(song.patterns[idx]);
     _copyProjectSendRoutingToPattern(song.patterns[idx]);
@@ -2269,6 +2372,7 @@ class AppState extends ChangeNotifier {
   /// Insert a new empty pattern at [index] (0-based).
   void insertNewPatternAt(int index) {
     if (song.patterns.length >= kMaxSongPatterns) return;
+    _pushSongUndo('insert pattern');
     final clamped = index.clamp(0, song.patterns.length);
     final pattern = song.createEmptyPattern();
     _copyProjectMixerStateToPattern(pattern);
@@ -2281,6 +2385,7 @@ class AppState extends ChangeNotifier {
   void movePattern(int from, int to) {
     if (from == to) return;
     if (from < 0 || from >= song.patterns.length) return;
+    _pushSongUndo('move pattern');
     final dest = to.clamp(0, song.patterns.length - 1);
     final pat = song.patterns.removeAt(from);
     // After removing [from], indices above it shift down by one.
@@ -2304,6 +2409,7 @@ class AppState extends ChangeNotifier {
 
   void duplicatePattern(int index) {
     if (index < 0 || index >= song.patterns.length) return;
+    _pushSongUndo('duplicate pattern');
     copyPatternInsertAt(index, index + 1);
   }
 
@@ -2329,6 +2435,7 @@ class AppState extends ChangeNotifier {
 
   void mergePatternWithNext(int index) {
     if (!canMergePatternWithNext(index)) return;
+    _pushSongUndo('merge patterns');
     final current = song.patterns[index];
     final next = song.patterns[index + 1];
     final mergedBeatCount = current.beatCount + next.beatCount;
@@ -2357,8 +2464,11 @@ class AppState extends ChangeNotifier {
 
   void doublePattern(int index) {
     if (!canDoublePattern(index)) return;
+    _pushSongUndo('double pattern');
+    _songMutationInProgress = true;
     duplicatePattern(index);
     mergePatternWithNext(index);
+    _songMutationInProgress = false;
     _currentPatternIndex = index.clamp(0, song.patterns.length - 1);
     _currentArrangementSlotIndex = _currentPatternIndex;
     if (_playbackFollowsSong) {
@@ -2371,6 +2481,7 @@ class AppState extends ChangeNotifier {
 
   void movePatternUp(int index) {
     if (index <= 0 || index >= song.patterns.length) return;
+    _pushSongUndo('move up');
     final pat = song.patterns.removeAt(index);
     final newIndex = index - 1;
     song.patterns.insert(newIndex, pat);
@@ -2381,6 +2492,7 @@ class AppState extends ChangeNotifier {
 
   void movePatternDown(int index) {
     if (index < 0 || index >= song.patterns.length - 1) return;
+    _pushSongUndo('move down');
     final pat = song.patterns.removeAt(index);
     final newIndex = index + 1;
     song.patterns.insert(newIndex, pat);
@@ -2411,6 +2523,7 @@ class AppState extends ChangeNotifier {
   void removePattern(int index) {
     if (song.patterns.length <= 1) return;
     if (index < 0 || index >= song.patterns.length) return;
+    _pushSongUndo('delete pattern');
     song.patterns.removeAt(index);
     if (_currentPatternIndex >= song.patterns.length) {
       _currentPatternIndex = song.patterns.length - 1;
@@ -2426,10 +2539,11 @@ class AppState extends ChangeNotifier {
   bool get masterMute => song.masterMute;
 
   void setMasterVolume(double value) {
-    song.masterVolume = value.clamp(0.0, 1.0);
-    // Queue M02 (master volume) command: [channel=0, controller=2, value, unused]
-    final volumeInt = (song.masterVolume * 99).round().clamp(0, 99);
-    AudioEngine.instance.queueMixerCommands([0, 2, volumeInt, 0]);
+    // Master can be driven above unity (up to +6 dB) so users can intentionally
+    // push the safety limiter for makeup-style gain. Uses the direct float
+    // setter so the value isn't quantized to the 0..99 mixer-command grid.
+    song.masterVolume = value.clamp(0.0, kMaxMasterVolume);
+    AudioEngine.instance.setMasterVolumeLinear(song.masterVolume);
     notifyListeners();
   }
 
@@ -2558,11 +2672,11 @@ class AppState extends ChangeNotifier {
       }
       return <int>[
         _norm01ToAudio255(detuneNorm), // sampler pitch / synth detune
-        _norm01ToAudio255(0.70), // cutoff
-        _norm01ToAudio255(0.20), // resonance
-        0, // filterMode: LP
-        _norm01ToAudio255(0.01), // filterAtk
-        _norm01ToAudio255(0.25), // filterDec
+        _norm01ToAudio255(sp.hpCutoff), // cutoff  → sampler HP cutoff
+        _norm01ToAudio255(sp.hpResonance), // resonance → sampler HP resonance
+        sp.filterEnabled ? 1 : 0, // filterMode reused as sampler filter ON/OFF
+        _norm01ToAudio255(sp.lpCutoff), // filterAtk → sampler LP cutoff
+        _norm01ToAudio255(sp.lpResonance), // filterDec → sampler LP resonance
         _norm01ToAudio255(0.00), // filterSus
         _norm01ToAudio255(0.25), // filterRel
         _norm01ToAudio255(0.50), // filterAmt
@@ -2700,8 +2814,8 @@ class AppState extends ChangeNotifier {
     List<int> synthParams,
     int waveCmd,
   ) {
-    if (t >= _carryInstrumentParamsByTrack.length) return waveCmd;
-    final carry = _carryInstrumentParamsByTrack[t];
+    if (t >= _trackCarry.length) return waveCmd;
+    final carry = _trackCarry[t].instrumentParams;
     if (carry.isEmpty) return waveCmd;
     final instrumentType =
         instruments[slot.clamp(0, instruments.length - 1)].type;
@@ -2723,6 +2837,14 @@ class AppState extends ChangeNotifier {
             synthParams[12] = _ui99ToAudio255(rawVal); // release
           case 7:
             synthParams[18] = rawVal.clamp(0, 2); // loop mode (direct)
+          case 8:
+            synthParams[1] = _ui99ToAudio255(rawVal); // HP cutoff
+          case 9:
+            synthParams[2] = _ui99ToAudio255(rawVal); // HP resonance
+          case 10:
+            synthParams[4] = _ui99ToAudio255(rawVal); // LP cutoff
+          case 11:
+            synthParams[5] = _ui99ToAudio255(rawVal); // LP resonance
         }
       } else if (instrumentType == InstrumentType.karplusStrong) {
         switch (paramIdx) {
@@ -2853,19 +2975,7 @@ class AppState extends ChangeNotifier {
   }
 
   void _resetInstrumentCarry() {
-    _carryInstrumentByTrack = const [];
-    _carryNoteByTrack = const [];
-    _carryVolumeByTrack = const [];
-    _carryVibSpeedByTrack = const [];
-    _carryVibDepthByTrack = const [];
-    _carryVolFxByTrack = const [];
-    _carryPanFxByTrack = const [];
-    _carryTreSpeedByTrack = const [];
-    _carryTreDepthByTrack = const [];
-    _carryTreModeByTrack = const [];
-    _carryArpByTrack = const [];
-    _carrySlideByTrack = const [];
-    _carryInstrumentParamsByTrack = const [];
+    _trackCarry = const [];
     _carryPatternIndex = -1;
   }
 
@@ -3053,6 +3163,7 @@ class AppState extends ChangeNotifier {
   }
 
   void setBpm(double value) {
+    _pushPatternUndo('bpm');
     final clamped = value.round().clamp(20, 300);
     currentPattern.bpm = clamped.toDouble();
     _restartPlayheadTimerIfNeeded();
@@ -3062,6 +3173,7 @@ class AppState extends ChangeNotifier {
   void setBeats(int value) {
     final minBeats = _minimumBeatsForExistingData();
     final clamped = value.clamp(minBeats, 99);
+    _pushPatternUndo('beats');
     currentPattern.beats = clamped;
     currentPattern.syncTrackLengths();
     _clampSelectionToPattern();
@@ -3071,6 +3183,7 @@ class AppState extends ChangeNotifier {
 
   void setLinesPerBeat(int value) {
     if (!canChangePatternLength) return;
+    _pushPatternUndo('lpb');
     final clamped = value.clamp(1, 99);
     currentPattern.linesPerBeat = clamped;
     currentPattern.syncTrackLengths();
@@ -3083,8 +3196,184 @@ class AppState extends ChangeNotifier {
   /// Pass null or 0 to remove the override (beat reverts to pattern default [lpb]).
   /// Valid range: 1–16.
   void setBeatLineOverride(int beat, int? lines) {
+    _pushPatternUndo('beat length');
     currentPattern.setBeatLineOverride(beat, lines);
     currentPattern.syncTrackLengths();
+    _clampSelectionToPattern();
+    _restartPlayheadTimerIfNeeded();
+    notifyListeners();
+  }
+
+  /// Swing for the current pattern (0.0 = straight, 1.0–99.0 = percentage).
+  double get currentPatternSwing => currentPattern.swing;
+
+  void setPatternSwing(double value) {
+    final clamped = value.clamp(0.0, 99.0);
+    if (clamped == currentPattern.swing) return;
+    _pushPatternUndo('swing');
+    currentPattern.swing = clamped;
+    _restartPlayheadTimerIfNeeded();
+    notifyListeners();
+  }
+
+  // ── Pattern undo / redo / clear / reset ───────────────────────────────────
+
+  /// True when the current pattern has at least one undoable edit on its stack.
+  bool get canUndoPattern =>
+      _patternUndo[currentPattern]?.canUndo ?? false;
+  bool get canRedoPattern =>
+      _patternUndo[currentPattern]?.canRedo ?? false;
+  String? get undoPatternLabel => _patternUndo[currentPattern]?.undoLabel;
+  String? get redoPatternLabel => _patternUndo[currentPattern]?.redoLabel;
+
+  /// Snapshot the current pattern BEFORE a mutation, coalescing nested calls
+  /// inside one user gesture into a single history entry. No-op while a
+  /// mutation is already in progress (resets on next microtask).
+  void _pushPatternUndo(String label) {
+    if (_patternMutationInProgress) return;
+    _patternMutationInProgress = true;
+    scheduleMicrotask(() => _patternMutationInProgress = false);
+    final p = currentPattern;
+    final stack = _patternUndo[p] ??= _PatternUndoStack();
+    stack.pushUndo(jsonEncode(p.toJson()), label);
+  }
+
+  /// Restore musical content (cells, beats, lpb, beat overrides, fx envelopes,
+  /// bpm) from a previously-captured JSON snapshot. Mixer fields and track
+  /// metadata stay untouched on purpose — undoing a note edit should not flip
+  /// a solo button you toggled in between.
+  void _restorePatternFromJson(PatternModel target, String json) {
+    final j = jsonDecode(json) as Map<String, dynamic>;
+    final loaded = PatternModel.fromJson(j);
+    target.bpm = loaded.bpm;
+    target.beats = loaded.beats;
+    target.linesPerBeat = loaded.linesPerBeat;
+    target.beatLineOverrides
+      ..clear()
+      ..addAll(loaded.beatLineOverrides);
+    target.fxEnvelopes
+      ..clear()
+      ..addAll(loaded.fxEnvelopes);
+    // Replace cells on each existing track (do NOT touch mixer fields).
+    final n = math.min(target.tracks.length, loaded.tracks.length);
+    for (int t = 0; t < n; t++) {
+      target.tracks[t].cells
+        ..clear()
+        ..addAll(loaded.tracks[t].cells);
+    }
+    target.syncTrackLengths();
+  }
+
+  /// Undo the most recent edit on the current pattern. Safe to call when the
+  /// stack is empty.
+  void undoCurrentPattern() {
+    final p = currentPattern;
+    final stack = _patternUndo[p];
+    if (stack == null || !stack.canUndo) return;
+    final currentJson = jsonEncode(p.toJson());
+    final entry = stack.popUndoSwap(currentJson);
+    if (entry == null) return;
+    _restorePatternFromJson(p, entry.json);
+    _clampSelectionToPattern();
+    _restartPlayheadTimerIfNeeded();
+    notifyListeners();
+  }
+
+  /// Redo the most recently undone edit on the current pattern.
+  void redoCurrentPattern() {
+    final p = currentPattern;
+    final stack = _patternUndo[p];
+    if (stack == null || !stack.canRedo) return;
+    final currentJson = jsonEncode(p.toJson());
+    final entry = stack.popRedoSwap(currentJson);
+    if (entry == null) return;
+    _restorePatternFromJson(p, entry.json);
+    _clampSelectionToPattern();
+    _restartPlayheadTimerIfNeeded();
+    notifyListeners();
+  }
+
+  // ── Song arrangement undo / redo ──────────────────────────────────────────
+
+  bool get canUndoSong => _songUndo.canUndo;
+  bool get canRedoSong => _songUndo.canRedo;
+  String? get undoSongLabel => _songUndo.undoLabel;
+  String? get redoSongLabel => _songUndo.redoLabel;
+
+  /// Serialize the current arrangement (patterns list only) to JSON.
+  String _songArrangementJson() =>
+      jsonEncode(song.patterns.map((p) => p.toJson()).toList());
+
+  /// Snapshot the arrangement BEFORE a mutation. Pass [label] for the action.
+  /// No-op if a compound operation (e.g. doublePattern) is already in progress.
+  void _pushSongUndo(String label) {
+    if (_songMutationInProgress) return;
+    _songUndo.pushUndo(_songArrangementJson(), label);
+  }
+
+  /// Replace song.patterns with the state encoded in [json] and clamp indices.
+  void _restoreArrangementFromJson(String json) {
+    final raw = jsonDecode(json) as List<dynamic>;
+    song.patterns = raw
+        .map((j) => PatternModel.fromJson(j as Map<String, dynamic>))
+        .toList();
+    if (song.patterns.isEmpty) song.patterns = [PatternModel(name: 'PAT 01')];
+    _currentPatternIndex =
+        _currentPatternIndex.clamp(0, song.patterns.length - 1);
+    _currentArrangementSlotIndex =
+        _currentArrangementSlotIndex.clamp(0, song.patterns.length - 1);
+  }
+
+  /// Undo the most recent arrangement mutation (add/remove/move/duplicate…).
+  void undoSong() {
+    if (!_songUndo.canUndo) return;
+    final entry = _songUndo.popUndoSwap(_songArrangementJson());
+    if (entry == null) return;
+    _restoreArrangementFromJson(entry.json);
+    notifyListeners();
+  }
+
+  /// Redo the most recently undone arrangement mutation.
+  void redoSong() {
+    if (!_songUndo.canRedo) return;
+    final entry = _songUndo.popRedoSwap(_songArrangementJson());
+    if (entry == null) return;
+    _restoreArrangementFromJson(entry.json);
+    notifyListeners();
+  }
+
+  /// Wipe every cell on every track in the current pattern. Leaves beats /
+  /// LPB / per-beat overrides / mixer settings / fx envelopes alone.
+  void clearCurrentPatternCells() {
+    _pushPatternUndo('clear pattern');
+    final p = currentPattern;
+    for (final t in p.tracks) {
+      for (int r = 0; r < t.cells.length; r++) {
+        t.cells[r] = TrackerCell.empty();
+      }
+    }
+    _clampSelectionToPattern();
+    notifyListeners();
+  }
+
+  /// Wipe cells AND reset bpm / beats / lpb / per-beat overrides / fx
+  /// envelopes to defaults. Mixer settings on the tracks stay untouched.
+  void resetCurrentPatternToDefaults() {
+    _pushPatternUndo('reset pattern');
+    final p = currentPattern;
+    p.bpm = 120.0;
+    p.beats = kDefaultBeats;
+    p.linesPerBeat = kDefaultLinesPerBeat;
+    p.beatLineOverrides
+      ..clear()
+      ..addAll(List<int?>.filled(kDefaultBeats, null, growable: true));
+    p.fxEnvelopes.clear();
+    p.syncTrackLengths();
+    for (final t in p.tracks) {
+      for (int r = 0; r < t.cells.length; r++) {
+        t.cells[r] = TrackerCell.empty();
+      }
+    }
     _clampSelectionToPattern();
     _restartPlayheadTimerIfNeeded();
     notifyListeners();
@@ -3101,16 +3390,15 @@ class AppState extends ChangeNotifier {
   }
 
   /// Builds the scheduled row list for the current pattern from [startRow].
-  /// Pure Dart computation — no channel calls.
+  /// Pure Dart computation — no channel calls and no song mutation, so we
+  /// just save/restore the playhead + carry state instead of deep-cloning the
+  /// whole song on every loop boundary (was ~5–20 ms of GC pressure per pass).
   List<_ScheduledPlaybackRow> _buildScheduledRows({int startRow = 0}) {
-    final originalSong = song;
     final originalPlayheadRow = playheadRow;
-    final clonedSong = SongModel.fromJson(song.toJson());
-    final pattern = clonedSong.patterns[_currentPatternIndex];
+    final pattern = song.patterns[_currentPatternIndex];
     final safeStartRow = startRow.clamp(0, pattern.rowCount - 1);
     final scheduledRows = <_ScheduledPlaybackRow>[];
 
-    song = clonedSong;
     _resetInstrumentCarry();
     for (int row = 0; row < safeStartRow; row++) {
       playheadRow = row;
@@ -3122,7 +3410,6 @@ class AppState extends ChangeNotifier {
       scheduledRows.add(_triggerCurrentRow());
     }
 
-    song = originalSong;
     playheadRow = originalPlayheadRow;
     _resetInstrumentCarry();
     return scheduledRows;
@@ -3222,25 +3509,22 @@ class AppState extends ChangeNotifier {
   }) async {
     if (song.patterns.isEmpty) return;
 
-    final originalSong = song;
     final originalPlayheadRow = playheadRow;
     final originalPlayheadSlot = _playheadArrangementSlot;
-    final clonedSong = SongModel.fromJson(song.toJson());
 
     final rowMap = <({int arrangementSlot, int rowWithinSlot})>[];
     final scheduledRows = <_ScheduledPlaybackRow>[];
 
-    // Swap in clone so _triggerCurrentRow reads from it.
-    song = clonedSong;
+    // No song clone needed — _triggerCurrentRow is pure w.r.t. song data.
     _resetInstrumentCarry();
 
     // Build carry state by simulating rows before the start position.
     for (
       int slotIdx = 0;
-      slotIdx < startSlot && slotIdx < clonedSong.patterns.length;
+      slotIdx < startSlot && slotIdx < song.patterns.length;
       slotIdx++
     ) {
-      final pat = clonedSong.patterns[slotIdx];
+      final pat = song.patterns[slotIdx];
       if (pat.isEmpty) break;
       for (int row = 0; row < pat.rowCount; row++) {
         _playheadArrangementSlot = slotIdx;
@@ -3248,8 +3532,8 @@ class AppState extends ChangeNotifier {
         _triggerCurrentRow();
       }
     }
-    if (startSlot < clonedSong.patterns.length) {
-      final pat = clonedSong.patterns[startSlot];
+    if (startSlot < song.patterns.length) {
+      final pat = song.patterns[startSlot];
       final safeStart = startRow.clamp(0, pat.rowCount - 1);
       for (int row = 0; row < safeStart; row++) {
         _playheadArrangementSlot = startSlot;
@@ -3261,10 +3545,10 @@ class AppState extends ChangeNotifier {
     // Enqueue rows from (startSlot, startRow) to end of song.
     for (
       int slotIdx = startSlot;
-      slotIdx < clonedSong.patterns.length;
+      slotIdx < song.patterns.length;
       slotIdx++
     ) {
-      final pat = clonedSong.patterns[slotIdx];
+      final pat = song.patterns[slotIdx];
       if (slotIdx > startSlot && pat.isEmpty) break; // stop marker
       final firstRow = (slotIdx == startSlot)
           ? startRow.clamp(0, pat.rowCount - 1)
@@ -3275,14 +3559,13 @@ class AppState extends ChangeNotifier {
         rowMap.add((arrangementSlot: slotIdx, rowWithinSlot: row));
         scheduledRows.add(_triggerCurrentRow());
       }
-      if (slotIdx + 1 >= clonedSong.patterns.length ||
-          clonedSong.patterns[slotIdx + 1].isEmpty) {
+      if (slotIdx + 1 >= song.patterns.length ||
+          song.patterns[slotIdx + 1].isEmpty) {
         break;
       }
     }
 
     // Restore state.
-    song = originalSong;
     playheadRow = originalPlayheadRow;
     _playheadArrangementSlot = originalPlayheadSlot;
     _resetInstrumentCarry();
@@ -3449,32 +3732,12 @@ class AppState extends ChangeNotifier {
     }
 
     if (_carryPatternIndex != patternIdx ||
-        _carryInstrumentByTrack.length != pattern.tracks.length ||
+        _trackCarry.length != pattern.tracks.length ||
         playheadRow == 0) {
       _carryPatternIndex = patternIdx;
-      _carryInstrumentByTrack = List<int>.filled(pattern.tracks.length, 0);
-      _carryNoteByTrack = List<int?>.filled(pattern.tracks.length, null);
-      _carryVolumeByTrack = List<int?>.filled(pattern.tracks.length, null);
-      _carryVibSpeedByTrack = List<double?>.filled(pattern.tracks.length, null);
-      _carryVibDepthByTrack = List<double?>.filled(pattern.tracks.length, null);
-      _carryVolFxByTrack = List<int?>.filled(pattern.tracks.length, null);
-      _carryPanFxByTrack = List<int?>.filled(pattern.tracks.length, null);
-      _carryTreSpeedByTrack = List<double?>.filled(pattern.tracks.length, null);
-      _carryTreDepthByTrack = List<double?>.filled(pattern.tracks.length, null);
-      _carryTreModeByTrack = List<int?>.filled(pattern.tracks.length, null);
-      _carryArpByTrack =
-          List<({List<int> cycle, int notesPerLine, int phase})?>.filled(
-            pattern.tracks.length,
-            null,
-          );
-      _carrySlideByTrack =
-          List<({int startNote, int endNote, int totalLines, int linesElapsed})?>.filled(
-            pattern.tracks.length,
-            null,
-          );
-      _carryInstrumentParamsByTrack = List<Map<int, int>>.generate(
+      _trackCarry = List<_TrackCarry>.generate(
         pattern.tracks.length,
-        (_) => {},
+        (_) => _TrackCarry(),
       );
     }
 
@@ -3515,13 +3778,13 @@ class AppState extends ChangeNotifier {
     bool anyImmediateKill = false;
     for (int t = 0; t < pattern.tracks.length; t++) {
       final track = pattern.tracks[t];
-      var currentSlot = _carryInstrumentByTrack[t];
+      var currentSlot = _trackCarry[t].instrument;
       int noteCmd = -1;
-      int volCmd = (_carryVolFxByTrack.length > t && _carryVolFxByTrack[t] != null)
-          ? _carryVolFxByTrack[t]!
+      int volCmd = (_trackCarry.length > t && _trackCarry[t].volFx != null)
+          ? _trackCarry[t].volFx!
           : (track.mixerVolume.clamp(0.0, 1.0) * 255).round();
-      int panCmd = (_carryPanFxByTrack.length > t && _carryPanFxByTrack[t] != null)
-          ? _carryPanFxByTrack[t]!
+      int panCmd = (_trackCarry.length > t && _trackCarry[t].panFx != null)
+          ? _trackCarry[t].panFx!
           : (((track.mixerPan.clamp(-1.0, 1.0) + 1.0) / 2.0) * 255).round();
       int waveCmd = _waveCodeForInstrumentSlot(currentSlot);
       int instrumentTypeCmd = _instrumentTypeCodeForSlot(currentSlot);
@@ -3537,18 +3800,18 @@ class AppState extends ChangeNotifier {
       int?
       ranChancePct; // RAN: if set, % chance to override slice with random active slice
       bool samplerReverse = false; // REV: play sample/slice backward
-      double? vibSpeedNorm = _carryVibSpeedByTrack.length > t
-          ? _carryVibSpeedByTrack[t]
+      double? vibSpeedNorm = _trackCarry.length > t
+          ? _trackCarry[t].vibSpeed
           : null;
-      double? vibDepthNorm = _carryVibDepthByTrack.length > t
-          ? _carryVibDepthByTrack[t]
+      double? vibDepthNorm = _trackCarry.length > t
+          ? _trackCarry[t].vibDepth
           : null;
       double? treSpeedNorm =
-          _carryTreSpeedByTrack.length > t ? _carryTreSpeedByTrack[t] : null;
+          _trackCarry.length > t ? _trackCarry[t].treSpeed : null;
       double? treDepthNorm =
-          _carryTreDepthByTrack.length > t ? _carryTreDepthByTrack[t] : null;
+          _trackCarry.length > t ? _trackCarry[t].treDepth : null;
       int? treMode =
-          _carryTreModeByTrack.length > t ? _carryTreModeByTrack[t] : null;
+          _trackCarry.length > t ? _trackCarry[t].treMode : null;
       int retrigVolumeMode = 0;
       int retrigNotesPerLine = 0;
       int arpInterval1 = -1;
@@ -3565,7 +3828,7 @@ class AppState extends ChangeNotifier {
         if (cell.instrument != null && cell.instrument! > 0) {
           // Explicit instrument 01-99: switch slot and update carry.
           currentSlot = (cell.instrument! - 1).clamp(0, instruments.length - 1);
-          _carryInstrumentByTrack[t] = currentSlot;
+          _trackCarry[t].instrument = currentSlot;
           waveCmd = _waveCodeForInstrumentSlot(currentSlot);
           instrumentTypeCmd = _instrumentTypeCodeForSlot(currentSlot);
           synthParams = _synthParamsForInstrumentSlot(currentSlot);
@@ -3586,13 +3849,13 @@ class AppState extends ChangeNotifier {
 
         if (noteCmd == -2) {
           // Note-off clears per-note FX carries for this track.
-          _carryVibSpeedByTrack[t] = null;
-          _carryVibDepthByTrack[t] = null;
-          _carryVolFxByTrack[t] = null;
-          _carryPanFxByTrack[t] = null;
-          _carryTreSpeedByTrack[t] = null;
-          _carryTreDepthByTrack[t] = null;
-          _carryTreModeByTrack[t] = null;
+          _trackCarry[t].vibSpeed = null;
+          _trackCarry[t].vibDepth = null;
+          _trackCarry[t].volFx = null;
+          _trackCarry[t].panFx = null;
+          _trackCarry[t].treSpeed = null;
+          _trackCarry[t].treDepth = null;
+          _trackCarry[t].treMode = null;
         }
 
         // Proxy note shorthand for samplers: C-0..G#0 trigger slices 1..9.
@@ -3613,13 +3876,13 @@ class AppState extends ChangeNotifier {
 
         if (cell.volume != null) {
           volCmd = ui99ToAudio255(cell.volume!);
-          _carryVolumeByTrack[t] = volCmd;
+          _trackCarry[t].volume = volCmd;
         }
 
         for (final fx in cell.fxSlots) {
           if (fx.command == kFxPAN && fx.value != null) {
             panCmd = ui99ToAudio255(fx.value!.clamp(0, 99));
-            _carryPanFxByTrack[t] = panCmd;
+            _trackCarry[t].panFx = panCmd;
           }
           if (fx.command == kFxDEL && fx.value != null) {
             delayPct = fx.value!.clamp(0, 99);
@@ -3644,7 +3907,7 @@ class AppState extends ChangeNotifier {
           }
           if (fx.command == kFxVOL && fx.value != null) {
             volCmd = ui99ToAudio255(fx.value!.clamp(0, 99));
-            _carryVolFxByTrack[t] = volCmd;
+            _trackCarry[t].volFx = volCmd;
           }
           if (fx.command == kFxVIB && fx.value != null) {
             // XY: X = speed (tens digit, 0-9), Y = depth (ones digit, 0-9).
@@ -3654,8 +3917,8 @@ class AppState extends ChangeNotifier {
             vibSpeedNorm = x / 9.0;
             vibDepthNorm = y / 9.0;
             // Carry VIB so it persists on subsequent hold rows.
-            _carryVibSpeedByTrack[t] = vibSpeedNorm;
-            _carryVibDepthByTrack[t] = vibDepthNorm;
+            _trackCarry[t].vibSpeed = vibSpeedNorm;
+            _trackCarry[t].vibDepth = vibDepthNorm;
           }
           if ((fx.command == kFxTRE || fx.command == kFxGAT) &&
               fx.value != null) {
@@ -3667,9 +3930,9 @@ class AppState extends ChangeNotifier {
             treDepthNorm = y / 9.0;
             treMode = fx.command == kFxTRE ? 1 : 2; // 1=sine, 2=square
             // Carry TRE/GAT so it persists on subsequent hold rows.
-            _carryTreSpeedByTrack[t] = treSpeedNorm;
-            _carryTreDepthByTrack[t] = treDepthNorm;
-            _carryTreModeByTrack[t] = treMode;
+            _trackCarry[t].treSpeed = treSpeedNorm;
+            _trackCarry[t].treDepth = treDepthNorm;
+            _trackCarry[t].treMode = treMode;
           }
           if (fx.command == kFxRET) {
             final value = (fx.value ?? 0).clamp(0, 99);
@@ -3693,7 +3956,7 @@ class AppState extends ChangeNotifier {
               fx.value != null) {
             final slideBase = noteCmd >= 0
                 ? noteCmd
-                : (_carryNoteByTrack.length > t ? _carryNoteByTrack[t] : null);
+                : (_trackCarry.length > t ? _trackCarry[t].note : null);
             if (slideBase != null) {
               final xy = fx.value!.clamp(1, 99);
               final lines = (xy ~/ 10).clamp(1, 9);
@@ -3757,15 +4020,15 @@ class AppState extends ChangeNotifier {
           // Pxx: instrument parameter automation.
           if (isPParamCommand(fx.command)) {
             final idx = pParamIndex(fx.command!);
-            while (_carryInstrumentParamsByTrack.length <= t) {
-              _carryInstrumentParamsByTrack.add({});
+            while (_trackCarry.length <= t) {
+              _trackCarry.add(_TrackCarry());
             }
             if (idx == 0) {
               // P00: reset — clear all overrides for this track.
-              _carryInstrumentParamsByTrack[t].clear();
+              _trackCarry[t].instrumentParams.clear();
             } else if (fx.value != null) {
               final val = fx.value!.clamp(0, 99);
-              _carryInstrumentParamsByTrack[t][idx] = val;
+              _trackCarry[t].instrumentParams[idx] = val;
             }
           }
         }
@@ -3834,15 +4097,15 @@ class AppState extends ChangeNotifier {
       }
 
       if (noteCmd >= 0) {
-        _carryNoteByTrack[t] = noteCmd;
-        _carryVolumeByTrack[t] = volCmd;
+        _trackCarry[t].note = noteCmd;
+        _trackCarry[t].volume = volCmd;
       } else if (noteCmd == -2) {
-        _carryNoteByTrack[t] = null;
-        _carryVolumeByTrack[t] = null;
+        _trackCarry[t].note = null;
+        _trackCarry[t].volume = null;
       }
 
-      final retBaseNote = _carryNoteByTrack[t];
-      final retBaseVolume = _carryVolumeByTrack[t] ?? volCmd;
+      final retBaseNote = _trackCarry[t].note;
+      final retBaseVolume = _trackCarry[t].volume ?? volCmd;
       if (retrigNotesPerLine > 0 &&
           noteCmd == -1 &&
           retBaseNote != null &&
@@ -3857,11 +4120,11 @@ class AppState extends ChangeNotifier {
         // Note or hold row with slide FX: (re)start the slide carry.
         final startNote = noteCmd >= 0
             ? noteCmd
-            : (_carryNoteByTrack.length > t
-                ? (_carryNoteByTrack[t] ?? pendingSlide.endNote)
+            : (_trackCarry.length > t
+                ? (_trackCarry[t].note ?? pendingSlide.endNote)
                 : pendingSlide.endNote);
-        if (t < _carrySlideByTrack.length) {
-          _carrySlideByTrack[t] = (
+        if (t < _trackCarry.length) {
+          _trackCarry[t].slide = (
             startNote: startNote,
             endNote: pendingSlide.endNote,
             totalLines: pendingSlide.totalLines,
@@ -3870,13 +4133,13 @@ class AppState extends ChangeNotifier {
         }
       } else if (noteCmd == -2 || noteCmd >= 0) {
         // Note-off or new note without slide: cancel any active slide.
-        if (t < _carrySlideByTrack.length) _carrySlideByTrack[t] = null;
+        if (t < _trackCarry.length) _trackCarry[t].slide = null;
       } else if (noteCmd == -1 &&
-          t < _carrySlideByTrack.length &&
-          _carrySlideByTrack[t] != null &&
+          t < _trackCarry.length &&
+          _trackCarry[t].slide != null &&
           !isMixerMuted) {
         // Hold row with active slide.
-        final slide = _carrySlideByTrack[t]!;
+        final slide = _trackCarry[t].slide!;
         final nextElapsed = slide.linesElapsed + 1;
         if (slide.linesElapsed == 0) {
           // First hold row: queue a linear pitch ramp spanning the full slide
@@ -3889,7 +4152,7 @@ class AppState extends ChangeNotifier {
           ));
         }
         // noteCmd stays -1 (hold); the C++ ramp drives pitch continuously.
-        _carrySlideByTrack[t] = nextElapsed >= slide.totalLines
+        _trackCarry[t].slide = nextElapsed >= slide.totalLines
             ? null
             : (
                 startNote: slide.startNote,
@@ -3904,12 +4167,12 @@ class AppState extends ChangeNotifier {
       // currently sustaining note (using the carry note as the base pitch).
       final midNoteArp = arpInterval1 >= 0 &&
           noteCmd == -1 &&
-          _carryNoteByTrack.length > t &&
-          _carryNoteByTrack[t] != null &&
+          _trackCarry.length > t &&
+          _trackCarry[t].note != null &&
           !isMixerMuted;
       if (arpInterval1 >= 0 && (noteCmd >= 0 || midNoteArp)) {
         // New note or mid-note hold row with ARP: (re)start the carry.
-        final baseNote = noteCmd >= 0 ? noteCmd : _carryNoteByTrack[t]!;
+        final baseNote = noteCmd >= 0 ? noteCmd : _trackCarry[t].note!;
         final layers = arcOctaveLayers > 0 ? arcOctaveLayers : 1;
         final cycle = <int>[];
         for (int oct = 0; oct < layers; oct++) {
@@ -3921,25 +4184,25 @@ class AppState extends ChangeNotifier {
         final notesPerLine = arcNotesPerLine > 0
             ? arcNotesPerLine
             : cycle.length;
-        _carryArpByTrack[t] = (
+        _trackCarry[t].arp = (
           cycle: List<int>.unmodifiable(cycle),
           notesPerLine: notesPerLine,
           phase: 0,
         );
-        pendingArp[t] = _carryArpByTrack[t]!;
+        pendingArp[t] = _trackCarry[t].arp!;
         if (midNoteArp) {
           // Fire the first ARP pitch immediately as a pitch-only update.
           noteCmd = pitchOnlyNoteCmd(cycle[0]);
         }
       } else if (noteCmd == -2 || noteCmd >= 0) {
         // Note-off or new note without ARP: clear carry.
-        _carryArpByTrack[t] = null;
+        _trackCarry[t].arp = null;
       } else if (noteCmd == -1 &&
-          _carryArpByTrack[t] != null &&
+          _trackCarry[t].arp != null &&
           !isMixerMuted) {
         // Held empty line with active carry: continue the ARP phase instead of
         // restarting from the first note.
-        final carry = _carryArpByTrack[t]!;
+        final carry = _trackCarry[t].arp!;
         noteCmd = pitchOnlyNoteCmd(
           carry.cycle[carry.phase % carry.cycle.length],
         );
@@ -4012,7 +4275,10 @@ class AppState extends ChangeNotifier {
       if (song.masterMute) {
         finalNote = -1;
       } else if (volCmd > 0) {
-        finalVol = (volCmd * song.masterVolume).round().clamp(0, 255);
+        // Only attenuation is baked into the per-note vol byte; gain >1.0 is
+        // applied solely by the native master-gain stage so it isn't doubled.
+        final atten = song.masterVolume < 1.0 ? song.masterVolume : 1.0;
+        finalVol = (volCmd * atten).round().clamp(0, 255);
       }
 
       // Queue delayed note if applicable. C++ will convert delayPct to sample offset.
@@ -4034,10 +4300,30 @@ class AppState extends ChangeNotifier {
     // Calculate line duration in samples for DEL/KIL timing.
     // 48000 Hz matches the Oboe stream sample rate.
     const int kSampleRate = 48000;
-    final int lineSamples =
+    final int baseLineSamples =
         (_lineDurationForPatternRow(pattern, playheadRow).inMicroseconds *
             kSampleRate) ~/
         1000000;
+
+    // Apply per-pattern swing: odd-indexed lines within a beat (0-based
+    // positions 1, 3, 5 … i.e. the 2nd, 4th, 6th lines) are pushed later by
+    // swingDelta samples; the preceding even-indexed line grows by the same
+    // amount so beat boundaries never drift.
+    final int lineSamples;
+    final double patSwing = pattern.swing;
+    if (patSwing > 0.0) {
+      final int posInBeat = pattern.rowWithinBeat(playheadRow);
+      final int swingDelta = (patSwing / 100.0 * baseLineSamples).round();
+      if (posInBeat % 2 == 0) {
+        // Even-indexed (1st, 3rd… lines): grows longer
+        lineSamples = baseLineSamples + swingDelta;
+      } else {
+        // Odd-indexed (2nd, 4th… lines): compensates by being shorter
+        lineSamples = (baseLineSamples - swingDelta).clamp(1, baseLineSamples);
+      }
+    } else {
+      lineSamples = baseLineSamples;
+    }
 
     if (pendingArp.isNotEmpty) {
       pendingArp.forEach((trackIdx, cfg) {
@@ -4045,9 +4331,9 @@ class AppState extends ChangeNotifier {
           final int midi = cfg.cycle[(cfg.phase + step) % cfg.cycle.length];
           arpQueue.addAll([step, cfg.notesPerLine, trackIdx, midi]);
         }
-        final carry = _carryArpByTrack[trackIdx];
+        final carry = _trackCarry[trackIdx].arp;
         if (carry != null) {
-          _carryArpByTrack[trackIdx] = (
+          _trackCarry[trackIdx].arp = (
             cycle: carry.cycle,
             notesPerLine: carry.notesPerLine,
             phase: (carry.phase + carry.notesPerLine) % carry.cycle.length,
@@ -5257,6 +5543,12 @@ class AppState extends ChangeNotifier {
       _autosaveEnabled = autosave;
       _rescheduleAutosaveTimer();
 
+      // Master safety limiter: defaults to enabled. Push the saved value to
+      // the native engine so its runtime state matches the persisted setting.
+      _masterLimiterEnabled = j['masterLimiterEnabled'] as bool? ?? true;
+      unawaited(AudioEngine.instance
+          .setMasterLimiterEnabled(_masterLimiterEnabled));
+
       // Restore the last open song automatically.
       final lastSong = j['lastOpenSongName'] as String?;
       if (lastSong != null && lastSong.isNotEmpty && hasProjectRootFolder) {
@@ -5281,6 +5573,7 @@ class AppState extends ChangeNotifier {
         'projectRootFolder': _projectRootFolder,
         'projectRootTreeUri': _projectRootTreeUri,
         'autosaveEnabled': _autosaveEnabled,
+        'masterLimiterEnabled': _masterLimiterEnabled,
         'lastOpenSongName': song.name,
       });
       await file.writeAsString(payload, flush: true);
@@ -5295,6 +5588,16 @@ class AppState extends ChangeNotifier {
     _rescheduleAutosaveTimer();
     await _saveAppSettings();
     _notifyListenersSafe();
+  }
+
+  /// Toggle the always-on master safety limiter. Setting persists across
+  /// sessions; the native engine is updated immediately.
+  Future<void> setMasterLimiterEnabled(bool enabled) async {
+    if (_masterLimiterEnabled == enabled) return;
+    _masterLimiterEnabled = enabled;
+    await AudioEngine.instance.setMasterLimiterEnabled(enabled);
+    _notifyListenersSafe();
+    await _saveAppSettings();
   }
 
   void _rescheduleAutosaveTimer() {

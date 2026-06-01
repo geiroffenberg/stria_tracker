@@ -262,6 +262,24 @@ Java_com_metamind_stria_AudioEnginePlugin_nativeSetMasterInsertBypass(
 }
 
 JNIEXPORT void JNICALL
+Java_com_metamind_stria_AudioEnginePlugin_nativeSetMasterLimiterEnabled(
+        JNIEnv*, jobject, jlong ptr, jboolean enabled) {
+    reinterpret_cast<AudioEngine*>(ptr)->setMasterLimiterEnabled(enabled);
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_metamind_stria_AudioEnginePlugin_nativeIsMasterLimiterEnabled(
+        JNIEnv*, jobject, jlong ptr) {
+    return reinterpret_cast<AudioEngine*>(ptr)->isMasterLimiterEnabled() ? JNI_TRUE : JNI_FALSE;
+}
+
+JNIEXPORT void JNICALL
+Java_com_metamind_stria_AudioEnginePlugin_nativeSetMasterVolumeLinear(
+        JNIEnv*, jobject, jlong ptr, jfloat linearGain) {
+    reinterpret_cast<AudioEngine*>(ptr)->setMasterVolumeLinear(linearGain);
+}
+
+JNIEXPORT void JNICALL
 Java_com_metamind_stria_AudioEnginePlugin_nativeSetMasterReverbParams(
         JNIEnv* env, jobject, jlong ptr, jint slotIdx, jfloat roomSize, jfloat damp, jfloat width, jboolean freeze) {
     reinterpret_cast<AudioEngine*>(ptr)->setMasterReverbParams(slotIdx, roomSize, damp, width, freeze);

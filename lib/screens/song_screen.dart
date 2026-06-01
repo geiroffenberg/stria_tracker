@@ -50,11 +50,8 @@ class _SongScreenState extends State<SongScreen> {
   final _nameFocus = FocusNode();
   bool _syncing = false;
   bool _editingName = false;
-  bool _showLoadMenu = false;
-  bool _loadingSongNames = false;
   bool _saveAfterRename = false;
   int? _selectedPatternIndex;
-  List<String> _savedSongNames = const [];
 
   static const double kSlotSize = 64.0;
   static const double kSlotGap = 6.0;
@@ -378,7 +375,38 @@ class _SongScreenState extends State<SongScreen> {
                   onTap: () => _startRename(state),
                   child: Icon(Icons.edit, size: 22, color: Colors.white54),
                 ),
-                const SizedBox(width: 8),
+                const SizedBox(width: 4),
+                IconButton(
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                  icon: Icon(
+                    Icons.undo,
+                    size: 22,
+                    color: state.canUndoSong ? kColAccent : kColInactive,
+                  ),
+                  tooltip: state.undoSongLabel != null
+                      ? 'Undo: ${state.undoSongLabel}'
+                      : 'Nothing to undo',
+                  onPressed: state.canUndoSong
+                      ? () => state.undoSong()
+                      : null,
+                ),
+                IconButton(
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                  icon: Icon(
+                    Icons.redo,
+                    size: 22,
+                    color: state.canRedoSong ? kColAccent : kColInactive,
+                  ),
+                  tooltip: state.redoSongLabel != null
+                      ? 'Redo: ${state.redoSongLabel}'
+                      : 'Nothing to redo',
+                  onPressed: state.canRedoSong
+                      ? () => state.redoSong()
+                      : null,
+                ),
+                const SizedBox(width: 4),
                 PopupMenuButton<_SongMenuAction>(
                   tooltip: 'Song actions',
                   color: kBgTrackHeader,
@@ -495,62 +523,7 @@ class _SongScreenState extends State<SongScreen> {
                 ),
               ],
             ),
-          if (_showLoadMenu) ...[
-            const SizedBox(height: 8),
-            Container(
-              padding: const EdgeInsets.symmetric(vertical: 4),
-              decoration: BoxDecoration(
-                color: kBgTrackHeader,
-                border: Border.all(color: kColInactive.withAlpha(120)),
-                borderRadius: BorderRadius.circular(4),
-              ),
-              child: _loadingSongNames
-                  ? Padding(
-                      padding: const EdgeInsets.all(8),
-                      child: Text(
-                        'Loading songs...',
-                        style: kStyleHeader.copyWith(
-                          color: kColInactive,
-                          fontSize: 11,
-                        ),
-                      ),
-                    )
-                  : _savedSongNames.isEmpty
-                  ? Padding(
-                      padding: const EdgeInsets.all(8),
-                      child: Text(
-                        'No saved songs',
-                        style: kStyleHeader.copyWith(
-                          color: kColInactive,
-                          fontSize: 11,
-                        ),
-                      ),
-                    )
-                  : Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: _savedSongNames
-                          .map(
-                            (name) => GestureDetector(
-                              onTap: () => _loadFromName(ctx, state, name),
-                              child: Padding(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 8,
-                                  vertical: 7,
-                                ),
-                                child: Text(
-                                  name,
-                                  style: kStyleHeader.copyWith(
-                                    color: kColAccent,
-                                    fontSize: 12,
-                                  ),
-                                ),
-                              ),
-                            ),
-                          )
-                          .toList(),
-                    ),
-            ),
-          ],
+
         ],
       ),
     );
@@ -560,7 +533,6 @@ class _SongScreenState extends State<SongScreen> {
     _nameCtrl.text = state.song.name == 'New Song' ? '' : state.song.name;
     setState(() {
       _editingName = true;
-      _showLoadMenu = false;
     });
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _nameFocus.requestFocus();
@@ -594,7 +566,6 @@ class _SongScreenState extends State<SongScreen> {
     if (!ctx.mounted) return;
     setState(() {
       _editingName = false;
-      _showLoadMenu = false;
       _selectedPatternIndex = null;
     });
     ScaffoldMessenger.of(ctx).showSnackBar(
@@ -706,7 +677,99 @@ class _SongScreenState extends State<SongScreen> {
   Future<void> _handleLoadMenu(BuildContext ctx, AppState state) async {
     final ready = await _ensureProjectFolder(ctx, state);
     if (!ready || !mounted) return;
-    _toggleLoadMenu(state);
+    await _showLoadBottomSheet(ctx, state);
+  }
+
+  Future<void> _showLoadBottomSheet(BuildContext ctx, AppState state) async {
+    List<String> names = [];
+    bool loading = true;
+
+    await showModalBottomSheet<void>(
+      context: ctx,
+      backgroundColor: kBgTrackHeader,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (sheetCtx) => StatefulBuilder(
+        builder: (sheetCtx, setSheetState) {
+          // Kick off load on first build.
+          if (loading) {
+            state.listSavedSongs().then((result) {
+              if (sheetCtx.mounted) {
+                setSheetState(() {
+                  names = result;
+                  loading = false;
+                });
+              }
+            });
+          }
+
+          return Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  'Load Song',
+                  style: TextStyle(
+                    color: kColAccent,
+                    fontSize: 18,
+                    fontWeight: FontWeight.w700,
+                    fontFamily: kFontMono,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                if (loading)
+                  const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 24),
+                    child: Center(child: CircularProgressIndicator()),
+                  )
+                else if (names.isEmpty)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 24),
+                    child: Center(
+                      child: Text(
+                        'No saved songs found.',
+                        style: TextStyle(color: kColInactive, fontSize: 15),
+                      ),
+                    ),
+                  )
+                else
+                  ConstrainedBox(
+                    constraints: const BoxConstraints(maxHeight: 360),
+                    child: ListView.separated(
+                      shrinkWrap: true,
+                      itemCount: names.length,
+                      separatorBuilder: (_, __) =>
+                          Divider(height: 1, color: kColInactive.withAlpha(80)),
+                      itemBuilder: (_, i) => InkWell(
+                        onTap: () {
+                          Navigator.of(sheetCtx).pop();
+                          _loadFromName(ctx, state, names[i]);
+                        },
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 4,
+                            vertical: 14,
+                          ),
+                          child: Text(
+                            names[i],
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 17,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
   }
 
   Future<void> _handleChooseProjectFolder(
@@ -715,7 +778,6 @@ class _SongScreenState extends State<SongScreen> {
   ) async {
     final picked = await state.chooseProjectRootFolder();
     if (!ctx.mounted || picked == null) return;
-    setState(() => _showLoadMenu = false);
     ScaffoldMessenger.of(ctx).showSnackBar(
       const SnackBar(
         content: Text('Project folder updated.'),
@@ -879,24 +941,6 @@ class _SongScreenState extends State<SongScreen> {
     );
   }
 
-  Future<void> _toggleLoadMenu(AppState state) async {
-    if (_showLoadMenu) {
-      setState(() => _showLoadMenu = false);
-      return;
-    }
-    setState(() {
-      _editingName = false;
-      _loadingSongNames = true;
-      _showLoadMenu = true;
-    });
-    final names = await state.listSavedSongs();
-    if (!mounted) return;
-    setState(() {
-      _savedSongNames = names;
-      _loadingSongNames = false;
-    });
-  }
-
   Future<void> _loadFromName(
     BuildContext ctx,
     AppState state,
@@ -904,7 +948,6 @@ class _SongScreenState extends State<SongScreen> {
   ) async {
     final ok = await state.loadSongByName(name);
     if (!ctx.mounted) return;
-    setState(() => _showLoadMenu = false);
     final failReason = state.lastLoadError;
     ScaffoldMessenger.of(ctx).showSnackBar(
       SnackBar(

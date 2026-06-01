@@ -2604,6 +2604,118 @@ class _SamplerEditorState extends State<_SamplerEditor>
     );
   }
 
+  // ── FILTER card (HP → LP in series, with ON/OFF bypass) ────────────────────
+  Widget _buildFilterEditor(SamplerParams p) {
+    Widget labeledSlider({
+      required String label,
+      required double value,
+      required ValueChanged<double> onChanged,
+    }) {
+      final pct = (value * 100).round();
+      return Row(
+        children: [
+          SizedBox(
+            width: 64,
+            child: Text(
+              label,
+              style: kStyleHeader.copyWith(
+                fontSize: 11,
+                color: p.filterEnabled ? kColHeader : kColInactive,
+              ),
+            ),
+          ),
+          Expanded(
+            child: SliderTheme(
+              data: SliderTheme.of(context).copyWith(
+                activeTrackColor: p.filterEnabled
+                    ? kColComplement
+                    : kColInactive.withAlpha(60),
+                inactiveTrackColor: kColInactive.withAlpha(80),
+                thumbColor: p.filterEnabled ? kColComplement : kColInactive,
+                overlayShape: SliderComponentShape.noOverlay,
+              ),
+              child: Slider(
+                value: value.clamp(0.0, 1.0),
+                onChanged: p.filterEnabled
+                    ? (v) {
+                        onChanged(v.clamp(0.0, 1.0));
+                        state.instrumentParamsChanged();
+                      }
+                    : null,
+              ),
+            ),
+          ),
+          SizedBox(
+            width: 36,
+            child: Text(
+              '$pct',
+              textAlign: TextAlign.right,
+              style: kStyleHeader.copyWith(
+                fontSize: 11,
+                color: p.filterEnabled ? kColHeader : kColInactive,
+              ),
+            ),
+          ),
+        ],
+      );
+    }
+
+    return _Section(
+      title: 'FILTER',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              _OscOnOffButton(
+                on: p.filterEnabled,
+                onTap: () {
+                  setState(() => p.filterEnabled = !p.filterEnabled);
+                  state.instrumentParamsChanged();
+                },
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  p.filterEnabled
+                      ? 'HP → LP filter active'
+                      : 'Bypassed (zero CPU)',
+                  style: kStyleBase.copyWith(
+                    fontSize: 10,
+                    color: kColInactive,
+                    fontStyle: FontStyle.italic,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          labeledSlider(
+            label: 'HP CUT',
+            value: p.hpCutoff,
+            onChanged: (v) => p.hpCutoff = v,
+          ),
+          labeledSlider(
+            label: 'HP RES',
+            value: p.hpResonance,
+            onChanged: (v) => p.hpResonance = v,
+          ),
+          const SizedBox(height: 4),
+          labeledSlider(
+            label: 'LP CUT',
+            value: p.lpCutoff,
+            onChanged: (v) => p.lpCutoff = v,
+          ),
+          labeledSlider(
+            label: 'LP RES',
+            value: p.lpResonance,
+            onChanged: (v) => p.lpResonance = v,
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildSliceEditor(SamplerParams p) {
     return _Section(
       title: 'SLICES',
@@ -3227,6 +3339,7 @@ class _SamplerEditorState extends State<_SamplerEditor>
               ],
             ),
           ),
+          _buildFilterEditor(p),
         ],
       ),
     );

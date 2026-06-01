@@ -11,6 +11,12 @@
 #include "freeverb.h"
 
 static constexpr int kMaxVoices = 16; // one per track
+// Maximum audio callback burst size we pre-allocate for. Real Oboe burst on
+// modern Android devices is 96-256 frames; 1024 gives plenty of headroom and
+// guarantees we never reallocate buses inside the audio thread.
+static constexpr int kMaxAudioBurst = 1024;
+// Maximum Karplus-Strong delay line length (matches startKarplusVoice cap).
+static constexpr int kMaxKarplusBuf = 8192;
 
 enum class EnvelopeStage : int {
     Idle = 0,
@@ -129,6 +135,18 @@ struct Voice {
     float  sampleStartNorm   = 0.0f;
     float  sampleEndNorm     = 1.0f;
     float  sampleGain        = 1.0f;
+
+    // Sampler HP -> LP filter (in series). Bypassed entirely when samplerFilterOn == false.
+    bool   samplerFilterOn   = false;
+    float  samplerHpCutoff   = 0.0f;  // 0..1 (0 = bypass, 1 = closed)
+    float  samplerHpRes      = 0.0f;  // 0..1
+    float  samplerLpCutoff   = 1.0f;  // 0..1 (0 = closed, 1 = open / bypass)
+    float  samplerLpRes      = 0.0f;  // 0..1
+    // Chamberlin SVF state (one set per HP and LP, mono path).
+    float  samplerHpLow      = 0.0f;
+    float  samplerHpBand     = 0.0f;
+    float  samplerLpLow      = 0.0f;
+    float  samplerLpBand     = 0.0f;
 };
 
 struct SampleData {
@@ -443,6 +461,16 @@ public:
     void setMasterInsertMix(int slotIdx, float dryLevel, float wetLevel);
     void setMasterInsertBypass(int slotIdx, bool bypass);
 
+    /// Hidden always-on master safety limiter. Sits after master inserts to
+    /// prevent inter-sample peaks from clipping the DAC. Default enabled.
+    void setMasterLimiterEnabled(bool enabled);
+    bool isMasterLimiterEnabled() const;
+
+    /// Direct linear-gain master volume setter (bypasses the lossy 0..99
+    /// integer mixer-command transport). Accepts values above 1.0 so users
+    /// can intentionally drive the safety limiter for makeup-style gain.
+    void setMasterVolumeLinear(float linearGain);
+
     /// Configure reverb parameters on a master insert effect
     /// slotIdx: 0-5, roomSize: 0.0-1.0, damp: 0.0-1.0, width: 0.0-1.0
     void setMasterReverbParams(int slotIdx, float roomSize, float damp, float width, bool freeze);
@@ -604,6 +632,17 @@ private:
     std::atomic<bool>   mMasterMute{false};  // true = muted, false = unmuted
     std::atomic<float>  mMasterVolume{1.0f};   // 0.0-1.0, 1.0 = full volume
     float               mCachedSampleRate{48000.0f}; // updated on stream open
+
+    // ── Master safety limiter (look-ahead peak, soft knee, -0.3 dBFS ceiling).
+    // Always-on (toggleable) brick-wall sitting after master inserts. Prevents
+    // user mixes from clipping the DAC. ~1.5 ms lookahead via a ring buffer.
+    std::atomic<bool>   mMasterLimiterEnabled{true};
+    static constexpr int kMasterLimiterLookahead = 72; // ~1.5 ms @ 48 kHz
+    std::array<float, kMasterLimiterLookahead> mLimRingL{};
+    std::array<float, kMasterLimiterLookahead> mLimRingR{};
+    int    mLimWriteIdx{0};
+    float  mLimPeakEnv{0.0f};   // recent-peak envelope (1 ms release)
+    float  mLimGainEnv{1.0f};   // applied gain envelope (50 ms release)
     
     int32_t                  mSubRowSampleCounter = 0;
     int32_t                  mPlayheadSampleCounter = 0;
@@ -645,6 +684,9 @@ private:
     std::vector<float>               mMasterBusR;
     std::vector<float>               mFxWetL;
     std::vector<float>               mFxWetR;
+    // Pre-allocated scratch for preview-audition routing (bypasses inserts/master).
+    std::vector<float>               mPreviewDirectL;
+    std::vector<float>               mPreviewDirectR;
     mutable std::mutex               mMeterMutex;
     std::array<float, kMaxVoices>    mTrackMeterPeakL{};
     std::array<float, kMaxVoices>    mTrackMeterPeakR{};

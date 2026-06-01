@@ -164,6 +164,17 @@ Each slot represents one pattern. The song plays slots from top to bottom in seq
 | Duplicate | Insert a copy of the pattern directly below |
 | Delete | Remove the slot from the arrangement |
 
+### Undo / Redo
+
+The Song screen header contains two arrow buttons — **undo** (left) and **redo** (right) — next to the edit and menu icons.
+
+- Up to **50 undo steps** are stored per session.
+- Every song-level mutation is tracked: append pattern, insert pattern, move up/down, duplicate, merge, double, and delete.
+- The tooltip on each button shows what action would be undone or redone (e.g. "Undo: delete pattern").
+- Undo and redo apply only to the **arrangement** (pattern order, count, structure). Per-pattern note edits have their own separate undo stack accessible from the Pattern screen.
+
+> **Note:** The undo history is session-only — it is cleared when the project is reloaded.
+
 ### Menu
 
 The top-right menu provides:
@@ -172,7 +183,7 @@ The top-right menu provides:
 |---|---|
 | New Song | Clear everything and start fresh |
 | Save Song | Write the project to the project folder |
-| Load Song | Browse and open a saved project |
+| Load Song | Open a scrollable list of saved projects in a bottom sheet; tap a name to load |
 | Choose Project Folder | Set the root folder where projects are saved |
 | Export WAV | Bounce the full song to a stereo WAV file |
 | Change Palette | Cycle the colour theme |
@@ -295,6 +306,26 @@ The Sampler plays an audio file loaded from storage.
 | Release | 0–1 | Fade-out length |
 | Loop Mode | Off / Forward / Ping-pong | Looping behaviour |
 
+#### Filter (HP → LP)
+
+The FILTER section sits below PARAMS in the instrument editor. It inserts a **high-pass filter followed by a low-pass filter in series** on the sampler audio path.
+
+| Control | Description |
+|---|---|
+| ON / OFF toggle | Master bypass for the filter. When **OFF**, the filter uses zero CPU and the signal passes through unchanged. |
+| HP CUT | High-pass cutoff (0 = fully open / no filtering, 100 = fully closed). |
+| HP RES | High-pass resonance — adds a peak at the HP cutoff frequency (0 = flat, 100 = maximum). |
+| LP CUT | Low-pass cutoff (0 = fully closed, 100 = fully open / no filtering). |
+| LP RES | Low-pass resonance — adds a peak at the LP cutoff frequency (0 = flat, 100 = maximum). |
+
+Both stages use a Chamberlin state-variable filter (SVF). The SVF state is reset on each note-on to prevent audible thumps between notes.
+
+Each stage is also individually bypassed at the DSP level when its cutoff is at the fully-open extreme, so leaving HP CUT at 0 or LP CUT at 100 has no CPU cost even when the master toggle is ON.
+
+The filter parameters can be automated per-row using `Pxx` commands — see **Sampler Pxx — Parameter Automation** below.
+
+---
+
 #### Chop Operations
 
 Two buttons are available to extract audio regions into new instrument slots:
@@ -331,6 +362,29 @@ The first 9 chromatic notes of octave 0 are reserved as slice triggers on sample
 | G#0 | Slice 9 |
 
 Writing one of these notes on a sampler track is exactly equivalent to writing `C-4` with `FX: SLC VAL: 0N`. The sample always plays at normal (C4) pitch. To play the whole sample from start to end, use `C-4` or any note above `A#0`.
+
+---
+
+#### Sampler Pxx — Parameter Automation
+
+The `Pxx` command (where `P` stands for *param* and `xx` is a two-digit value 00–99) carries a parameter override into the sampler voice for that row. This works on both note rows and hold rows, letting you sweep sampler parameters over time without retriggering.
+
+| Index | FX command | Parameter | Notes |
+|---|---|---|---|
+| 00 | `P00` | Reset | Restore all params to the instrument's current slider values |
+| 01 | `P01` | Start | Sample playback start position |
+| 02 | `P02` | End | Sample playback end position |
+| 03 | `P03` | Pitch | Detune — 00 = −12 st, 50 = centre, 99 = +12 st |
+| 04 | `P04` | Volume | Instrument level (00 = silent, 99 = full) |
+| 05 | `P05` | Attack | Fade-in length (00 = instant, 99 = slowest) |
+| 06 | `P06` | Release | Fade-out length (00 = instant, 99 = slowest) |
+| 07 | `P07` | Loop | 00 = off, 01 = forward loop, 02 = ping-pong |
+| 08 | `P08` | HP Cut | High-pass cutoff (00 = open, 99 = closed). Filter must be ON. |
+| 09 | `P09` | HP Res | High-pass resonance (00–99). Filter must be ON. |
+| 10 | `P10` | LP Cut | Low-pass cutoff (00 = closed, 99 = open). Filter must be ON. |
+| 11 | `P11` | LP Res | Low-pass resonance (00–99). Filter must be ON. |
+
+Carried values persist until the next `Pxx` command for the same parameter, or until `P00` resets them all. Values are updated even when the filter toggle is OFF — flipping it on mid-song immediately picks up the last automated values.
 
 ---
 
@@ -644,7 +698,7 @@ Use **Song → Save Song** (or the menu icon). The project is written to `projec
 
 ### Loading
 
-Use **Song → Load Song** to browse saved projects. The app lists all subfolders that contain a `project.json` (or legacy `song.json`) file.
+Use **Song → Load Song** (menu or save/load panel) to open a scrollable bottom sheet listing all saved projects. Tap a project name to load it. The list shows every subfolder that contains a `project.json` (or legacy `song.json`) file.
 
 ### Project Folder
 

@@ -291,6 +291,26 @@ class AudioEngine {
     });
   }
 
+  /// Enable/disable the always-on master safety limiter (default: enabled).
+  /// The limiter sits after master inserts and prevents the final output from
+  /// clipping the DAC.
+  Future<void> setMasterLimiterEnabled(bool enabled) async {
+    if (!_initialised) return;
+    await _channel.invokeMethod('setMasterLimiterEnabled', {
+      'enabled': enabled,
+    });
+  }
+
+  /// Direct linear-gain master volume (bypasses the lossy 0..99 mixer-command
+  /// transport). Accepts values >1.0 so users can intentionally drive the
+  /// safety limiter for makeup-style gain.
+  Future<void> setMasterVolumeLinear(double gain) async {
+    if (!_initialised) return;
+    await _channel.invokeMethod('setMasterVolumeLinear', {
+      'gain': gain,
+    });
+  }
+
   /// Configure reverb parameters on a master insert effect.
   /// [roomSize], [damp], [width] are 0.0-1.0.
   Future<void> setMasterReverbParams(int slotIdx, double roomSize, double damp, double width, bool freeze) async {

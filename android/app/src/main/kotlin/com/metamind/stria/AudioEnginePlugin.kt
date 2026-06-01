@@ -291,6 +291,16 @@ class AudioEnginePlugin : FlutterPlugin, MethodCallHandler {
                 if (enginePtr != 0L) nativeSetMasterInsertBypass(enginePtr, slotIdx, bypass)
                 result.success(null)
             }
+            "setMasterLimiterEnabled" -> {
+                val enabled = call.argument<Boolean>("enabled") ?: true
+                if (enginePtr != 0L) nativeSetMasterLimiterEnabled(enginePtr, enabled)
+                result.success(null)
+            }
+            "setMasterVolumeLinear" -> {
+                val gain = call.argument<Double>("gain") ?: 1.0
+                if (enginePtr != 0L) nativeSetMasterVolumeLinear(enginePtr, gain.toFloat())
+                result.success(null)
+            }
             "setMasterReverbParams" -> {
                 val slotIdx = call.argument<Int>("slotIdx") ?: 0
                 val roomSize = call.argument<Double>("roomSize") ?: 0.5
@@ -675,6 +685,8 @@ class AudioEnginePlugin : FlutterPlugin, MethodCallHandler {
     private external fun nativeSetMasterInsertEffect(ptr: Long, slotIdx: Int, effectType: Int, dryWet: Float)
     private external fun nativeSetMasterInsertMix(ptr: Long, slotIdx: Int, dryLevel: Float, wetLevel: Float)
     private external fun nativeSetMasterInsertBypass(ptr: Long, slotIdx: Int, bypass: Boolean)
+    private external fun nativeSetMasterLimiterEnabled(ptr: Long, enabled: Boolean)
+    private external fun nativeSetMasterVolumeLinear(ptr: Long, gain: Float)
     private external fun nativeSetMasterReverbParams(ptr: Long, slotIdx: Int, roomSize: Float, damp: Float, width: Float, freeze: Boolean)
     private external fun nativeSetTrackInsertEffect(ptr: Long, trackIdx: Int, slotIdx: Int, effectType: Int, dryWet: Float)
     private external fun nativeSetTrackInsertMix(ptr: Long, trackIdx: Int, slotIdx: Int, dryLevel: Float, wetLevel: Float)

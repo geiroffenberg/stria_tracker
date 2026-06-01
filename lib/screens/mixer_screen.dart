@@ -1663,8 +1663,11 @@ class _MixerScreenState extends State<MixerScreen> {
               meterRight: _meterValues[33],
               inserts: _masterInserts,
               bypassed: _masterBypassed,
+              limiterEnabled: state.masterLimiterEnabled,
               onVolume: state.setMasterVolume,
               onMute: state.toggleMasterMute,
+              onLimiterToggle: () =>
+                  state.setMasterLimiterEnabled(!state.masterLimiterEnabled),
               onInsertTap: (slot) => onMasterInsertTap(slot),
               onInsertClear: (slot) {
                 setState(() {
@@ -2474,8 +2477,10 @@ class _MasterStrip extends StatelessWidget {
   final double meterRight;
   final List<String?> inserts;
   final List<bool> bypassed;
+  final bool limiterEnabled;
   final ValueChanged<double> onVolume;
   final VoidCallback onMute;
+  final VoidCallback onLimiterToggle;
   final void Function(int slot) onInsertTap;
   final void Function(int slot) onInsertClear;
 
@@ -2486,17 +2491,24 @@ class _MasterStrip extends StatelessWidget {
     required this.meterRight,
     required this.inserts,
     required this.bypassed,
+    required this.limiterEnabled,
     required this.onVolume,
     required this.onMute,
+    required this.onLimiterToggle,
     required this.onInsertTap,
     required this.onInsertClear,
   });
 
   @override
   Widget build(BuildContext context) {
+    final dbVal = volume <= 0
+        ? double.negativeInfinity
+        : 20 * (math.log(volume) / math.ln10);
     final db = volume <= 0
         ? '-INF'
-        : (20 * (math.log(volume) / math.ln10)).toStringAsFixed(1);
+        : (dbVal > 0
+              ? '+${dbVal.toStringAsFixed(1)}'
+              : dbVal.toStringAsFixed(1));
 
     return Container(
       width: 114,
@@ -2563,7 +2575,15 @@ class _MasterStrip extends StatelessWidget {
                                 inactiveTrackColor: kColInactive,
                                 thumbColor: kColComplement,
                               ),
-                              child: Slider(value: volume, onChanged: onVolume),
+                              child: Slider(
+                                value: volume.clamp(
+                                  0.0,
+                                  AppState.kMaxMasterVolume,
+                                ),
+                                min: 0.0,
+                                max: AppState.kMaxMasterVolume,
+                                onChanged: onVolume,
+                              ),
                             ),
                           ),
                         ),
@@ -2632,6 +2652,53 @@ class _MasterStrip extends StatelessWidget {
                         bypassed: bypassed[slot],
                         onTap: () => onInsertTap(slot),
                         onClear: () => onInsertClear(slot),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  // ── Always-on master safety limiter toggle ─────────
+                  // Occupies the same slot as the SEND button on channel
+                  // strips. Tap to enable/disable the brick-wall limiter.
+                  GestureDetector(
+                    onTap: onLimiterToggle,
+                    child: Container(
+                      height: 40,
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        color: limiterEnabled
+                            ? kColAccent.withAlpha(40)
+                            : Colors.transparent,
+                        border: Border.all(
+                          color: limiterEnabled
+                              ? kColAccent
+                              : kMixerBorderColor,
+                        ),
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Text(
+                            'LIMIT',
+                            style: kStyleBase.copyWith(
+                              fontSize: 9,
+                              letterSpacing: 0.5,
+                              color: limiterEnabled
+                                  ? kColAccent
+                                  : kMixerSecondaryTextColor,
+                            ),
+                          ),
+                          Text(
+                            limiterEnabled ? 'ON' : 'OFF',
+                            style: kStyleBase.copyWith(
+                              fontSize: 9,
+                              letterSpacing: 0.5,
+                              color: limiterEnabled
+                                  ? kColAccent
+                                  : kMixerSecondaryTextColor,
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                   ),

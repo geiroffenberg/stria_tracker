@@ -91,7 +91,7 @@ class SongModel {
 
     return SongModel(
       name: j['name'] as String,
-      masterVolume: ((j['masterVolume'] as num?)?.toDouble() ?? 1.0).clamp(0.0, 1.0),
+      masterVolume: ((j['masterVolume'] as num?)?.toDouble() ?? 1.0).clamp(0.0, 4.0),
       masterMute: (j['masterMute'] as bool?) ?? false,
       patterns: orderedPatterns,
     );

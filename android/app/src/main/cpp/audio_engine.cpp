@@ -385,6 +385,45 @@ bool AudioEngine::open() {
     }
     LOGI("Oboe stream opened: sampleRate=%d", mStream->getSampleRate());
     mCachedSampleRate = static_cast<float>(mStream->getSampleRate());
+
+    // Master limiter: clear lookahead ring & envelopes for a glitch-free start.
+    mLimRingL.fill(0.0f);
+    mLimRingR.fill(0.0f);
+    mLimWriteIdx = 0;
+    mLimPeakEnv = 0.0f;
+    mLimGainEnv = 1.0f;
+
+    // ── Real-time safety: pre-allocate every buffer the audio callback touches.
+    // After this point onAudioReady() must not allocate on the audio thread.
+    for (int t = 0; t < kMaxVoices; ++t) {
+        mTrackBusL[t].assign(kMaxAudioBurst, 0.0f);
+        mTrackBusR[t].assign(kMaxAudioBurst, 0.0f);
+    }
+    mMasterBusL.assign(kMaxAudioBurst, 0.0f);
+    mMasterBusR.assign(kMaxAudioBurst, 0.0f);
+    mFxWetL.assign(kMaxAudioBurst, 0.0f);
+    mFxWetR.assign(kMaxAudioBurst, 0.0f);
+    mPreviewDirectL.assign(kMaxAudioBurst, 0.0f);
+    mPreviewDirectR.assign(kMaxAudioBurst, 0.0f);
+
+    // Reserve capacity for pending event vectors so push/erase in the audio
+    // path never reallocates. clear()/erase don't shrink capacity, so this
+    // reserve carries through the entire session.
+    constexpr size_t kEventReserve = 256;
+    mPendingDelays.reserve(kEventReserve);
+    mPendingArp.reserve(kEventReserve);
+    mPendingRetrigs.reserve(kEventReserve);
+    mPendingKills.reserve(kEventReserve);
+    mPendingSliceCommands.reserve(kEventReserve);
+    mPendingMixerCommands.reserve(kEventReserve);
+    mPendingInsertFxCommands.reserve(kEventReserve);
+
+    // Pre-reserve each voice's Karplus delay line so startKarplusVoice()
+    // (called from the audio thread via pending events) never allocates.
+    for (auto& v : mVoices) {
+        v.karplusBuf.reserve(kMaxKarplusBuf);
+    }
+
     return true;
 }
 
@@ -960,6 +999,25 @@ void AudioEngine::triggerRowLocked(const std::vector<int>& rowData) {
             v.sampleReverse = (reverse != 0);
             v.sampleGain = 1.0f;
 
+            // Sampler reuses the synth-filter byte slots in the row payload for
+            // its own HP -> LP filter (zero payload-size change):
+            //   payload[3] (filterMode)  -> filter enabled flag (0/1)
+            //   payload[1] (cutoff)      -> HP cutoff
+            //   payload[2] (resonance)   -> HP resonance
+            //   payload[4] (filterAtk)   -> LP cutoff
+            //   payload[5] (filterDec)   -> LP resonance
+            const bool newFilterOn = (filterMode > 0);
+            if (newFilterOn != v.samplerFilterOn) {
+                // Clear SVF state on enable/disable to avoid pops.
+                v.samplerHpLow = v.samplerHpBand = 0.0f;
+                v.samplerLpLow = v.samplerLpBand = 0.0f;
+            }
+            v.samplerFilterOn = newFilterOn;
+            v.samplerHpCutoff = byteToNorm(cutoff);
+            v.samplerHpRes    = byteToNorm(resonance);
+            v.samplerLpCutoff = byteToNorm(fatk);
+            v.samplerLpRes    = byteToNorm(fdec);
+
             if (n >= 0) {
                 // Only update the playback region on note-on.
                 // Hold rows must not overwrite the slice boundaries set by the
@@ -989,6 +1047,9 @@ void AudioEngine::triggerRowLocked(const std::vector<int>& rowData) {
                     v.sampleElapsedFrames = 0.0;
                     v.samplePingDir = v.sampleReverse;
                     v.sampleActive = true;
+                    // Clear filter SVF state on note-on to avoid carryover thumps.
+                    v.samplerHpLow = v.samplerHpBand = 0.0f;
+                    v.samplerLpLow = v.samplerLpBand = 0.0f;
                 } else {
                     v.sampleActive = false;
                 }
@@ -1442,6 +1503,21 @@ void AudioEngine::setMasterInsertBypass(int slotIdx, bool bypass) {
     if (slotIdx < 0 || slotIdx >= kMaxInsertSlots) return;
     std::lock_guard<std::mutex> lock(mVoiceMutex);
     mMasterInserts[slotIdx].bypass = bypass;
+}
+
+void AudioEngine::setMasterLimiterEnabled(bool enabled) {
+    mMasterLimiterEnabled.store(enabled);
+}
+
+bool AudioEngine::isMasterLimiterEnabled() const {
+    return mMasterLimiterEnabled.load();
+}
+
+void AudioEngine::setMasterVolumeLinear(float linearGain) {
+    // Clamp to a sane ceiling. The safety limiter catches anything above 0 dB,
+    // but we still cap to avoid absurd amplification that would just slam the
+    // limiter into full gain reduction with no audible benefit.
+    mMasterVolume.store(std::clamp(linearGain, 0.0f, 4.0f));
 }
 
 void AudioEngine::setMasterReverbParams(int slotIdx, float roomSize, float damp, float width, bool freeze) {
@@ -2164,6 +2240,25 @@ oboe::DataCallbackResult AudioEngine::onAudioReady(
     auto* out = static_cast<float*>(audioData);
     std::fill(out, out + numFrames * 2, 0.0f);
 
+#if defined(__aarch64__)
+    // Enable flush-to-zero (FZ) on ARMv8 FPU for the duration of this callback.
+    // Denormals on Karplus feedback / SVF filter state can cost 100x normal
+    // CPU and cause audio dropouts. Save/restore the previous FPCR so we don't
+    // affect other threads of the process.
+    uint64_t prevFpcr;
+    asm volatile("mrs %0, fpcr" : "=r"(prevFpcr));
+    if ((prevFpcr & (1ULL << 24)) == 0) {
+        asm volatile("msr fpcr, %0" :: "r"(prevFpcr | (1ULL << 24)));
+    }
+#elif defined(__arm__)
+    // ARMv7: FZ bit (bit 24) lives in FPSCR.
+    uint32_t prevFpscr;
+    asm volatile("vmrs %0, fpscr" : "=r"(prevFpscr));
+    if ((prevFpscr & (1u << 24)) == 0) {
+        asm volatile("vmsr fpscr, %0" :: "r"(prevFpscr | (1u << 24)));
+    }
+#endif
+
     const double sampleRate = stream->getSampleRate();
     const double twoPi = 2.0 * M_PI;
     // One-pole gain smoother: ~5 ms time constant, eliminates clicks.
@@ -2173,8 +2268,17 @@ oboe::DataCallbackResult AudioEngine::onAudioReady(
     std::array<float, kMaxVoices> callbackTrackPeakR{};
     float callbackMasterPeakL = 0.0f;
     float callbackMasterPeakR = 0.0f;
-    std::vector<float> previewDirectL(numFrames, 0.0f);
-    std::vector<float> previewDirectR(numFrames, 0.0f);
+    // Use pre-allocated preview scratch buses (no per-callback allocation).
+    // Defensive resize only triggers if Oboe ever reports a burst larger than
+    // kMaxAudioBurst — should never happen in practice.
+    if (static_cast<int>(mPreviewDirectL.size()) < numFrames) {
+        mPreviewDirectL.resize(numFrames);
+        mPreviewDirectR.resize(numFrames);
+    }
+    std::fill_n(mPreviewDirectL.data(), numFrames, 0.0f);
+    std::fill_n(mPreviewDirectR.data(), numFrames, 0.0f);
+    float* previewDirectL = mPreviewDirectL.data();
+    float* previewDirectR = mPreviewDirectR.data();
 
     std::lock_guard<std::mutex> lock(mVoiceMutex);
 
@@ -2507,6 +2611,32 @@ oboe::DataCallbackResult AudioEngine::onAudioReady(
             const double srRatio = static_cast<double>(s.sampleRate) / sampleRate;
             const double trePhaseInc = 2.0 * M_PI * normToLfoHz(v.treSpeedNorm) / sampleRate;
 
+            // 4-point Hermite cubic interpolation. Smoother than linear, kills
+            // the aliasing/zipper artifacts you hear when pitching a sample
+            // down. Reads 4 samples around samplePos (idxA..idxD); region
+            // boundaries are clamped to avoid reading past the end.
+            auto hermite4 = [&](double pos) -> float {
+                const int i1 = static_cast<int>(pos);
+                const float frac = static_cast<float>(pos - static_cast<double>(i1));
+                const int i0 = std::max(startFrame, i1 - 1);
+                const int i2 = std::min(endFrame - 1, i1 + 1);
+                const int i3 = std::min(endFrame - 1, i1 + 2);
+                const float y0 = s.mono[i0];
+                const float y1 = s.mono[i1];
+                const float y2 = s.mono[i2];
+                const float y3 = s.mono[i3];
+                const float c0 = y1;
+                const float c1 = 0.5f * (y2 - y0);
+                const float c2 = y0 - 2.5f * y1 + 2.0f * y2 - 0.5f * y3;
+                const float c3 = 0.5f * (y3 - y0) + 1.5f * (y1 - y2);
+                return ((c3 * frac + c2) * frac + c1) * frac + c0;
+            };
+
+            // Minimum envelope time: ~2 ms. Anything shorter would produce a
+            // discontinuity at note-on / note-off → audible click. Two
+            // milliseconds is the standard "de-click" floor used in samplers.
+            const float minEnvFrames = 0.002f * static_cast<float>(sampleRate);
+
             for (int i = 0; i < numFrames; ++i) {
                 // Apply SLU/SLD pitch ramp: interpolate sampleStep per sample.
                 if (v.pitchRampSamplesLeft > 0) {
@@ -2540,19 +2670,22 @@ oboe::DataCallbackResult AudioEngine::onAudioReady(
                     }
                 }
 
-                // Attack / release gain envelope
+                // Attack / release gain envelope. Enforce ~2 ms minimum so a
+                // value of 0 (or anything sub-2-ms) still gets de-clicked.
                 float envGain = 1.0f;
-                const float atkFrames = static_cast<float>(v.attackSec  * sampleRate);
-                const float relFrames = static_cast<float>(v.releaseSec * sampleRate);
+                const float atkFrames = std::max(minEnvFrames,
+                    static_cast<float>(v.attackSec  * sampleRate));
+                const float relFrames = std::max(minEnvFrames,
+                    static_cast<float>(v.releaseSec * sampleRate));
                 const float elapsed = static_cast<float>(v.sampleElapsedFrames);
-                if (atkFrames > 0.0f && elapsed < atkFrames) {
+                if (elapsed < atkFrames) {
                     envGain = elapsed / atkFrames;
                 }
                 // Release fade: only for non-looping (looping needs note-off, future work)
-                if (v.loopMode == 0 && relFrames > 0.0f) {
+                if (v.loopMode == 0) {
                     const double framesLeft = regionEnd - v.samplePos;
                     if (framesLeft < static_cast<double>(relFrames)) {
-                        envGain *= static_cast<float>(framesLeft) / relFrames;
+                        envGain *= static_cast<float>(std::max(0.0, framesLeft)) / relFrames;
                     }
                 }
 
@@ -2567,7 +2700,44 @@ oboe::DataCallbackResult AudioEngine::onAudioReady(
                     if (v.trePhase >= 2.0 * M_PI) v.trePhase -= 2.0 * M_PI;
                 }
 
-                const float dry = s.mono[idx] * v.level * v.instrumentVolume * v.sampleGain * envGain * treAmpMod;
+                const float interpSample = hermite4(v.samplePos);
+                float dry = interpSample * v.level * v.instrumentVolume * v.sampleGain * envGain * treAmpMod;
+
+                // ── Sampler HP → LP filter (in series). Zero CPU when OFF. ──
+                if (v.samplerFilterOn) {
+                    const float srF = static_cast<float>(sampleRate);
+                    const float nyqLimit = srF * 0.20f;
+                    // HP stage — skip when fully open (cutoff near 0).
+                    if (v.samplerHpCutoff > 0.005f) {
+                        const float hz = std::clamp(normToCutoffHz(v.samplerHpCutoff), 20.0f, nyqLimit);
+                        const float f = std::clamp(2.0f * std::sin(static_cast<float>(M_PI) * hz / srF),
+                                                   0.001f, 0.99f);
+                        const float damp = std::max(0.05f, 1.0f - v.samplerHpRes * 0.95f);
+                        const float high = dry - v.samplerHpLow - (damp * v.samplerHpBand);
+                        v.samplerHpBand += f * high;
+                        v.samplerHpLow  += f * v.samplerHpBand;
+                        if (!std::isfinite(v.samplerHpLow) || !std::isfinite(v.samplerHpBand)) {
+                            v.samplerHpLow = 0.0f;
+                            v.samplerHpBand = 0.0f;
+                        }
+                        dry = high;
+                    }
+                    // LP stage — skip when fully open (cutoff near 1).
+                    if (v.samplerLpCutoff < 0.995f) {
+                        const float hz = std::clamp(normToCutoffHz(v.samplerLpCutoff), 20.0f, nyqLimit);
+                        const float f = std::clamp(2.0f * std::sin(static_cast<float>(M_PI) * hz / srF),
+                                                   0.001f, 0.99f);
+                        const float damp = std::max(0.05f, 1.0f - v.samplerLpRes * 0.95f);
+                        const float high = dry - v.samplerLpLow - (damp * v.samplerLpBand);
+                        v.samplerLpBand += f * high;
+                        v.samplerLpLow  += f * v.samplerLpBand;
+                        if (!std::isfinite(v.samplerLpLow) || !std::isfinite(v.samplerLpBand)) {
+                            v.samplerLpLow = 0.0f;
+                            v.samplerLpBand = 0.0f;
+                        }
+                        dry = v.samplerLpLow;
+                    }
+                }
 
                 const float pan01 = std::clamp(v.pan, 0.0f, 1.0f);
                 const float angle = pan01 * 1.57079632679f;
@@ -3132,8 +3302,59 @@ oboe::DataCallbackResult AudioEngine::onAudioReady(
     for (int i = 0; i < numFrames; ++i) {
         out[i * 2] += previewDirectL[i];
         out[i * 2 + 1] += previewDirectR[i];
-        callbackMasterPeakL = std::max(callbackMasterPeakL, std::abs(out[i * 2]));
-        callbackMasterPeakR = std::max(callbackMasterPeakR, std::abs(out[i * 2 + 1]));
+    }
+
+    // ── Master safety limiter ───────────────────────────────────────────────
+    // Always-on (toggleable) lookahead peak limiter. Sits AFTER the master
+    // inserts and AFTER preview-direct injection so nothing can clip the DAC.
+    // Soft knee at -3 dB, brick wall at -0.3 dBFS, 50 ms release.
+    if (mMasterLimiterEnabled.load()) {
+        constexpr float kCeiling = 0.9661f;            // -0.3 dBFS
+        constexpr float kKneeStart = kCeiling * 0.7079f; // -3 dB below ceiling
+        const float peakRelK = std::exp(-1.0f /
+            (0.001f * static_cast<float>(sampleRate)));  // 1 ms peak decay
+        const float gainRelK = 1.0f - std::exp(-1.0f /
+            (0.050f * static_cast<float>(sampleRate))); // 50 ms gain release
+        for (int i = 0; i < numFrames; ++i) {
+            const float inL = out[i * 2];
+            const float inR = out[i * 2 + 1];
+            const float peakIn = std::max(std::fabs(inL), std::fabs(inR));
+
+            // Peak envelope: instant attack, slow release.
+            mLimPeakEnv = std::max(peakIn, mLimPeakEnv * peakRelK);
+
+            // Soft-knee target gain.
+            float targetGain;
+            if (mLimPeakEnv <= kKneeStart) {
+                targetGain = 1.0f;
+            } else if (mLimPeakEnv >= kCeiling) {
+                targetGain = kCeiling / mLimPeakEnv;
+            } else {
+                const float t = (mLimPeakEnv - kKneeStart) / (kCeiling - kKneeStart);
+                const float fullGain = kCeiling / mLimPeakEnv;
+                targetGain = 1.0f + (fullGain - 1.0f) * t * t;
+            }
+
+            // Fast duck (lookahead absorbs the ramp), slow release.
+            if (targetGain < mLimGainEnv) {
+                mLimGainEnv = targetGain;
+            } else {
+                mLimGainEnv += (targetGain - mLimGainEnv) * gainRelK;
+            }
+
+            // Write input into ring, output the delayed sample with current gain.
+            mLimRingL[mLimWriteIdx] = inL;
+            mLimRingR[mLimWriteIdx] = inR;
+            mLimWriteIdx = (mLimWriteIdx + 1) % kMasterLimiterLookahead;
+            out[i * 2]     = mLimRingL[mLimWriteIdx] * mLimGainEnv;
+            out[i * 2 + 1] = mLimRingR[mLimWriteIdx] * mLimGainEnv;
+        }
+    }
+
+    // Meter peaks reflect the FINAL post-limiter output the user actually hears.
+    for (int i = 0; i < numFrames; ++i) {
+        callbackMasterPeakL = std::max(callbackMasterPeakL, std::fabs(out[i * 2]));
+        callbackMasterPeakR = std::max(callbackMasterPeakR, std::fabs(out[i * 2 + 1]));
     }
 
     {

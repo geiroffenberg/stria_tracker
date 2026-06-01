@@ -170,13 +170,36 @@ class _MainScreenState extends State<MainScreen> {
     );
   }
 
-  /// When navigating to the INST tab, jump to the first instrument
-  /// explicitly used in the current pattern, if any.
-  void _autoSelectFirstInstrument(AppState state) {
-    for (final track in state.currentPattern.tracks) {
+  /// When navigating to the INST tab, select the most relevant instrument:
+  /// 1. Instrument in the currently selected cell.
+  /// 2. Last instrument explicitly written in this pattern session.
+  /// 3. First instrument found in the current pattern (current track first).
+  void _autoSelectInstrument(AppState state) {
+    // Priority 1: selected cell has an instrument.
+    final row = state.selectedRow;
+    if (row != null) {
+      final inst = state.currentTrack.cells[row].instrument;
+      if (inst != null && inst > 0) {
+        state.selectInstrument(inst - 1);
+        return;
+      }
+    }
+
+    // Priority 2: last instrument the user wrote in this pattern.
+    final explicit = state.explicitLastInstrument;
+    if (explicit != null && explicit > 0) {
+      state.selectInstrument(explicit - 1);
+      return;
+    }
+
+    // Priority 3: scan the pattern — current track first, then the rest.
+    final currentTrack = state.currentTrack;
+    final otherTracks = state.currentPattern.tracks
+        .where((t) => t != currentTrack);
+    for (final track in [currentTrack, ...otherTracks]) {
       for (final cell in track.cells) {
-        if (cell.instrument != null) {
-          state.selectInstrument(cell.instrument!);
+        if (cell.instrument != null && cell.instrument! > 0) {
+          state.selectInstrument(cell.instrument! - 1);
           return;
         }
       }
@@ -199,7 +222,7 @@ class _MainScreenState extends State<MainScreen> {
           return Expanded(
             child: GestureDetector(
               onTap: () {
-                if (i == 2) _autoSelectFirstInstrument(state);
+                if (i == 2) _autoSelectInstrument(state);
                 setState(() => _tabIndex = i);
                 state.setActiveTabIndex(i);
               },

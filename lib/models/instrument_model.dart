@@ -549,6 +549,14 @@ class SamplerParams {
   int stretchBeats;       // 1..99
   bool stretchPreservePitch; // true = time-stretch only; false = pitch follows rate
 
+  // ── Filter (HP → LP in series) ────────────────────────────────────────────
+  // Bypassed entirely (zero CPU) when filterEnabled = false.
+  bool filterEnabled;     // master ON/OFF
+  double hpCutoff;        // 0..1 (0 = bypass, 1 = fully closed)
+  double hpResonance;     // 0..1
+  double lpCutoff;        // 0..1 (0 = fully closed, 1 = bypass / fully open)
+  double lpResonance;     // 0..1
+
   // keep legacy bool getter so existing code using p.loop still compiles
   bool get loop => loopMode != SamplerLoopMode.off;
 
@@ -566,6 +574,11 @@ class SamplerParams {
     this.stretchEnabled = false,
     this.stretchBeats = 4,
     this.stretchPreservePitch = true,
+    this.filterEnabled = false,
+    this.hpCutoff = 0.0,
+    this.hpResonance = 0.0,
+    this.lpCutoff = 1.0,
+    this.lpResonance = 0.0,
   }) : sliceStarts = _normalizedSliceStarts(sliceStarts);
 
   static List<int> _normalizedSliceStarts(List<int>? values) {
@@ -654,6 +667,11 @@ class SamplerParams {
     'stretchEnabled': stretchEnabled,
     'stretchBeats': stretchBeats,
     'stretchPreservePitch': stretchPreservePitch,
+    'filterEnabled': filterEnabled,
+    'hpCutoff': hpCutoff,
+    'hpResonance': hpResonance,
+    'lpCutoff': lpCutoff,
+    'lpResonance': lpResonance,
   };
 
   factory SamplerParams.fromJson(Map<String, dynamic> j) => SamplerParams(
@@ -677,6 +695,11 @@ class SamplerParams {
     stretchEnabled: (j['stretchEnabled'] as bool?) ?? false,
     stretchBeats: (j['stretchBeats'] as int?) ?? 4,
     stretchPreservePitch: (j['stretchPreservePitch'] as bool?) ?? true,
+    filterEnabled: (j['filterEnabled'] as bool?) ?? false,
+    hpCutoff: (j['hpCutoff'] as num?)?.toDouble() ?? 0.0,
+    hpResonance: (j['hpResonance'] as num?)?.toDouble() ?? 0.0,
+    lpCutoff: (j['lpCutoff'] as num?)?.toDouble() ?? 1.0,
+    lpResonance: (j['lpResonance'] as num?)?.toDouble() ?? 0.0,
   );
 
   /// Create a deep copy of this sampler configuration.
@@ -694,12 +717,17 @@ class SamplerParams {
     stretchEnabled: stretchEnabled,
     stretchBeats: stretchBeats,
     stretchPreservePitch: stretchPreservePitch,
+    filterEnabled: filterEnabled,
+    hpCutoff: hpCutoff,
+    hpResonance: hpResonance,
+    lpCutoff: lpCutoff,
+    lpResonance: lpResonance,
   );
 
   /// Highest Pxx param index supported for sampler instruments.
-  static const int maxParamIndex = 7;
+  static const int maxParamIndex = 11;
 
-  /// Display name for sampler Pxx param slot [idx] (0=reset, 1–7=params).
+  /// Display name for sampler Pxx param slot [idx] (0=reset, 1–11=params).
   static String paramName(int idx) {
     switch (idx) {
       case 0:
@@ -718,6 +746,14 @@ class SamplerParams {
         return 'Release';
       case 7:
         return 'Loop';
+      case 8:
+        return 'HP Cut';
+      case 9:
+        return 'HP Res';
+      case 10:
+        return 'LP Cut';
+      case 11:
+        return 'LP Res';
       default:
         return 'P${idx.toString().padLeft(2, '0')}';
     }
@@ -742,6 +778,14 @@ class SamplerParams {
         return 'P06 Release — fade-out length (00=instant, 99=slowest)';
       case 7:
         return 'P07 Loop — 00=off, 01=loop forward, 02=ping-pong';
+      case 8:
+        return 'P08 HP Cut — high-pass cutoff (00=open, 99=closed). Filter must be ON.';
+      case 9:
+        return 'P09 HP Res — high-pass resonance (00–99). Filter must be ON.';
+      case 10:
+        return 'P10 LP Cut — low-pass cutoff (00=closed, 99=open). Filter must be ON.';
+      case 11:
+        return 'P11 LP Res — low-pass resonance (00–99). Filter must be ON.';
       default:
         return '';
     }
