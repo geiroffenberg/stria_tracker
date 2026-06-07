@@ -103,10 +103,16 @@ class _IdleBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final state = AppStateScope.of(context);
+    final hasBoxClip = !state.collapsedView && state.hasBoxClipboard;
     return Center(
       child: Text(
-        'Tap a cell to edit · long-press drag to box-select',
-        style: kStyleHeader.copyWith(color: kColInactive),
+        hasBoxClip
+            ? 'Box clipboard ready · tap a row number to paste'
+            : 'Tap a cell to edit · long-press drag to box-select',
+        style: kStyleHeader.copyWith(
+          color: hasBoxClip ? kColAccent : kColInactive,
+        ),
       ),
     );
   }
@@ -120,6 +126,8 @@ class _BoxSelectionActions extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final count = state.boxSelectionCellCount;
+    final sel = state.boxSelection;
+    final hasBoxClip = !state.collapsedView && state.hasBoxClipboard;
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
       child: Row(
@@ -130,6 +138,20 @@ class _BoxSelectionActions extends StatelessWidget {
             width: 88,
           ),
           const SizedBox(width: 4),
+          if (hasBoxClip && sel != null)
+            _ActionBtn(
+              label: 'PASTE',
+              color: kColAccent,
+              onTap: () => state.pasteBoxSelection(sel.minRow),
+            ),
+          _ActionBtn(
+            label: 'CUT',
+            onTap: () => state.cutBoxSelection(),
+          ),
+          _ActionBtn(
+            label: 'COPY',
+            onTap: () => state.copyBoxSelection(),
+          ),
           _ActionBtn(
             label: 'DEL',
             color: kColStopBtn,
@@ -204,6 +226,12 @@ class _RowActions extends StatelessWidget {
             onTap: () => state.pasteRows(row),
             enabled: state.hasRowClipboard,
           ),
+          if (!state.collapsedView && state.hasBoxClipboard)
+            _ActionBtn(
+              label: 'BPST',
+              color: kColAccent,
+              onTap: () => state.pasteBoxSelection(row),
+            ),
           const Spacer(),
           _ActionBtn(
             label: 'CLR',

@@ -741,7 +741,7 @@ class _SongScreenState extends State<SongScreen> {
                     child: ListView.separated(
                       shrinkWrap: true,
                       itemCount: names.length,
-                      separatorBuilder: (_, __) =>
+                      separatorBuilder: (_, _) =>
                           Divider(height: 1, color: kColInactive.withAlpha(80)),
                       itemBuilder: (_, i) => InkWell(
                         onTap: () {

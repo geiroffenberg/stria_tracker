@@ -308,7 +308,7 @@ The Sampler plays an audio file loaded from storage.
 
 #### Filter (HP → LP)
 
-The FILTER section sits between STRETCH and PARAMS in the instrument editor. It inserts a **high-pass filter followed by a low-pass filter in series** on the sampler audio path.
+The FILTER section sits below PARAMS in the instrument editor. It inserts a **high-pass filter followed by a low-pass filter in series** on the sampler audio path.
 
 | Control | Description |
 |---|---|

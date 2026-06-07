@@ -316,6 +316,15 @@ class AppState extends ChangeNotifier {
   bool get hasRowClipboard =>
       _rowClipboard != null && _rowClipboard!.isNotEmpty;
 
+  // Box-selection clipboard (column-aware — only the selected columns are pasted).
+  List<TrackerCell>? _boxClipboard;
+  List<CellColumn>? _boxClipboardColumns;
+  bool get hasBoxClipboard =>
+      _boxClipboard != null &&
+      _boxClipboard!.isNotEmpty &&
+      _boxClipboardColumns != null &&
+      _boxClipboardColumns!.isNotEmpty;
+
   // Playback carry state, per track. One record per pattern track.
   List<_TrackCarry> _trackCarry = const [];
   int _carryPatternIndex = -1;
@@ -2344,6 +2353,112 @@ class AppState extends ChangeNotifier {
     _boxSelection = null;
     _isBoxSelecting = false;
     notifyListeners();
+  }
+
+  /// Copy the box selection into the box clipboard. The selected column range
+  /// is remembered so paste always writes back to the same column types.
+  void copyBoxSelection() {
+    final sel = _boxSelection;
+    if (sel == null) return;
+    final track = currentPattern.tracks[sel.trackIndex];
+    _boxClipboard = [
+      for (int row = sel.minRow; row <= sel.maxRow; row++)
+        track.cells[row].copy()
+    ];
+    _boxClipboardColumns = CellColumn.values
+        .where((c) =>
+            c.index >= sel.minColumnIndex && c.index <= sel.maxColumnIndex)
+        .toList();
+    _boxSelection = null;
+    _isBoxSelecting = false;
+    notifyListeners();
+  }
+
+  /// Cut the box selection: copies to box clipboard then clears the source cells.
+  void cutBoxSelection() {
+    final sel = _boxSelection;
+    if (sel == null) return;
+    _pushPatternUndo('cut selection');
+    final track = currentPattern.tracks[sel.trackIndex];
+    _boxClipboard = [
+      for (int row = sel.minRow; row <= sel.maxRow; row++)
+        track.cells[row].copy()
+    ];
+    _boxClipboardColumns = CellColumn.values
+        .where((c) =>
+            c.index >= sel.minColumnIndex && c.index <= sel.maxColumnIndex)
+        .toList();
+    for (int row = sel.minRow; row <= sel.maxRow; row++) {
+      for (
+        int colIndex = sel.minColumnIndex;
+        colIndex <= sel.maxColumnIndex;
+        colIndex++
+      ) {
+        _clearColumnValueInTrack(track, row, CellColumn.values[colIndex]);
+      }
+    }
+    _boxSelection = null;
+    _isBoxSelecting = false;
+    notifyListeners();
+  }
+
+  /// Paste the box clipboard into the current track starting at [targetRow].
+  /// Only the columns that were selected at copy time are written; all other
+  /// columns in the target rows are left untouched.
+  /// Rows that would fall beyond the pattern end are silently truncated.
+  void pasteBoxSelection(int targetRow) {
+    final clipboard = _boxClipboard;
+    final columns = _boxClipboardColumns;
+    if (clipboard == null || clipboard.isEmpty || columns == null || columns.isEmpty) return;
+    if (targetRow < 0 || targetRow >= rowCount) return;
+    _pushPatternUndo('paste selection');
+    final track = currentTrack;
+    final pasteRowCount = clipboard.length.clamp(0, rowCount - targetRow);
+    for (int i = 0; i < pasteRowCount; i++) {
+      final src = clipboard[i];
+      final dstRow = targetRow + i;
+      for (final col in columns) {
+        _writeColumnFromCell(track, dstRow, col, src);
+      }
+    }
+    _selectedRowStart = targetRow;
+    _selectedRowEnd = targetRow + pasteRowCount - 1;
+    clearBoxSelection();
+    notifyListeners();
+  }
+
+  /// Writes a single column value from [src] into the cell at [row] in [track].
+  void _writeColumnFromCell(
+      TrackModel track, int row, CellColumn column, TrackerCell src) {
+    switch (column) {
+      case CellColumn.note:
+        track.cells[row].note = src.note;
+        break;
+      case CellColumn.instrument:
+        track.cells[row].instrument = src.instrument;
+        break;
+      case CellColumn.volume:
+        track.cells[row].volume = src.volume;
+        break;
+      case CellColumn.fx0cmd:
+        track.cells[row].fxSlots[0].command = src.fxSlots[0].command;
+        break;
+      case CellColumn.fx0val:
+        track.cells[row].fxSlots[0].value = src.fxSlots[0].value;
+        break;
+      case CellColumn.fx1cmd:
+        track.cells[row].fxSlots[1].command = src.fxSlots[1].command;
+        break;
+      case CellColumn.fx1val:
+        track.cells[row].fxSlots[1].value = src.fxSlots[1].value;
+        break;
+      case CellColumn.fx2cmd:
+        track.cells[row].fxSlots[2].command = src.fxSlots[2].command;
+        break;
+      case CellColumn.fx2val:
+        track.cells[row].fxSlots[2].value = src.fxSlots[2].value;
+        break;
+    }
   }
 
   // ── Track collapse ────────────────────────────────────────────────────────
