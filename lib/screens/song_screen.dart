@@ -52,6 +52,7 @@ class _SongScreenState extends State<SongScreen> {
   bool _editingName = false;
   bool _saveAfterRename = false;
   int? _selectedPatternIndex;
+  ({int patternIndex, int trackIndex})? _selectedTimelineCell;
 
   static const double kSlotSize = 64.0;
   static const double kSlotGap = 6.0;
@@ -300,6 +301,29 @@ class _SongScreenState extends State<SongScreen> {
               onClose: () => setState(() => _selectedPatternIndex = null),
             ),
           ],
+          if (_selectedTimelineCell != null) ...[
+            const Divider(height: 1, thickness: 1, color: Color(0xFF226666)),
+            _TrackCellActionBar(
+              canPaste: state.hasRowClipboard,
+              onCopy: () => state.copyTrackFull(
+                _selectedTimelineCell!.patternIndex,
+                _selectedTimelineCell!.trackIndex,
+              ),
+              onCut: () => state.cutTrackFull(
+                _selectedTimelineCell!.patternIndex,
+                _selectedTimelineCell!.trackIndex,
+              ),
+              onPaste: () => state.pasteTrackFull(
+                _selectedTimelineCell!.patternIndex,
+                _selectedTimelineCell!.trackIndex,
+              ),
+              onDelete: () => state.deleteTrackFull(
+                _selectedTimelineCell!.patternIndex,
+                _selectedTimelineCell!.trackIndex,
+              ),
+              onClose: () => setState(() => _selectedTimelineCell = null),
+            ),
+          ],
         ],
       ),
     );
@@ -331,11 +355,20 @@ class _SongScreenState extends State<SongScreen> {
                   left: originX + t * (laneW + laneGap),
                   top: 0,
                   bottom: 0,
-                  child: Align(
-                    alignment: Alignment.centerLeft,
-                    child: Text(
-                      '${t + 1}',
-                      style: kStyleHeader.copyWith(color: kColAccent),
+                  width: laneW,
+                  child: GestureDetector(
+                    onTap: () => state.toggleTrackMixerSolo(t),
+                    child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        '${t + 1}',
+                        style: kStyleHeader.copyWith(
+                          color: t < state.currentPattern.tracks.length &&
+                                  state.currentPattern.tracks[t].mixerSolo
+                              ? kColStopBtn
+                              : kColAccent,
+                        ),
+                      ),
                     ),
                   ),
                 ),
@@ -981,6 +1014,13 @@ class _SongScreenState extends State<SongScreen> {
               slotPitch,
             );
           },
+          onLongPressStart: (details) {
+            final hit = _hitTestTimelineCell(
+                state, details.localPosition, width, slotPitch);
+            if (hit != null) {
+              setState(() => _selectedTimelineCell = hit);
+            }
+          },
           child: CustomPaint(
             size: Size(width, totalH),
             painter: _SongTimelinePainter(
@@ -990,12 +1030,54 @@ class _SongScreenState extends State<SongScreen> {
                   ? state.playheadArrangementSlot
                   : null,
               playheadRow: state.isPlaying ? state.playheadRow : null,
+              selectedPatternIndex: _selectedTimelineCell?.patternIndex,
+              selectedTrackIndex: _selectedTimelineCell?.trackIndex,
             ),
             child: SizedBox(width: width, height: totalH),
           ),
         );
       },
     );
+  }
+
+  /// Returns the (patternIndex, trackIndex) that [localPos] maps to in the
+  /// timeline, or null if the position is outside the content area.
+  ({int patternIndex, int trackIndex})? _hitTestTimelineCell(
+    AppState state,
+    Offset localPos,
+    double width,
+    double slotPitch,
+  ) {
+    if (state.song.patterns.isEmpty) return null;
+
+    final patternIndex = (localPos.dy / slotPitch).floor();
+    if (patternIndex < 0 || patternIndex >= state.song.patterns.length) {
+      return null;
+    }
+
+    const laneGap = 1.0;
+    const originX = 4.0;
+    const laneCount = kMaxTracks;
+    final laneAreaW = width - 8;
+    if (laneAreaW <= 0) return null;
+
+    final x = localPos.dx - originX;
+    if (x < 0 || x > laneAreaW) return null;
+
+    final laneW = (laneAreaW - (laneCount - 1) * laneGap) / laneCount;
+    if (laneW <= 0) return null;
+
+    final lanePitch = laneW + laneGap;
+    final rawTrack = (x / lanePitch).floor();
+    if (rawTrack < 0 || rawTrack >= laneCount) return null;
+
+    // Ignore positions in the 1px gap between lanes.
+    final laneStart = rawTrack * lanePitch;
+    if (x - laneStart > laneW) return null;
+
+    final trackCount = state.song.patterns[patternIndex].tracks.length;
+    final trackIndex = rawTrack.clamp(0, trackCount - 1);
+    return (patternIndex: patternIndex, trackIndex: trackIndex);
   }
 
   void _openPatternTrackFromTimelineTap(
@@ -1005,36 +1087,11 @@ class _SongScreenState extends State<SongScreen> {
     double width,
     double slotPitch,
   ) {
-    if (state.song.patterns.isEmpty) return;
+    final hit = _hitTestTimelineCell(state, localPos, width, slotPitch);
+    if (hit == null) return;
 
-    final patternIndex = (localPos.dy / slotPitch).floor();
-    if (patternIndex < 0 || patternIndex >= state.song.patterns.length) return;
-
-    const laneGap = 1.0;
-    const originX = 4.0;
-    const laneCount = kMaxTracks;
-    final laneAreaW = width - 8;
-    if (laneAreaW <= 0) return;
-
-    final x = localPos.dx - originX;
-    if (x < 0 || x > laneAreaW) return;
-
-    final laneW = (laneAreaW - (laneCount - 1) * laneGap) / laneCount;
-    if (laneW <= 0) return;
-
-    final lanePitch = laneW + laneGap;
-    final rawTrack = (x / lanePitch).floor();
-    if (rawTrack < 0 || rawTrack >= laneCount) return;
-
-    // Ignore taps in the 1px gap between lanes.
-    final laneStart = rawTrack * lanePitch;
-    if (x - laneStart > laneW) return;
-
-    state.selectSongPattern(patternIndex);
-    final trackCount = state.song.patterns[patternIndex].tracks.length;
-    final trackIndex = rawTrack.clamp(0, trackCount - 1);
-    state.selectTrack(trackIndex);
-
+    state.selectSongPattern(hit.patternIndex);
+    state.selectTrack(hit.trackIndex);
     OpenPatternTrackNotification().dispatch(context);
   }
 }
@@ -1171,12 +1228,16 @@ class _SongTimelinePainter extends CustomPainter {
   final double slotPitch;
   final int? playheadSlot;
   final int? playheadRow;
+  final int? selectedPatternIndex;
+  final int? selectedTrackIndex;
 
   _SongTimelinePainter({
     required this.patterns,
     required this.slotPitch,
     required this.playheadSlot,
     required this.playheadRow,
+    this.selectedPatternIndex,
+    this.selectedTrackIndex,
   });
 
   static const double _padTop = 4;
@@ -1290,6 +1351,24 @@ class _SongTimelinePainter extends CustomPainter {
         );
       }
     }
+
+    // Selected track-cell border.
+    if (selectedPatternIndex != null && selectedTrackIndex != null) {
+      final s = selectedPatternIndex!;
+      final t = selectedTrackIndex!;
+      if (s < patterns.length) {
+        final yTop = s * slotPitch + _padTop;
+        final blockH = slotPitch - _padTop - _padBottom;
+        final lx = originX + t * (laneW + _laneGap);
+        canvas.drawRect(
+          Rect.fromLTWH(lx, yTop, laneW, blockH),
+          Paint()
+            ..color = const Color(0xFF44FF88)
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 2.0,
+        );
+      }
+    }
   }
 
   void _drawLaneNotes(
@@ -1317,7 +1396,50 @@ class _SongTimelinePainter extends CustomPainter {
   bool shouldRepaint(covariant _SongTimelinePainter old) =>
       old.patterns != patterns ||
       old.playheadSlot != playheadSlot ||
-      old.playheadRow != playheadRow;
+      old.playheadRow != playheadRow ||
+      old.selectedPatternIndex != selectedPatternIndex ||
+      old.selectedTrackIndex != selectedTrackIndex;
+}
+
+class _TrackCellActionBar extends StatelessWidget {
+  final bool canPaste;
+  final VoidCallback onCopy;
+  final VoidCallback onCut;
+  final VoidCallback onPaste;
+  final VoidCallback onDelete;
+  final VoidCallback onClose;
+
+  const _TrackCellActionBar({
+    required this.canPaste,
+    required this.onCopy,
+    required this.onCut,
+    required this.onPaste,
+    required this.onDelete,
+    required this.onClose,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 56,
+      color: kBgTrackHeader,
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
+      child: Row(
+        children: [
+          _SongActionBtn(label: 'CUT', onTap: onCut),
+          _SongActionBtn(label: 'COPY', onTap: onCopy),
+          _SongActionBtn(label: 'PASTE', onTap: onPaste, enabled: canPaste),
+          const Spacer(),
+          _SongActionBtn(
+            label: 'DEL',
+            onTap: onDelete,
+            color: kColStopBtn,
+          ),
+          _SongActionBtn(label: '✕', onTap: onClose),
+        ],
+      ),
+    );
+  }
 }
 
 class _SongPatternActionBar extends StatelessWidget {

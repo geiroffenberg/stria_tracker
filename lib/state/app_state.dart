@@ -2208,6 +2208,60 @@ class AppState extends ChangeNotifier {
     pasteRows(insertRow);
   }
 
+  // ── Song-view track clipboard ─────────────────────────────────────────────
+
+  /// Copy every cell in a specific track (by pattern/track index) to the
+  /// shared row clipboard. Compatible with pattern-view paste.
+  void copyTrackFull(int patternIndex, int trackIndex) {
+    if (patternIndex < 0 || patternIndex >= song.patterns.length) return;
+    final pat = song.patterns[patternIndex];
+    if (trackIndex < 0 || trackIndex >= pat.tracks.length) return;
+    _rowClipboard = pat.tracks[trackIndex].cells.map((c) => c.copy()).toList();
+    notifyListeners();
+  }
+
+  /// Cut a track: copy all cells then clear them.
+  void cutTrackFull(int patternIndex, int trackIndex) {
+    if (patternIndex < 0 || patternIndex >= song.patterns.length) return;
+    final pat = song.patterns[patternIndex];
+    if (trackIndex < 0 || trackIndex >= pat.tracks.length) return;
+    _pushUndoFor(pat, 'cut track');
+    final track = pat.tracks[trackIndex];
+    _rowClipboard = track.cells.map((c) => c.copy()).toList();
+    for (int r = 0; r < track.cells.length; r++) {
+      track.cells[r] = TrackerCell.empty();
+    }
+    notifyListeners();
+  }
+
+  /// Paste the shared row clipboard into a specific track starting at row 0.
+  void pasteTrackFull(int patternIndex, int trackIndex) {
+    if (_rowClipboard == null || _rowClipboard!.isEmpty) return;
+    if (patternIndex < 0 || patternIndex >= song.patterns.length) return;
+    final pat = song.patterns[patternIndex];
+    if (trackIndex < 0 || trackIndex >= pat.tracks.length) return;
+    _pushUndoFor(pat, 'paste track');
+    final cells = pat.tracks[trackIndex].cells;
+    final count = _rowClipboard!.length.clamp(0, cells.length);
+    for (int i = 0; i < count; i++) {
+      cells[i] = _rowClipboard![i].copy();
+    }
+    notifyListeners();
+  }
+
+  /// Clear every cell in a specific track.
+  void deleteTrackFull(int patternIndex, int trackIndex) {
+    if (patternIndex < 0 || patternIndex >= song.patterns.length) return;
+    final pat = song.patterns[patternIndex];
+    if (trackIndex < 0 || trackIndex >= pat.tracks.length) return;
+    _pushUndoFor(pat, 'delete track');
+    final track = pat.tracks[trackIndex];
+    for (int r = 0; r < track.cells.length; r++) {
+      track.cells[r] = TrackerCell.empty();
+    }
+    notifyListeners();
+  }
+
   // ── Row randomisers ───────────────────────────────────────────────────────
 
   /// SHUF: Shuffle whole cells between rows that already have an actual note.
@@ -3344,11 +3398,12 @@ class AppState extends ChangeNotifier {
   /// Snapshot the current pattern BEFORE a mutation, coalescing nested calls
   /// inside one user gesture into a single history entry. No-op while a
   /// mutation is already in progress (resets on next microtask).
-  void _pushPatternUndo(String label) {
+  void _pushPatternUndo(String label) => _pushUndoFor(currentPattern, label);
+
+  void _pushUndoFor(PatternModel p, String label) {
     if (_patternMutationInProgress) return;
     _patternMutationInProgress = true;
     scheduleMicrotask(() => _patternMutationInProgress = false);
-    final p = currentPattern;
     final stack = _patternUndo[p] ??= _PatternUndoStack();
     stack.pushUndo(jsonEncode(p.toJson()), label);
   }
