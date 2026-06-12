@@ -200,6 +200,11 @@ class AppState extends ChangeNotifier {
   bool _notifyQueued = false;
   bool _playheadPollInFlight = false;
   bool _nextPassScheduled = false; // double-buffer: true once next loop pass is in C++ pending queue
+  // The absolute row range locked in at play() for the current pattern session.
+  // Both are inclusive indices into currentPattern. Captured once so that
+  // mid-playback selection changes don't disturb the running engine.
+  int _playbackStartRow = 0;
+  int _playbackEndRow = 0;
   bool _songPollInFlight = false;
   Timer? _playheadTimer;
   Timer?
@@ -793,7 +798,10 @@ class AppState extends ChangeNotifier {
     if (!isPlaying || _playbackFollowsSong || _liveRebuildInFlight) return;
     _liveRebuildInFlight = true;
     try {
-      await _loadNativePatternPlaybackQueue(startRow: playheadRow);
+      await _loadNativePatternPlaybackQueue(
+        startRow: playheadRow,
+        endRow: _playbackEndRow,
+      );
       if (isPlaying && !_playbackFollowsSong) await AudioEngine.instance.start();
     } finally {
       _liveRebuildInFlight = false;
@@ -3186,7 +3194,20 @@ class AppState extends ChangeNotifier {
       return;
     }
 
-    await _loadNativePatternPlaybackQueue(startRow: playheadRow);
+    // Honour row selection as start / loop boundary for pattern playback.
+    final selRange = selectedRowRange;
+    if (selRange != null) {
+      playheadRow = selRange.$1;
+      _playbackStartRow = selRange.$1;
+      _playbackEndRow = selRange.$2;
+    } else {
+      _playbackStartRow = playheadRow;
+      _playbackEndRow = rowCount - 1;
+    }
+    await _loadNativePatternPlaybackQueue(
+      startRow: _playbackStartRow,
+      endRow: _playbackEndRow,
+    );
     await AudioEngine.instance.start();
     _startNativePatternPlayheadPoller();
     notifyListeners();
@@ -3563,19 +3584,24 @@ class AppState extends ChangeNotifier {
   /// Pure Dart computation — no channel calls and no song mutation, so we
   /// just save/restore the playhead + carry state instead of deep-cloning the
   /// whole song on every loop boundary (was ~5–20 ms of GC pressure per pass).
-  List<_ScheduledPlaybackRow> _buildScheduledRows({int startRow = 0}) {
+  List<_ScheduledPlaybackRow> _buildScheduledRows({
+    int startRow = 0,
+    int? endRow,
+  }) {
     final originalPlayheadRow = playheadRow;
     final pattern = song.patterns[_currentPatternIndex];
-    final safeStartRow = startRow.clamp(0, pattern.rowCount - 1);
+    final safeStart = startRow.clamp(0, pattern.rowCount - 1);
+    final safeEnd = (endRow ?? pattern.rowCount - 1).clamp(safeStart, pattern.rowCount - 1);
     final scheduledRows = <_ScheduledPlaybackRow>[];
 
     _resetInstrumentCarry();
-    for (int row = 0; row < safeStartRow; row++) {
+    // Dry-run rows before the range so instrument carry state is correct.
+    for (int row = 0; row < safeStart; row++) {
       playheadRow = row;
       _triggerCurrentRow();
     }
-    for (int offset = 0; offset < pattern.rowCount; offset++) {
-      final row = (safeStartRow + offset) % pattern.rowCount;
+    // Schedule exactly the requested range (no wrapping).
+    for (int row = safeStart; row <= safeEnd; row++) {
       playheadRow = row;
       scheduledRows.add(_triggerCurrentRow());
     }
@@ -3585,8 +3611,11 @@ class AppState extends ChangeNotifier {
     return scheduledRows;
   }
 
-  Future<void> _loadNativePatternPlaybackQueue({required int startRow}) async {
-    final scheduledRows = _buildScheduledRows(startRow: startRow);
+  Future<void> _loadNativePatternPlaybackQueue({
+    required int startRow,
+    int? endRow,
+  }) async {
+    final scheduledRows = _buildScheduledRows(startRow: startRow, endRow: endRow);
     _nextPassScheduled = false;
     await AudioEngine.instance.enqueueAllPlaybackRows(
       loop: _loopPlaybackEnabled,
@@ -3610,7 +3639,10 @@ class AppState extends ChangeNotifier {
   /// the C++ pending buffer. At the next native loop boundary the engine
   /// swaps it in atomically — zero gap, edits picked up every pass.
   Future<void> _scheduleNextLoopPass() async {
-    final rows = _buildScheduledRows(startRow: 0);
+    final rows = _buildScheduledRows(
+      startRow: _playbackStartRow,
+      endRow: _playbackEndRow,
+    );
     await AudioEngine.instance.scheduleNextLoopRows(
       rows.map((r) => {
         'lineSamples': r.lineSamples,
@@ -3641,9 +3673,12 @@ class AppState extends ChangeNotifier {
     try {
       final advanced = await AudioEngine.instance.consumePendingRowAdvances();
       if (!isPlaying || advanced <= 0) return;
-      final newRowRaw = playheadRow + advanced;
-      final didLoop = newRowRaw >= rowCount;
-      playheadRow = newRowRaw % rowCount;
+      // Track position within the locked-in playback range.
+      final selLen = _playbackEndRow - _playbackStartRow + 1;
+      final relPos = playheadRow - _playbackStartRow;
+      final newRelRaw = relPos + advanced;
+      final didLoop = newRelRaw >= selLen;
+      playheadRow = _playbackStartRow + (newRelRaw % selLen);
       if (didLoop) {
         if (!_loopPlaybackEnabled) {
           stop();
@@ -3657,8 +3692,10 @@ class AppState extends ChangeNotifier {
       // Pre-build the next pass when we are 2 rows from the end of the
       // current pass — enough lead time for the single channel call to
       // complete before the native loop boundary.
+      // Guard: skip for ranges of ≤ 2 rows (timing too tight; engine re-uses
+      // its buffer until the next scheduled pass lands).
       if (_loopPlaybackEnabled && !_nextPassScheduled &&
-          playheadRow >= rowCount - 2) {
+          selLen > 2 && playheadRow >= _playbackEndRow - 1) {
         _nextPassScheduled = true;
         unawaited(_scheduleNextLoopPass());
       }
