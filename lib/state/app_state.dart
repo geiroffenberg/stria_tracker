@@ -3347,6 +3347,104 @@ class AppState extends ChangeNotifier {
     return filePath;
   }
 
+  /// Renders the current pattern (or current row selection if one exists) to
+  /// a stereo WAV file in the project samples folder, then loads it into the
+  /// first empty instrument slot as a sampler.
+  ///
+  /// Respects whatever is currently soloed/muted — the output is exactly
+  /// what the engine would play if you pressed Play right now.
+  ///
+  /// Returns null on success, or a human-readable error string on failure.
+  Future<String?> freezePatternToSampler() async {
+    if (isPlaying) return 'Stop playback before freezing';
+    if (song.patterns.isEmpty) return 'No pattern to freeze';
+
+    final nextEmpty = instruments.indexWhere(
+      (ins) => ins.type == InstrumentType.empty,
+    );
+    if (nextEmpty < 0) return 'No empty instrument slots available';
+
+    // Honour selection; fall back to the full pattern.
+    final selRange = selectedRowRange;
+    final startRow = selRange?.$1 ?? 0;
+    final endRow   = selRange?.$2 ?? (rowCount - 1);
+
+    // Save and override playback state for the capture pass.
+    final wasFollowing = _playbackFollowsSong;
+    final wasLooping   = _loopPlaybackEnabled;
+    _playbackFollowsSong = false;
+    _loopPlaybackEnabled = false;
+    _playbackStartRow    = startRow;
+    _playbackEndRow      = endRow;
+    playheadRow          = startRow;
+
+    await AudioEngine.instance.startExportTap();
+
+    _exportCompleter = Completer<void>();
+    final done = _exportCompleter!.future;
+
+    _resetInstrumentCarry();
+    _captureStartStates();
+    isPlaying = true;
+    await _loadNativePatternPlaybackQueue(startRow: startRow, endRow: endRow);
+    await AudioEngine.instance.start();
+    _startNativePatternPlayheadPoller();
+    notifyListeners();
+
+    // The pattern poller calls stop() at end-of-pass; stop() completes the future.
+    await done;
+
+    final tap = await AudioEngine.instance.stopExportTap();
+
+    // Restore playback preferences.
+    _playbackFollowsSong = wasFollowing;
+    _loopPlaybackEnabled = wasLooping;
+
+    if (tap.samples.isEmpty) return 'No audio captured';
+
+    final wavBytes = WavEncoder.encodeWav(
+      samples: tap.samples,
+      sampleRate: tap.sampleRate,
+      numChannels: 2,
+    );
+
+    // Build a unique filename based on the pattern name.
+    final rawName = currentPattern.name.trim();
+    final stem = _sanitizeFileStem(
+      rawName.isNotEmpty ? rawName : 'pattern${_currentPatternIndex + 1}',
+    );
+    final lib = await _songSamplesDir();
+    int n = 1;
+    String candidate;
+    do {
+      candidate = n == 1 ? '${stem}_freeze.wav' : '${stem}_freeze_$n.wav';
+      n++;
+    } while (File('${lib.path}/$candidate').existsSync());
+
+    final outPath = '${lib.path}/$candidate';
+    await File(outPath).writeAsBytes(wavBytes, flush: true);
+
+    // Configure the destination instrument slot.
+    final destIns = instruments[nextEmpty];
+    destIns.type = InstrumentType.sampler;
+    destIns.sampler
+      ..samplePath = outPath
+      ..sampleName = candidate
+      ..pitch     = 0
+      ..volume    = 1.0
+      ..loopMode  = SamplerLoopMode.off
+      ..start     = 0.0
+      ..end       = 1.0
+      ..attack    = 0.0
+      ..release   = 0.05;
+
+    await AudioEngine.instance.setSamplerSample(nextEmpty, outPath);
+
+    selectInstrument(nextEmpty);
+    notifyListeners();
+    return null; // success
+  }
+
   void toggleRecord() {
     isRecording = !isRecording;
     notifyListeners();

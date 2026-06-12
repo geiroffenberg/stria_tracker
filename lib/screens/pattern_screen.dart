@@ -329,6 +329,16 @@ class _PatternMenuButton extends StatelessWidget {
             ),
           ]),
         ),
+        const PopupMenuDivider(),
+        PopupMenuItem<String>(
+          value: 'freeze',
+          child: Row(children: [
+            Icon(Icons.merge_type, size: 18, color: kColHeader),
+            const SizedBox(width: 10),
+            Text('Copy to Sampler',
+                style: kStyleBase.copyWith(fontSize: 14, color: kColHeader)),
+          ]),
+        ),
       ],
     );
 
@@ -364,6 +374,36 @@ class _PatternMenuButton extends StatelessWidget {
         break;
       case 'swing':
         if (context.mounted) await _showSwingDialog(context);
+        break;
+      case 'freeze':
+        if (!context.mounted) break;
+        // Show a non-dismissible progress indicator while the engine renders.
+        showDialog<void>(
+          context: context,
+          barrierDismissible: false,
+          builder: (_) => AlertDialog(
+            backgroundColor: kBgTrackHeader,
+            content: Row(children: [
+              CircularProgressIndicator(color: kColAccent),
+              const SizedBox(width: 20),
+              Text('Rendering…',
+                  style: kStyleBase.copyWith(color: kColHeader)),
+            ]),
+          ),
+        );
+        final err = await state.freezePatternToSampler();
+        if (context.mounted) Navigator.of(context, rootNavigator: true).pop();
+        if (context.mounted) {
+          final slotNum = state.currentInstrumentIndex + 1;
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text(
+              err == null
+                  ? 'Loaded into instrument slot $slotNum'
+                  : 'Failed: $err',
+            ),
+            duration: const Duration(seconds: 4),
+          ));
+        }
         break;
     }
   }
