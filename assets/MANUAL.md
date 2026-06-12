@@ -164,6 +164,31 @@ Each slot represents one pattern. The song plays slots from top to bottom in seq
 | Duplicate | Insert a copy of the pattern directly below |
 | Delete | Remove the slot from the arrangement |
 
+### Timeline Track Numbers — Solo
+
+The numbers (1–16) shown above each lane in the right-hand timeline are **tappable solo buttons**. Tapping a track number solos that track — identical to pressing the Solo button in the Mixer screen or the pattern track header. The number turns red while the track is soloed. Tapping it again un-solos it. Solo state is global: it shows in red in all three places (Song timeline, Pattern header, Mixer) simultaneously.
+
+### Track Cell Editing from the Song View
+
+You can copy, cut, paste, and delete the contents of any single track inside any pattern without leaving the Song screen.
+
+1. **Long-press** a track cell in the timeline. The cell gets a green border, and an action bar appears at the bottom of the screen.
+2. Use the action bar buttons:
+
+| Button | Action |
+|---|---|
+| CUT | Copy all rows in that track to the clipboard, then clear them |
+| COPY | Copy all rows in that track to the clipboard (track unchanged) |
+| PASTE | Paste clipboard contents into the selected track from row 0 |
+| DEL | Clear all rows in that track to empty |
+| ✕ | Dismiss the selection |
+
+3. To paste into a different track, long-press the target track cell — the selection moves to the new cell. Tap PASTE.
+
+The clipboard is **shared** with the pattern-view row clipboard, so you can copy in the Song screen and paste in the Pattern screen (or vice versa).
+
+Long-pressing another cell while one is already selected simply **replaces the selection** — there is no forced paste.
+
 ### Undo / Redo
 
 The Song screen header contains two arrow buttons — **undo** (left) and **redo** (right) — next to the edit and menu icons.
@@ -231,6 +256,51 @@ BPM (tempo) and LPB (Lines Per Beat) are set per pattern. Changing them mid-song
 |---|---|---|
 | BPM | 20–300 | Beats per minute |
 | LPB | 1–16 | Lines (rows) per beat — controls rhythmic resolution |
+
+### Pattern Menu
+
+The top-right ⌄ menu (next to the pattern name) provides:
+
+| Item | Description |
+|---|---|
+| Undo / Redo | Undo or redo the last pattern edit |
+| Clear pattern | Erase every cell in the pattern (mixer settings and timing are kept) |
+| Reset to defaults | Clear cells and reset BPM, beats, and LPB to defaults |
+| Swing | Set a swing percentage (0 = straight, 99 = maximum shuffle) |
+| Copy to Sampler | Render the pattern (or selected rows) to a WAV and load it into the first free instrument slot as a sampler (see below) |
+
+### Copy Pattern to Sampler
+
+"Copy to Sampler" is a **non-destructive freeze** — it records whatever the engine would play right now and saves it as a new sample.
+
+**How it works:**
+1. Select **Copy to Sampler** from the pattern menu.
+2. The engine plays the pattern once (non-looping). A progress spinner is shown.
+3. The stereo output is captured, encoded as a WAV, and saved to the project samples folder.
+4. The file is loaded into the **first empty instrument slot** as a sampler. You are navigated to that slot automatically.
+5. A snack bar confirms which slot number was used.
+
+**Respects solo and selection:**
+- Solo a track first → only that track's audio is captured.
+- Select rows in the pattern first → only that row range is rendered and the WAV will contain exactly those rows.
+- Do nothing special → the full mix of all active tracks is captured.
+
+**Use cases:**
+- Bounce a complex multi-track pattern down to a single note — place `C-4` with the new instrument number in a track to replay the whole thing at zero CPU cost.
+- Resample a track with effects applied for new sound design material.
+- Create a melodic loop from a generative or arpeggiated pattern.
+
+The original pattern is never modified.
+
+### Row Selection and Playback Range
+
+When one or more rows are selected (by tapping row numbers in the Pattern screen), pressing **Play** honours the selection:
+
+- **Single row or range selected** — playback starts at the first selected row.
+- **Loop enabled** — only the selected rows loop; playback does not wrap to rows outside the selection.
+- **No selection** — playback behaves normally (full pattern from the current cursor position).
+
+This makes it easy to audition a fill, check a transition, or loop a specific beat without moving the cursor.
 
 ### Views
 
@@ -675,7 +745,7 @@ The transport bar sits at the bottom of every screen.
 | BPM display | Shows current pattern tempo; tap to edit |
 | LPB display | Shows lines per beat; tap to edit |
 | Pattern follow | Toggle whether playback follows the song arrangement or loops the current pattern |
-| Loop | When active in pattern mode, the pattern loops continuously. Any changes made to notes, instruments, or settings during playback are picked up automatically at the start of the next loop iteration — no stop/restart required. |}
+| Loop | When active in pattern mode, the pattern loops continuously. Any changes made to notes, instruments, or settings during playback are picked up automatically at the start of the next loop iteration — no stop/restart required. If rows are selected, only the selected range loops (see **Row Selection and Playback Range** in Section 4). |}
 
 ---
 
