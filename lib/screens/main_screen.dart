@@ -27,7 +27,9 @@ class _MainScreenState extends State<MainScreen> {
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) => _maybeShowBetaWelcome());
+    WidgetsBinding.instance.addPostFrameCallback(
+      (_) => _maybeShowBetaWelcome(),
+    );
   }
 
   Future<void> _maybeShowBetaWelcome() async {
@@ -48,7 +50,11 @@ class _MainScreenState extends State<MainScreen> {
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
           title: Text(
             'STRIA TRACKER',
-            style: kStyleHeader.copyWith(color: kColAccent, fontSize: 15, letterSpacing: 2),
+            style: kStyleHeader.copyWith(
+              color: kColAccent,
+              fontSize: 15,
+              letterSpacing: 2,
+            ),
           ),
           content: Column(
             mainAxisSize: MainAxisSize.min,
@@ -56,8 +62,12 @@ class _MainScreenState extends State<MainScreen> {
             children: [
               Text(
                 'Thanks to all the beta testers who helped get this app onto the Play Store!\n\n'
-                'For those who have picked up the app at \$0.99 \u2014 if you want to help shape its development, please post bug reports and feature requests in the STRIA TRACKER Facebook group:',
-                style: kStyleBase.copyWith(color: kColHeader, fontSize: 13, height: 1.5),
+                'This goal is to make a fun and useful mobile tracker app. If you want to help shape its development, please post bug reports and feature requests in the STRIA TRACKER Facebook group:',
+                style: kStyleBase.copyWith(
+                  color: kColHeader,
+                  fontSize: 13,
+                  height: 1.5,
+                ),
               ),
               const SizedBox(height: 10),
               GestureDetector(
@@ -75,14 +85,10 @@ class _MainScreenState extends State<MainScreen> {
                   ),
                 ),
               ),
-              const SizedBox(height: 12),
-              Text(
-                'Contributors will be added to a thank-you list in a future update, and you\'ll keep the app at \$0.99 forever.',
-                style: kStyleBase.copyWith(color: kColHeader, fontSize: 13, height: 1.5),
-              ),
               const SizedBox(height: 20),
               GestureDetector(
-                onTap: () => setDialogState(() => dontShowAgain = !dontShowAgain),
+                onTap: () =>
+                    setDialogState(() => dontShowAgain = !dontShowAgain),
                 child: Row(
                   children: [
                     SizedBox(
@@ -90,7 +96,8 @@ class _MainScreenState extends State<MainScreen> {
                       height: 20,
                       child: Checkbox(
                         value: dontShowAgain,
-                        onChanged: (v) => setDialogState(() => dontShowAgain = v ?? false),
+                        onChanged: (v) =>
+                            setDialogState(() => dontShowAgain = v ?? false),
                         activeColor: kColAccent,
                         side: BorderSide(color: kColInactive),
                         materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
@@ -99,7 +106,10 @@ class _MainScreenState extends State<MainScreen> {
                     const SizedBox(width: 10),
                     Text(
                       "Don't show again",
-                      style: kStyleBase.copyWith(color: kColInactive, fontSize: 12),
+                      style: kStyleBase.copyWith(
+                        color: kColInactive,
+                        fontSize: 12,
+                      ),
                     ),
                   ],
                 ),
@@ -194,8 +204,9 @@ class _MainScreenState extends State<MainScreen> {
 
     // Priority 3: scan the pattern — current track first, then the rest.
     final currentTrack = state.currentTrack;
-    final otherTracks = state.currentPattern.tracks
-        .where((t) => t != currentTrack);
+    final otherTracks = state.currentPattern.tracks.where(
+      (t) => t != currentTrack,
+    );
     for (final track in [currentTrack, ...otherTracks]) {
       for (final cell in track.cells) {
         if (cell.instrument != null && cell.instrument! > 0) {
@@ -230,8 +241,8 @@ class _MainScreenState extends State<MainScreen> {
                 decoration: BoxDecoration(
                   border: Border(
                     bottom: BorderSide(
-                      color:  active ? kColAccent : Colors.transparent,
-                      width:  2,
+                      color: active ? kColAccent : Colors.transparent,
+                      width: 2,
                     ),
                   ),
                 ),

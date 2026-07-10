@@ -3975,7 +3975,7 @@ class AppState extends ChangeNotifier {
       return;
     }
     unawaited(
-      _loadNativePatternPlaybackQueue(startRow: playheadRow).then((_) {
+      _loadNativePatternPlaybackQueue(startRow: playheadRow, endRow: _playbackEndRow).then((_) {
         if (isPlaying) {
           return AudioEngine.instance.start();
         }
@@ -6590,6 +6590,7 @@ class AppState extends ChangeNotifier {
         _insertSnapshot = {};
       }
       await _applyInsertSnapshotToEngine();
+      _queueCurrentMixerSnapshotToEngine();
 
       _currentPatternIndex = 0;
       _currentTrackIndex = 0;
