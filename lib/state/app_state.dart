@@ -166,6 +166,12 @@ class _PatternUndoStack {
   }
 }
 
+/// Pattern editor display modes.
+///  • normal    — single track, full columns, swipe to page.
+///  • collapsed — all tracks side-by-side showing NOTE + INST.
+///  • drum      — all tracks side-by-side showing INST only (pill style).
+enum PatternViewMode { normal, collapsed, drum }
+
 class AppState extends ChangeNotifier {
   static const int _audioVoiceCount = kMaxTracks;
   static const int _audioRowStride = 42;
@@ -343,7 +349,13 @@ class AppState extends ChangeNotifier {
   /// When true, all tracks are visible side-by-side showing only
   /// NOTE + INST columns. When false, only the current track is
   /// visible (full columns) via swipe-paging.
-  bool collapsedView = false;
+  PatternViewMode viewMode = PatternViewMode.normal;
+
+  /// True when a multi-track grid layout is active (collapsed OR drum).
+  bool get collapsedView => viewMode != PatternViewMode.normal;
+
+  /// True when the ultra-compact drum pill layout is active.
+  bool get drumView => viewMode == PatternViewMode.drum;
 
   // ── Getters ──────────────────────────────────────────────────────────────
 
@@ -1732,6 +1744,13 @@ class AppState extends ChangeNotifier {
     );
     track.writeColumnValue(row, column, clamped);
     
+    // Auto-fill note with C-4 if instrument is entered and note is empty
+    if (column == CellColumn.instrument && clamped > 0) {
+      if (track.cells[row].note.isEmpty) {
+        track.setNote(row, NoteValue.fromScrollIndex(49)); // C-4
+      }
+    }
+    
     // Remember the last value set
     if (column == CellColumn.note) {
       // Note nudging is handled via setNote, but handle it here for completeness
@@ -1828,6 +1847,10 @@ class AppState extends ChangeNotifier {
       case CellColumn.instrument:
         // Use the last instrument value (same behaviour as note recall).
         track.writeColumnValue(row, column, lastInstrument);
+        // Auto-fill note with C-4 if instrument is entered and note is empty
+        if (lastInstrument > 0 && track.cells[row].note.isEmpty) {
+          track.setNote(row, NoteValue.fromScrollIndex(49)); // C-4
+        }
       case CellColumn.volume:
         track.writeColumnValue(row, column, 80);
       case CellColumn.fx0cmd:
@@ -2527,8 +2550,13 @@ class AppState extends ChangeNotifier {
 
   // ── Track collapse ────────────────────────────────────────────────────────
 
-  void toggleCollapsedView() {
-    collapsedView = !collapsedView;
+  /// Cycle the pattern editor view: normal → collapsed → drum → normal.
+  void cyclePatternViewMode() {
+    viewMode = switch (viewMode) {
+      PatternViewMode.normal => PatternViewMode.collapsed,
+      PatternViewMode.collapsed => PatternViewMode.drum,
+      PatternViewMode.drum => PatternViewMode.normal,
+    };
     if (collapsedView) {
       _boxSelection = null;
       _isBoxSelecting = false;

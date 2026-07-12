@@ -396,6 +396,13 @@ class _NumericActions extends StatelessWidget {
     final clamped = v.clamp(minV, maxV);
     track.writeColumnValue(row, column, clamped);
     
+    // Auto-fill note with C-4 if instrument is entered and note is empty
+    if (column == CellColumn.instrument && clamped > 0) {
+      if (track.cells[row].note.isEmpty) {
+        track.setNote(row, NoteValue.fromScrollIndex(49)); // C-4
+      }
+    }
+    
     // Remember the last value set based on column type
     if (column == CellColumn.instrument) {
       state.updateLastInstrument(clamped);

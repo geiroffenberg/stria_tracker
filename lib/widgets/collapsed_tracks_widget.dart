@@ -22,9 +22,13 @@ class CollapsedTracksWidget extends StatefulWidget {
 
   static const double wNote = 38.0;
   static const double wInst = 34.0;
+  static const double wDrumPill = 40.0;
   static const double wTrackGap = 6.0;
 
-  static double get trackWidth => wNote + wInst + wTrackGap;
+  /// Track column width for the active mode. Drum mode drops the NOTE
+  /// column and shows a single instrument pill.
+  static double trackWidthFor(bool drum) =>
+      drum ? (wDrumPill + wTrackGap) : (wNote + wInst + wTrackGap);
 
   @override
   State<CollapsedTracksWidget> createState() => _CollapsedTracksWidgetState();
@@ -67,8 +71,10 @@ class _CollapsedTracksWidgetState extends State<CollapsedTracksWidget> {
     final state = AppStateScope.of(context);
     final tracks = state.currentPattern.tracks;
     final rowCount = state.rowCount;
+    final drum = state.drumView;
 
-    final tracksWidth = tracks.length * CollapsedTracksWidget.trackWidth;
+    final tracksWidth =
+        tracks.length * CollapsedTracksWidget.trackWidthFor(drum);
     const leftColWidth = kWRow + 2; // row# + tick
 
     return Column(
@@ -88,7 +94,7 @@ class _CollapsedTracksWidgetState extends State<CollapsedTracksWidget> {
                   scrollDirection: Axis.horizontal,
                   child: SizedBox(
                     width: tracksWidth,
-                    child: _buildTrackLabels(tracks),
+                    child: _buildTrackLabels(tracks, drum),
                   ),
                 ),
               ),
@@ -158,15 +164,18 @@ class _CollapsedTracksWidgetState extends State<CollapsedTracksWidget> {
 
   // ── Header content ────────────────────────────────────────────────────────
 
-  Widget _buildTrackLabels(List<TrackModel> tracks) {
+  Widget _buildTrackLabels(List<TrackModel> tracks, bool drum) {
     final state = AppStateScope.of(context);
+    final labelWidth = drum
+        ? CollapsedTracksWidget.wDrumPill
+        : CollapsedTracksWidget.wNote + CollapsedTracksWidget.wInst;
     return Container(
       color: kBgHeader,
       child: Row(
         children: [
           for (int i = 0; i < tracks.length; i++) ...[
             SizedBox(
-              width: CollapsedTracksWidget.wNote + CollapsedTracksWidget.wInst,
+              width: labelWidth,
               child: GestureDetector(
                 behavior: HitTestBehavior.opaque,
                 onTap: () => state.toggleTrackMixerSolo(i),
@@ -257,6 +266,34 @@ class _CollapsedTracksWidgetState extends State<CollapsedTracksWidget> {
     final sel = state.selectedCell;
     final isCurrentTrack = trackIndex == state.currentTrackIndex;
 
+    // Drum mode: a single instrument pill per track (no NOTE column).
+    if (state.drumView) {
+      return [
+        SizedBox(
+          width: CollapsedTracksWidget.wDrumPill,
+          height: kRowHeight,
+          child: _MiniCell(
+            cell: cell,
+            column: CellColumn.instrument,
+            row: row,
+            trackIndex: trackIndex,
+            drumPill: true,
+            isSelected:
+                isCurrentTrack &&
+                sel?.row == row &&
+                sel?.column == CellColumn.instrument,
+          ),
+        ),
+        SizedBox(
+          width: CollapsedTracksWidget.wTrackGap,
+          height: kRowHeight,
+          child: Center(
+            child: Container(width: 1, color: kColAccent.withAlpha(40)),
+          ),
+        ),
+      ];
+    }
+
     return [
       SizedBox(
         width: CollapsedTracksWidget.wNote,
@@ -304,6 +341,7 @@ class _MiniCell extends StatefulWidget {
   final int row;
   final int trackIndex;
   final bool isSelected;
+  final bool drumPill;
 
   const _MiniCell({
     required this.cell,
@@ -311,6 +349,7 @@ class _MiniCell extends StatefulWidget {
     required this.row,
     required this.trackIndex,
     required this.isSelected,
+    this.drumPill = false,
   });
 
   @override
@@ -337,7 +376,22 @@ class _MiniCellState extends State<_MiniCell> {
     }
     if (widget.column == CellColumn.instrument &&
         cellIsEmpty(widget.column, widget.cell)) {
-      state.insertDefaultValue(widget.row, widget.column);
+      // Drum mode: auto-fill with the track number (1-based)
+      if (widget.drumPill) {
+        final trackInstrument = widget.trackIndex + 1; // 1-based track = 1-based instrument
+        state.currentTrack.writeColumnValue(widget.row, widget.column, trackInstrument);
+        state.updateLastInstrument(trackInstrument);
+        // Also auto-fill the note with C-4 if empty
+        if (widget.cell.note.isEmpty) {
+          state.setNote(
+            widget.row,
+            NoteValue.fromScrollIndex(_defaultNoteScrollIndex),
+          );
+        }
+      } else {
+        // Normal mode: use last instrument value
+        state.insertDefaultValue(widget.row, widget.column);
+      }
     }
     state.selectCell(widget.row, widget.column);
   }
@@ -357,56 +411,138 @@ class _MiniCellState extends State<_MiniCell> {
     _select(state);
   }
 
+  void _onDragStart(AppState state) {
+    if (cellIsEmpty(widget.column, widget.cell)) {
+      _select(state);
+      state.insertDefaultValue(widget.row, widget.column);
+    }
+    _dragAccum = 0.0;
+    _select(state);
+  }
+
+  void _onDragUpdate(AppState state, DragUpdateDetails d) {
+    _dragAccum -= d.delta.dy;
+    final steps = (_dragAccum / _pixelsPerStep).truncate();
+    if (steps != 0) {
+      _dragAccum -= steps * _pixelsPerStep;
+      state.nudgeCell(widget.row, widget.column, steps);
+      // Preview note when editing note cells
+      if (widget.column == CellColumn.note) {
+        state.previewCellNoteOneShot(widget.row);
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final state = AppStateScope.of(context);
-    final text = cellDisplay(widget.column, widget.cell);
-    final empty = cellIsEmpty(widget.column, widget.cell);
-    final style = empty ? kStyleEmpty : columnStyle(widget.column);
     final isBoxSelected = state.isCellInBoxSelection(
       widget.trackIndex,
       widget.row,
       widget.column,
     );
 
+    final Widget child = widget.drumPill
+        ? _buildDrumPill(isBoxSelected)
+        : _buildTextCell(isBoxSelected);
+
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: () => _handleTap(state),
-      onVerticalDragStart: (_) {
-        if (cellIsEmpty(widget.column, widget.cell)) {
-          _select(state);
-          state.insertDefaultValue(widget.row, widget.column);
-        }
-        _dragAccum = 0.0;
-        _select(state);
-      },
-      onVerticalDragUpdate: (d) {
-        _dragAccum -= d.delta.dy;
-        final steps = (_dragAccum / _pixelsPerStep).truncate();
-        if (steps != 0) {
-          _dragAccum -= steps * _pixelsPerStep;
-          state.nudgeCell(widget.row, widget.column, steps);
-          // Preview note when editing note cells
-          if (widget.column == CellColumn.note) {
-            state.previewCellNoteOneShot(widget.row);
-          }
-        }
-      },
-      child: Container(
-        decoration: (widget.isSelected || isBoxSelected)
-            ? BoxDecoration(
-                color: isBoxSelected
-                    ? kBgSelected.withAlpha(widget.isSelected ? 255 : 170)
-                    : kBgSelected,
-                border: Border.all(color: kColSelection, width: 1.5),
-              )
-            : null,
-        alignment: Alignment.centerLeft,
-        padding: EdgeInsets.symmetric(
-          horizontal: (widget.isSelected || isBoxSelected) ? 0.5 : 2.0,
+      onVerticalDragStart: (_) => _onDragStart(state),
+      onVerticalDragUpdate: (d) => _onDragUpdate(state, d),
+      child: child,
+    );
+  }
+
+  Widget _buildTextCell(bool isBoxSelected) {
+    final text = cellDisplay(widget.column, widget.cell);
+    final empty = cellIsEmpty(widget.column, widget.cell);
+    final style = empty ? kStyleEmpty : columnStyle(widget.column);
+    final selected = widget.isSelected || isBoxSelected;
+
+    return Container(
+      decoration: selected
+          ? BoxDecoration(
+              color: isBoxSelected
+                  ? kBgSelected.withAlpha(widget.isSelected ? 255 : 170)
+                  : kBgSelected,
+              border: Border.all(color: kColSelection, width: 1.5),
+            )
+          : null,
+      alignment: Alignment.centerLeft,
+      padding: EdgeInsets.symmetric(horizontal: selected ? 0.5 : 2.0),
+      child: Text(text, style: style, maxLines: 1),
+    );
+  }
+
+  /// Drum-mode pill: instrument number on an accent pill, OFF as a red
+  /// pill with an ✕, and empty cells as a faint dot.
+  Widget _buildDrumPill(bool isBoxSelected) {
+    final cell = widget.cell;
+    final selected = widget.isSelected || isBoxSelected;
+
+    final Widget pill;
+    if (cell.note.isOff) {
+      pill = _pill(
+        color: kColStopBtn,
+        child: const Text(
+          '✕',
+          style: TextStyle(
+            color: Colors.white,
+            fontSize: 12,
+            fontWeight: FontWeight.w700,
+          ),
         ),
-        child: Text(text, style: style, maxLines: 1),
+      );
+    } else if (cell.instrument != null) {
+      pill = _pill(
+        color: kColAccent,
+        child: Text(
+          cell.instrument!.toString().padLeft(2, '0'),
+          style: const TextStyle(
+            color: Colors.black,
+            fontSize: 12,
+            fontWeight: FontWeight.w700,
+            fontFamily: kFontMono,
+          ),
+        ),
+      );
+    } else {
+      // Empty slot indicator.
+      pill = Container(
+        width: 5,
+        height: 5,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: kColInactive.withAlpha(70),
+        ),
+      );
+    }
+
+    return Container(
+      alignment: Alignment.center,
+      decoration: selected
+          ? BoxDecoration(
+              border: Border.all(color: kColSelection, width: 1.5),
+              borderRadius: BorderRadius.circular(11),
+            )
+          : null,
+      child: pill,
+    );
+  }
+
+  Widget _pill({required Color color, required Widget child}) {
+    return Container(
+      constraints: const BoxConstraints(minWidth: 28),
+      height: 20,
+      alignment: Alignment.center,
+      padding: const EdgeInsets.symmetric(horizontal: 6),
+      decoration: BoxDecoration(
+        color: color,
+        borderRadius: BorderRadius.circular(10),
       ),
+      child: child,
     );
   }
 }

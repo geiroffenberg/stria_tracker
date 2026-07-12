@@ -141,10 +141,10 @@ class _PatternScreenState extends State<PatternScreen> {
             ),
           ],
           const Spacer(),
-          // Global collapse toggle
+          // Global view-mode toggle: NORMAL → COLLAPSE → DRUM → NORMAL
           GestureDetector(
             onTap: () {
-              state.toggleCollapsedView();
+              state.cyclePatternViewMode();
               // When returning to expanded view, sync the PageView.
               if (!state.collapsedView) {
                 WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -166,7 +166,11 @@ class _PatternScreenState extends State<PatternScreen> {
                 borderRadius: BorderRadius.circular(3),
               ),
               child: Text(
-                state.collapsedView ? 'EXPAND' : 'COLLAPSE',
+                switch (state.viewMode) {
+                  PatternViewMode.normal => 'COLLAPSE',
+                  PatternViewMode.collapsed => 'DRUM',
+                  PatternViewMode.drum => 'EXPAND',
+                },
                 style: kStyleBase.copyWith(
                   fontSize: 11,
                   color: state.collapsedView ? kColActive : kColHeader,
