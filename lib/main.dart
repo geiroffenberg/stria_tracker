@@ -12,6 +12,9 @@ import 'theme/app_theme.dart';
 
 const String _kPaletteKey = 'tracker_palette';
 
+/// Global navigatorKey to access the navigator state from anywhere
+final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
+
 /// Global notifier — any widget can listen to palette changes and rebuild.
 final ValueNotifier<TrackerPalette> paletteNotifier =
     ValueNotifier<TrackerPalette>(kPaletteBlue);
@@ -80,8 +83,57 @@ class _TrackerAppState extends State<TrackerApp> with WidgetsBindingObserver {
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.paused ||
         state == AppLifecycleState.detached) {
-      unawaited(_appState.autosaveOnFocusLost());
+      if (_appState.hasUnsavedChanges) {
+        _showUnsavedChangesDialog();
+      } else {
+        unawaited(_appState.autosaveOnFocusLost());
+      }
     }
+  }
+
+  void _showUnsavedChangesDialog() {
+    // Only show dialog if there's a navigator available
+    final navContext = navigatorKey.currentContext;
+    if (navContext == null) {
+      // Fallback: just auto-save if we can't show a dialog
+      unawaited(_appState.autosaveOnFocusLost());
+      return;
+    }
+
+    showDialog<bool>(
+      context: navContext,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        title: const Text('Unsaved Changes'),
+        content: const Text(
+          'You have unsaved changes. Would you like to save them before closing?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              Navigator.pop(context, false);
+              // Close the app
+              if (Platform.isAndroid) {
+                SystemNavigator.pop();
+              }
+            },
+            child: const Text('Discard'),
+          ),
+          TextButton(
+            onPressed: () async {
+              Navigator.pop(context, true);
+              // Save the song
+              await _appState.saveSong();
+              // Close the app
+              if (Platform.isAndroid) {
+                SystemNavigator.pop();
+              }
+            },
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
   }
 
   void _onPaletteChanged() => setState(() {});
@@ -99,6 +151,7 @@ class _TrackerAppState extends State<TrackerApp> with WidgetsBindingObserver {
     return AppStateScope(
       state: _appState,
       child: MaterialApp(
+        navigatorKey: navigatorKey,
         title:        'Tracker',
         debugShowCheckedModeBanner: false,
         theme:        buildAppTheme(),

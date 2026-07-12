@@ -591,11 +591,80 @@ class _SongScreenState extends State<SongScreen> {
     setState(() => _editingName = false);
   }
 
+  /// Show a dialog to prompt user for a new song name with validation.
+  /// Returns the song name on success, or null if cancelled.
+  Future<String?> _showNewSongDialog(
+    BuildContext ctx,
+    AppState state,
+  ) async {
+    final controller = TextEditingController();
+    String? errorText;
+    return showDialog<String>(
+      context: ctx,
+      builder: (dialogCtx) => StatefulBuilder(
+        builder: (dialogCtx, setDialogState) => AlertDialog(
+          title: const Text('New Song'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const Text('Enter a unique name for your new song:'),
+              const SizedBox(height: 16),
+              TextField(
+                controller: controller,
+                autofocus: true,
+                decoration: InputDecoration(
+                  hintText: 'Song name',
+                  errorText: errorText,
+                  border: const OutlineInputBorder(),
+                ),
+                onChanged: (_) {
+                  if (errorText != null) {
+                    setDialogState(() => errorText = null);
+                  }
+                },
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogCtx),
+              child: const Text('Cancel'),
+            ),
+            TextButton(
+              onPressed: () async {
+                final name = controller.text.trim();
+                if (name.isEmpty) {
+                  setDialogState(() => errorText = 'Song name cannot be empty.');
+                  return;
+                }
+                final exists = await state.songNameExists(name);
+                if (!dialogCtx.mounted) return;
+                if (exists) {
+                  setDialogState(
+                    () =>
+                        errorText =
+                            'A song with this name already exists. Choose a different name.',
+                  );
+                  return;
+                }
+                Navigator.pop(dialogCtx, name);
+              },
+              child: const Text('Create'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Future<void> _handleNew(BuildContext ctx, AppState state) async {
     if (_editingName) _commitRename(state);
     final ready = await _ensureProjectFolder(ctx, state);
     if (!ready) return;
-    final saved = await state.newSong();
+    final newName = await _showNewSongDialog(ctx, state);
+    if (newName == null) return; // User cancelled
+    final saved = await state.newSongWithName(newName);
     if (!ctx.mounted) return;
     setState(() {
       _editingName = false;
@@ -605,8 +674,8 @@ class _SongScreenState extends State<SongScreen> {
       SnackBar(
         content: Text(
           saved
-              ? 'Song saved. New project created.'
-              : 'New project created (save failed).',
+              ? 'Song saved. New project "$newName" created.'
+              : 'New project "$newName" created (save failed).',
         ),
         duration: const Duration(seconds: 2),
       ),

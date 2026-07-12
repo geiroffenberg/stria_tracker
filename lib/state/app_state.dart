@@ -252,6 +252,7 @@ class AppState extends ChangeNotifier {
   final Map<int, ({String note, int volume, int instrument, int fxCommand, int fxValue})> _patternLastValues = {};
 
   int _songStateVersion = 0;
+  int _lastSavedSongStateVersion = 0;
 
   int _currentPatternIndex = 0;
   int _currentTrackIndex = 0;
@@ -366,6 +367,7 @@ class AppState extends ChangeNotifier {
   bool get autosaveEnabled => _autosaveEnabled;
   bool get masterLimiterEnabled => _masterLimiterEnabled;
   int get songStateVersion => _songStateVersion;
+  bool get hasUnsavedChanges => _songStateVersion != _lastSavedSongStateVersion;
   List<List<bool>> get trackInsertOccupied => _trackInsertOccupied;
   List<List<String?>> get trackInsertEffectNames => _trackInsertEffectNames;
   Map<String, dynamic> get insertSnapshot => _insertSnapshot;
@@ -6259,6 +6261,28 @@ class AppState extends ChangeNotifier {
     _notifyListenersSafe();
   }
 
+  /// Save current song then reset to a blank new song with the specified name.
+  Future<bool> newSongWithName(String name) async {
+    final saved = await saveSong();
+    await _clearInsertEffectsInEngine();
+    song = SongModel(name: name);
+    for (var i = 0; i < instruments.length; i++) {
+      instruments[i] = InstrumentModel.empty(i + 1);
+    }
+    _resetSongScopedState();
+    _currentPatternIndex = 0;
+    _currentTrackIndex = 0;
+    _currentInstrumentIndex = 0;
+    _currentArrangementSlotIndex = 0;
+    selectedCell = null;
+    _selectedRowStart = null;
+    _selectedRowEnd = null;
+    _songStateVersion++;
+    _lastSavedSongStateVersion = _songStateVersion;
+    _notifyListenersSafe();
+    return saved;
+  }
+
   /// Save current song then reset to a blank new song.
   Future<bool> newSong() async {
     final saved = await saveSong();
@@ -6276,6 +6300,7 @@ class AppState extends ChangeNotifier {
     _selectedRowStart = null;
     _selectedRowEnd = null;
     _songStateVersion++;
+    _lastSavedSongStateVersion = _songStateVersion;
     _notifyListenersSafe();
     return saved;
   }
@@ -6318,11 +6343,15 @@ class AppState extends ChangeNotifier {
             'text': payload,
           },
         );
-        if (ok == true) unawaited(_saveAppSettings());
+        if (ok == true) {
+          _lastSavedSongStateVersion = _songStateVersion;
+          unawaited(_saveAppSettings());
+        }
         return ok == true;
       }
 
       await (await _songFile(song.name)).writeAsString(payload);
+      _lastSavedSongStateVersion = _songStateVersion;
       // Update last-open tracking (non-blocking).
       unawaited(_saveAppSettings());
       return true;
@@ -6432,6 +6461,13 @@ class AppState extends ChangeNotifier {
     } catch (_) {
       return [];
     }
+  }
+
+  /// Check if a song with the given name already exists (case-insensitive).
+  Future<bool> songNameExists(String name) async {
+    final names = await listSavedSongs();
+    final lowerName = name.trim().toLowerCase();
+    return names.any((n) => n.toLowerCase() == lowerName);
   }
 
   ({SongModel song, List<InstrumentModel> instruments})? _decodeSongPayload(
@@ -6600,6 +6636,7 @@ class AppState extends ChangeNotifier {
       _selectedRowStart = null;
       _selectedRowEnd = null;
       _songStateVersion++;
+      _lastSavedSongStateVersion = _songStateVersion;
       _notifyListenersSafe();
       // Track this as the last open song (non-blocking).
       unawaited(_saveAppSettings());
