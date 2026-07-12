@@ -344,6 +344,7 @@ class AppState extends ChangeNotifier {
   bool isPlaying = false;
   bool isRecording = false;
   bool _loopPlaybackEnabled = false;
+  bool _followPlayhead = false;
   int playheadRow = 0;
 
   /// When true, all tracks are visible side-by-side showing only
@@ -367,6 +368,7 @@ class AppState extends ChangeNotifier {
   int? get queuedArrangementSlot => _queuedArrangementSlot;
   bool get playbackFollowsSong => _playbackFollowsSong;
   bool get loopPlaybackEnabled => _loopPlaybackEnabled;
+  bool get followPlayhead => _followPlayhead;
   bool get isPreviewingCurrentSampler =>
       _previewSamplerSlot == _currentInstrumentIndex;
   String? get defaultSampleFolder => _defaultSampleFolder;
@@ -3240,6 +3242,11 @@ class AppState extends ChangeNotifier {
     );
     await AudioEngine.instance.start();
     _startNativePatternPlayheadPoller();
+    notifyListeners();
+  }
+
+  void toggleFollowPlayhead() {
+    _followPlayhead = !_followPlayhead;
     notifyListeners();
   }
 

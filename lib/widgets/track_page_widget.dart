@@ -22,6 +22,8 @@ class TrackPageWidget extends StatefulWidget {
 
 class _TrackPageWidgetState extends State<TrackPageWidget> {
   late final ScrollController _scrollController;
+  int _lastFollowedRow = -1;
+  AppState? _observedState;
 
   @override
   void initState() {
@@ -30,7 +32,32 @@ class _TrackPageWidgetState extends State<TrackPageWidget> {
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final state = AppStateScope.of(context);
+    if (_observedState != state) {
+      _observedState?.removeListener(_onStateChanged);
+      _observedState = state;
+      state.addListener(_onStateChanged);
+    }
+  }
+
+  void _onStateChanged() {
+    final state = _observedState;
+    if (state == null || !state.isPlaying || !state.followPlayhead) return;
+    if (!_scrollController.hasClients) return;
+    final row = state.playheadRow;
+    if (row == _lastFollowedRow) return;
+    _lastFollowedRow = row;
+    final pos = _scrollController.position;
+    final target = (row * kRowHeight - pos.viewportDimension / 2 + kRowHeight / 2)
+        .clamp(pos.minScrollExtent, pos.maxScrollExtent);
+    _scrollController.jumpTo(target);
+  }
+
+  @override
   void dispose() {
+    _observedState?.removeListener(_onStateChanged);
     _scrollController.dispose();
     super.dispose();
   }

@@ -38,6 +38,8 @@ class _CollapsedTracksWidgetState extends State<CollapsedTracksWidget> {
   late final ScrollController _hHeader;
   late final ScrollController _hBody;
   bool _syncing = false;
+  int _lastFollowedRow = -1;
+  AppState? _observedState;
 
   @override
   void initState() {
@@ -46,6 +48,17 @@ class _CollapsedTracksWidgetState extends State<CollapsedTracksWidget> {
     _hBody = ScrollController();
     _hHeader.addListener(() => _sync(_hHeader, _hBody));
     _hBody.addListener(() => _sync(_hBody, _hHeader));
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final state = AppStateScope.of(context);
+    if (_observedState != state) {
+      _observedState?.removeListener(_onStateChanged);
+      _observedState = state;
+      state.addListener(_onStateChanged);
+    }
   }
 
   void _sync(ScrollController src, ScrollController dst) {
@@ -57,8 +70,22 @@ class _CollapsedTracksWidgetState extends State<CollapsedTracksWidget> {
     _syncing = false;
   }
 
+  void _onStateChanged() {
+    final state = _observedState;
+    if (state == null || !state.isPlaying || !state.followPlayhead) return;
+    if (!_vBodyCtrl.hasClients) return;
+    final row = state.playheadRow;
+    if (row == _lastFollowedRow) return;
+    _lastFollowedRow = row;
+    final pos = _vBodyCtrl.position;
+    final target = (row * kRowHeight - pos.viewportDimension / 2 + kRowHeight / 2)
+        .clamp(pos.minScrollExtent, pos.maxScrollExtent);
+    _vBodyCtrl.jumpTo(target);
+  }
+
   @override
   void dispose() {
+    _observedState?.removeListener(_onStateChanged);
     _hHeader.dispose();
     _hBody.dispose();
     _vBodyCtrl.dispose();

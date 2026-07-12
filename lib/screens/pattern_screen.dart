@@ -335,6 +335,27 @@ class _PatternMenuButton extends StatelessWidget {
         ),
         const PopupMenuDivider(),
         PopupMenuItem<String>(
+          value: 'follow',
+          child: Row(children: [
+            Icon(
+              state.followPlayhead
+                  ? Icons.location_on
+                  : Icons.location_searching,
+              size: 18,
+              color: state.followPlayhead ? kColAccent : kColHeader,
+            ),
+            const SizedBox(width: 10),
+            Text(
+              'Follow playhead',
+              style: kStyleBase.copyWith(
+                fontSize: 14,
+                color: state.followPlayhead ? kColAccent : kColHeader,
+              ),
+            ),
+          ]),
+        ),
+        const PopupMenuDivider(),
+        PopupMenuItem<String>(
           value: 'freeze',
           child: Row(children: [
             Icon(Icons.merge_type, size: 18, color: kColHeader),
@@ -378,6 +399,9 @@ class _PatternMenuButton extends StatelessWidget {
         break;
       case 'swing':
         if (context.mounted) await _showSwingDialog(context);
+        break;
+      case 'follow':
+        state.toggleFollowPlayhead();
         break;
       case 'freeze':
         if (!context.mounted) break;
