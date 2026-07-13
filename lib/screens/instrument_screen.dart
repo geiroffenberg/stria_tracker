@@ -2604,7 +2604,124 @@ class _SamplerEditorState extends State<_SamplerEditor>
     );
   }
 
-  // ── FILTER card (HP → LP in series, with ON/OFF bypass) ────────────────────
+  Widget _buildLoopEditor(SamplerParams p) {
+    final state = AppStateScope.of(context);
+    final isLooping = p.loopMode != SamplerLoopMode.off;
+    return _Section(
+      title: 'LOOP',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // ── Mode buttons: OFF · LOOP · PING ──────────────────────────────
+          Row(
+            children: [
+              for (final mode in SamplerLoopMode.values)
+                Padding(
+                  padding: const EdgeInsets.only(right: 6),
+                  child: GestureDetector(
+                    onTap: () {
+                      p.loopMode = mode;
+                      state.instrumentParamsChanged();
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 14,
+                        vertical: 6,
+                      ),
+                      decoration: BoxDecoration(
+                        color: p.loopMode == mode
+                            ? kColAccent.withAlpha(40)
+                            : Colors.transparent,
+                        border: Border.all(
+                          color: p.loopMode == mode
+                              ? kColAccent
+                              : kColInactive,
+                        ),
+                        borderRadius: BorderRadius.circular(3),
+                      ),
+                      child: Text(
+                        mode.label,
+                        style: kStyleHeader.copyWith(
+                          fontSize: 12,
+                          color: p.loopMode == mode
+                              ? kColAccent
+                              : kColInactive,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+          // ── Loop start / end sliders (dimmed when loop is off) ───────────
+          const SizedBox(height: 12),
+          Opacity(
+            opacity: isLooping ? 1.0 : 0.35,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  'LOOP START  ${(p.loopStart * 100).round()}%',
+                  style: kStyleHeader.copyWith(
+                    fontSize: 11,
+                    color: kColHeader,
+                  ),
+                ),
+                SliderTheme(
+                  data: SliderTheme.of(context).copyWith(
+                    activeTrackColor: kColAccent,
+                    inactiveTrackColor: kColInactive.withAlpha(80),
+                    thumbColor: kColAccent,
+                    overlayShape: SliderComponentShape.noOverlay,
+                  ),
+                  child: Slider(
+                    value: p.loopStart,
+                    onChanged: isLooping
+                        ? (v) {
+                            p.loopStart = v.clamp(0.0, 1.0);
+                            if (p.loopEnd < p.loopStart + 0.01) {
+                              p.loopEnd = (p.loopStart + 0.01).clamp(0.0, 1.0);
+                            }
+                            state.instrumentParamsChanged();
+                          }
+                        : null,
+                  ),
+                ),
+                Text(
+                  'LOOP END  ${(p.loopEnd * 100).round()}%',
+                  style: kStyleHeader.copyWith(
+                    fontSize: 11,
+                    color: kColHeader,
+                  ),
+                ),
+                SliderTheme(
+                  data: SliderTheme.of(context).copyWith(
+                    activeTrackColor: kColAccent,
+                    inactiveTrackColor: kColInactive.withAlpha(80),
+                    thumbColor: kColAccent,
+                    overlayShape: SliderComponentShape.noOverlay,
+                  ),
+                  child: Slider(
+                    value: p.loopEnd,
+                    onChanged: isLooping
+                        ? (v) {
+                            p.loopEnd = v.clamp(0.0, 1.0);
+                            if (p.loopEnd < p.loopStart + 0.01) {
+                              p.loopStart = (p.loopEnd - 0.01).clamp(0.0, 1.0);
+                            }
+                            state.instrumentParamsChanged();
+                          }
+                        : null,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildFilterEditor(SamplerParams p) {
     Widget labeledSlider({
       required String label,
@@ -3157,6 +3274,8 @@ class _SamplerEditorState extends State<_SamplerEditor>
                                   axisColor: kColInactive,
                                   startNorm: p.start,
                                   endNorm: p.end,
+                                  loopStartNorm: p.loopStart,
+                                  loopEndNorm: p.loopEnd,
                                   sliceMarkers: [
                                     for (
                                       int i = 0;
@@ -3287,58 +3406,10 @@ class _SamplerEditorState extends State<_SamplerEditor>
                   ],
                 ),
                 const SizedBox(height: 10),
-                // ── Loop mode: OFF · LOOP · PING ─────────────────────────
-                Row(
-                  children: [
-                    Text(
-                      'LOOP',
-                      style: kStyleHeader.copyWith(
-                        fontSize: 11,
-                        color: kColHeader,
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    for (final mode in SamplerLoopMode.values)
-                      Padding(
-                        padding: const EdgeInsets.only(right: 6),
-                        child: GestureDetector(
-                          onTap: () {
-                            p.loopMode = mode;
-                            state.instrumentParamsChanged();
-                          },
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 10,
-                              vertical: 4,
-                            ),
-                            decoration: BoxDecoration(
-                              color: p.loopMode == mode
-                                  ? kColAccent.withAlpha(40)
-                                  : Colors.transparent,
-                              border: Border.all(
-                                color: p.loopMode == mode
-                                    ? kColAccent
-                                    : kColInactive,
-                              ),
-                              borderRadius: BorderRadius.circular(3),
-                            ),
-                            child: Text(
-                              mode.label,
-                              style: kStyleHeader.copyWith(
-                                fontSize: 11,
-                                color: p.loopMode == mode
-                                    ? kColAccent
-                                    : kColInactive,
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                  ],
-                ),
               ],
             ),
           ),
+          _buildLoopEditor(p),
           _buildFilterEditor(p),
         ],
       ),
@@ -3352,6 +3423,8 @@ class _SampleWaveformPainter extends CustomPainter {
   final Color axisColor;
   final double startNorm;
   final double endNorm;
+  final double loopStartNorm;
+  final double loopEndNorm;
   final List<MapEntry<int, double>> sliceMarkers;
   final double previewStartNorm;
   final double previewEndNorm;
@@ -3364,6 +3437,8 @@ class _SampleWaveformPainter extends CustomPainter {
     required this.axisColor,
     required this.startNorm,
     required this.endNorm,
+    required this.loopStartNorm,
+    required this.loopEndNorm,
     required this.sliceMarkers,
     required this.previewStartNorm,
     required this.previewEndNorm,
@@ -3401,6 +3476,34 @@ class _SampleWaveformPainter extends CustomPainter {
       ..strokeWidth = 1.5;
     canvas.drawLine(Offset(leftX, 0), Offset(leftX, size.height), marker);
     canvas.drawLine(Offset(rightX, 0), Offset(rightX, size.height), marker);
+
+    // Loop region markers (complement color for distinction from playback region)
+    final loopL = loopStartNorm.clamp(0.0, 1.0);
+    final loopR = loopEndNorm.clamp(0.0, 1.0);
+    if (loopL != loopR) {
+      final loopLeftX = size.width * math.min(loopL, loopR);
+      final loopRightX = size.width * math.max(loopL, loopR);
+      final loopMarker = Paint()
+        ..color = kColComplement.withAlpha(140)
+        ..strokeWidth = 2.0;
+      // Draw thicker lines with dash effect for loop boundaries
+      const dashSize = 4.0;
+      const gapSize = 2.0;
+      var offset = 0.0;
+      while (offset < size.height) {
+        canvas.drawLine(
+          Offset(loopLeftX, offset),
+          Offset(loopLeftX, math.min(offset + dashSize, size.height)),
+          loopMarker,
+        );
+        canvas.drawLine(
+          Offset(loopRightX, offset),
+          Offset(loopRightX, math.min(offset + dashSize, size.height)),
+          loopMarker,
+        );
+        offset += dashSize + gapSize;
+      }
+    }
 
     final sliceMarker = Paint()
       ..color = Colors.amber.shade600.withAlpha(230)

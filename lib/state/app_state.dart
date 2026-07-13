@@ -174,7 +174,7 @@ enum PatternViewMode { normal, collapsed, drum }
 
 class AppState extends ChangeNotifier {
   static const int _audioVoiceCount = kMaxTracks;
-  static const int _audioRowStride = 42;
+  static const int _audioRowStride = 44;
 
   /// Max master fader gain (linear). 2.0 = +6 dB headroom for intentionally
   /// driving the always-on safety limiter (makeup-style gain).
@@ -429,16 +429,59 @@ class AppState extends ChangeNotifier {
     final started = _previewStartedAt;
     if (started == null || _previewDurationMs <= 0) return 0.0;
 
+    final slot = _previewSamplerSlot.clamp(0, instruments.length - 1);
+    final sampler = instruments[slot].sampler;
+    final mode = sampler.loopMode;
+
     final elapsedMs = DateTime.now().difference(started).inMilliseconds;
     final d = _previewDurationMs;
-    final mode = instruments[_previewSamplerSlot].sampler.loopMode;
+    
+    // Map playhead across full sample region (start → end)
+    final playStart = sampler.start.clamp(0.0, 1.0);
+    final playEnd = sampler.end.clamp(playStart + 0.001, 1.0);
+    final playSize = playEnd - playStart;
 
     if (mode == SamplerLoopMode.off) {
-      return (elapsedMs / d).clamp(0.0, 1.0);
+      // Non-looping: simple linear playhead
+      final normalizedTime = (elapsedMs / d).clamp(0.0, 1.0);
+      return (playStart + normalizedTime * playSize).clamp(0.0, 1.0);
     }
 
-    final wrapped = elapsedMs % d;
-    return (wrapped / d).clamp(0.0, 1.0);
+    // Looping enabled
+    final loopStart = sampler.loopStart.clamp(0.0, 1.0);
+    final loopEnd = sampler.loopEnd.clamp(loopStart + 0.001, 1.0);
+    final loopSize = loopEnd - loopStart;
+    
+    // Time to reach loopStart from playStart
+    final preLoopSize = loopStart - playStart;
+    final preLoopDurationMs = (d * (preLoopSize / playSize)).toInt();
+    
+    if (elapsedMs < preLoopDurationMs) {
+      // Still in pre-loop region
+      final normalizedPreLoop = elapsedMs / preLoopDurationMs;
+      return (playStart + normalizedPreLoop * preLoopSize).clamp(0.0, 1.0);
+    }
+    
+    // In loop region
+    final posInLoop = (elapsedMs - preLoopDurationMs) % (d - preLoopDurationMs);
+    final loopDurationMs = d - preLoopDurationMs;
+    
+    if (loopDurationMs <= 0) return loopStart;
+
+    final normalizedPosInLoop = posInLoop / loopDurationMs;
+
+    if (mode == SamplerLoopMode.pingPong) {
+      // Ping-pong: 0.0->1.0->0.0 pattern
+      final cycleDuration = loopDurationMs / 2.0;
+      final cyclePos = posInLoop / cycleDuration;
+      final bounceNorm = cyclePos >= 1.0
+          ? 1.0 - (cyclePos - 1.0).clamp(0.0, 1.0)
+          : cyclePos.clamp(0.0, 1.0);
+      return (loopStart + bounceNorm * loopSize).clamp(0.0, 1.0);
+    } else {
+      // Forward: 0.0->1.0 pattern
+      return (loopStart + normalizedPosInLoop * loopSize).clamp(0.0, 1.0);
+    }
   }
 
   Future<int?> _estimatePreviewDurationMs(
@@ -2920,6 +2963,8 @@ class AppState extends ChangeNotifier {
         _norm01ToAudio255(treSpeedNorm ?? 0.0), // treSpeed (TRE/GAT)
         _norm01ToAudio255(treDepthNorm ?? 0.0), // treDepth
         treMode ?? 0, // treMode: 0=off, 1=TRE(sine), 2=GAT(square)
+        _norm01ToAudio255(sp.loopStart), // loopStart (sampler loop region)
+        _norm01ToAudio255(sp.loopEnd), // loopEnd (sampler loop region)
       ];
     }
     if (ins.type == InstrumentType.karplusStrong) {
@@ -2963,6 +3008,8 @@ class AppState extends ChangeNotifier {
         _norm01ToAudio255(treSpeedNorm ?? 0.0), // treSpeed (TRE/GAT)
         _norm01ToAudio255(treDepthNorm ?? 0.0), // treDepth
         treMode ?? 0, // treMode: 0=off, 1=TRE(sine), 2=GAT(square)
+        0, // loopStart padding (sampler-only, unused for Karplus)
+        0, // loopEnd padding (sampler-only, unused for Karplus)
       ];
     }
     final p = ins.synth;
@@ -3007,6 +3054,8 @@ class AppState extends ChangeNotifier {
       _norm01ToAudio255(treSpeedNorm ?? 0.0), // treSpeed (TRE/GAT)
       _norm01ToAudio255(treDepthNorm ?? 0.0), // treDepth
       treMode ?? 0, // treMode: 0=off, 1=TRE(sine), 2=GAT(square)
+      0, // loopStart padding (sampler-only, unused for synth)
+      0, // loopEnd padding (sampler-only, unused for synth)
     ];
   }
 
@@ -3054,6 +3103,10 @@ class AppState extends ChangeNotifier {
             synthParams[4] = _ui99ToAudio255(rawVal); // LP cutoff
           case 11:
             synthParams[5] = _ui99ToAudio255(rawVal); // LP resonance
+          case 12:
+            synthParams[37] = _ui99ToAudio255(rawVal); // loop start
+          case 13:
+            synthParams[38] = _ui99ToAudio255(rawVal); // loop end
         }
       } else if (instrumentType == InstrumentType.karplusStrong) {
         switch (paramIdx) {
@@ -5732,15 +5785,13 @@ class AppState extends ChangeNotifier {
     _previewAutoStopTimer = null;
     _synthPreviewStopTimer?.cancel();
     _synthPreviewStopTimer = null;
-    _previewStartedAt = null;
-    _previewRegionStartNorm = null;
-    _previewRegionEndNorm = null;
 
     final slot =
         (_previewSamplerSlot >= 0
                 ? _previewSamplerSlot
                 : currentInstrumentIndex)
             .clamp(0, instruments.length - 1);
+    final sampler = instruments[slot].sampler;
     final waveCmd = _waveCodeForInstrumentSlot(slot);
     final instrumentTypeCmd = _instrumentTypeCodeForSlot(slot);
     final synthParams = _synthParamsForInstrumentSlot(slot);
@@ -5752,17 +5803,33 @@ class AppState extends ChangeNotifier {
       instrumentTypeCmd: instrumentTypeCmd,
       synthParams: synthParams,
     );
+
+    // Clear UI state immediately so playhead stops animating.
+    _previewStartedAt = null;
+    _previewRegionStartNorm = null;
+    _previewRegionEndNorm = null;
+    _previewSamplerSlot = -1;
+    notifyListeners();
+
+    // Send note-off — for looping samples this triggers the C++ release fade.
     await AudioEngine.instance.setRowData(noteOff);
-    // Hard-stop any lingering release/reverb tails from preview.
-    await AudioEngine.instance.killVoices(
-      List<int>.filled(_audioVoiceCount, 1),
-    );
-    await _setPreviewDryBypass(previewVoice, false);
+
+    // For looping samples, wait for the release envelope to finish naturally.
+    // The C++ DSP zeros the voice itself — no killVoices needed (that would click).
+    if (sampler.loopMode != SamplerLoopMode.off) {
+      final releaseMs = (sampler.release * 1200).toInt().clamp(20, 2000);
+      await Future.delayed(Duration(milliseconds: releaseMs));
+      await _setPreviewDryBypass(previewVoice, false);
+    } else {
+      // Non-looping: hard-stop any lingering reverb tails immediately.
+      await AudioEngine.instance.killVoices(
+        List<int>.filled(_audioVoiceCount, 1),
+      );
+      await _setPreviewDryBypass(previewVoice, false);
+    }
     // Do NOT stop the output stream here — stopping it causes an Android
     // hardware route change that produces a transient burst in the next
     // mic capture. The output stream stays open but silent.
-    _previewSamplerSlot = -1;
-    notifyListeners();
   }
 
   Future<String?> togglePreviewCurrentSampler() async {

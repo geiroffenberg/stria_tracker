@@ -137,6 +137,7 @@ const int kFxInsertEnd = 399; // 6 slots × 10 functions (0–9) = 60 commands
 // Instrument parameter automation (Pxx).
 // P00 = reset to snapshot. P01–P99 = per-type param slots.
 // Sampler:  P01=start, P02=end, P03=pitch, P04=volume, P05=attack, P06=release, P07=loop
+//           P12=loopStart, P13=loopEnd
 // Synth:    P01=volume, P02=attack, P03=decay, P04=sustain, P05=release,
 //           P06=cutoff, P07=resonance, P08=drive, P09=detune, P10=glide,
 //           P11=lfoRate, P12=lfoDepth, P13=waveform

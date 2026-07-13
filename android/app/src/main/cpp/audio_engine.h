@@ -122,6 +122,9 @@ struct Voice {
     // Sampler playback state
     bool   samplerMode       = false;
     bool   sampleActive      = false;
+    bool   samplerReleaseActive = false; // true when note-off received, apply release envelope
+    bool   sampleHasEnteredLoopRegion = false; // true once pos reaches loopStart
+    double samplerReleaseStartFrames = 0.0; // sampleElapsedFrames value when note-off was received
     int    sampleSlot        = -1;
     double samplePos         = 0.0;
     double sampleStep        = 1.0;
@@ -134,6 +137,8 @@ struct Voice {
     double sampleElapsedFrames = 0.0; // frames played since note-on (for attack/release)
     float  sampleStartNorm   = 0.0f;
     float  sampleEndNorm     = 1.0f;
+    float  loopStartNorm     = 0.0f;  // 0..1 — loop region start (default = full file)
+    float  loopEndNorm       = 1.0f;  // 0..1 — loop region end
     float  sampleGain        = 1.0f;
 
     // Sampler HP -> LP filter (in series). Bypassed entirely when samplerFilterOn == false.

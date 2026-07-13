@@ -817,11 +817,12 @@ void AudioEngine::triggerRowLocked(const std::vector<int>& rowData) {
     mPendingArp.clear();
     mPendingDelays.clear();
     mPendingKills.clear();
-    // Current canonical stride is 42 (as of TRE/GAT feature):
-    // [note, vol, pan, wave, instrumentType, 37 params].
-    // Fall back to legacy stride 39 / 36 / 34 / 25 / 24 / 23 / 18 / 4 packets.
+    // Current canonical stride is 44 (as of sampler loop-region feature):
+    // [note, vol, pan, wave, instrumentType, 39 params].
+    // Fall back to legacy stride 42 / 39 / 36 / 34 / 25 / 24 / 23 / 18 / 4 packets.
     int stride = 4;
-    if      (rowData.size() % 42 == 0) stride = 42;
+    if      (rowData.size() % 44 == 0) stride = 44;
+    else if (rowData.size() % 42 == 0) stride = 42;
     else if (rowData.size() % 39 == 0) stride = 39;
     else if (rowData.size() % 36 == 0) stride = 36;
     else if (rowData.size() % 34 == 0) stride = 34;
@@ -904,6 +905,8 @@ void AudioEngine::triggerRowLocked(const std::vector<int>& rowData) {
         const int treSpeedRaw = (stride >= 42) ? rowData[pBase + 34] : 0;
         const int treDepthRaw = (stride >= 42) ? rowData[pBase + 35] : 0;
         const int treModeRaw  = (stride >= 42) ? rowData[pBase + 36] : 0;
+        const int loopStartRaw = (stride >= 44) ? rowData[pBase + 37] : 0;
+        const int loopEndRaw   = (stride >= 44) ? rowData[pBase + 38] : 255;
         auto& v = mVoices[i];
 
         // note encoding:
@@ -997,6 +1000,11 @@ void AudioEngine::triggerRowLocked(const std::vector<int>& rowData) {
             v.sampleSlot = std::clamp(wave, 0, static_cast<int>(mSamplerSlots.size()) - 1);
             v.loopMode   = std::clamp(drive, 0, 2);
             v.sampleReverse = (reverse != 0);
+            v.loopStartNorm = byteToNorm(loopStartRaw);
+            v.loopEndNorm   = byteToNorm(loopEndRaw);
+            if (v.loopEndNorm < v.loopStartNorm) {
+                std::swap(v.loopStartNorm, v.loopEndNorm);
+            }
             v.sampleGain = 1.0f;
 
             // Sampler reuses the synth-filter byte slots in the row payload for
@@ -1047,6 +1055,9 @@ void AudioEngine::triggerRowLocked(const std::vector<int>& rowData) {
                     v.sampleElapsedFrames = 0.0;
                     v.samplePingDir = v.sampleReverse;
                     v.sampleActive = true;
+                    v.samplerReleaseActive = false;
+                    v.samplerReleaseStartFrames = 0.0;
+                    v.sampleHasEnteredLoopRegion = false;
                     // Clear filter SVF state on note-on to avoid carryover thumps.
                     v.samplerHpLow = v.samplerHpBand = 0.0f;
                     v.samplerLpLow = v.samplerLpBand = 0.0f;
@@ -1062,7 +1073,14 @@ void AudioEngine::triggerRowLocked(const std::vector<int>& rowData) {
                     v.sampleStep = std::pow(2.0f, semis / 12.0f);
                 }
             } else if (n == -2) {
-                v.sampleActive = false;
+                // Note-off: for looping samples, trigger release envelope.
+                // For non-looping, stop immediately.
+                if (v.loopMode > 0 && v.sampleActive) {
+                    v.samplerReleaseActive = true;
+                    v.samplerReleaseStartFrames = v.sampleElapsedFrames;
+                } else {
+                    v.sampleActive = false;
+                }
                 v.midiNote = -1;
             }
 
@@ -2604,6 +2622,18 @@ oboe::DataCallbackResult AudioEngine::onAudioReady(
             const double regionStart = static_cast<double>(startFrame);
             const double regionEnd = static_cast<double>(endFrame);
             const double regionLen = std::max(1.0, regionEnd - regionStart);
+
+            // Loop region: clamped within playback region.
+            const int loopSFrame = std::clamp(
+                static_cast<int>(v.loopStartNorm * static_cast<float>(sampleFrames)),
+                startFrame, endFrame - 1);
+            const int loopEFrame = std::clamp(
+                static_cast<int>(v.loopEndNorm * static_cast<float>(sampleFrames)),
+                loopSFrame + 1, endFrame);
+            const double loopRegionStart = static_cast<double>(loopSFrame);
+            const double loopRegionEnd   = static_cast<double>(loopEFrame);
+            const double loopLen = std::max(1.0, loopRegionEnd - loopRegionStart);
+
             if (v.samplePos < regionStart || v.samplePos >= regionEnd) {
                 v.samplePos = regionStart;
             }
@@ -2647,27 +2677,39 @@ oboe::DataCallbackResult AudioEngine::onAudioReady(
                 }
                 const double ratio = srRatio * v.sampleStep;
                 int idx = static_cast<int>(v.samplePos);
-                if (idx < startFrame || idx >= endFrame) {
-                    if (v.loopMode == 1 && regionLen > 1.0) {
-                        // Forward loop: wrap back to start
-                        while (v.samplePos >= regionEnd)   v.samplePos -= regionLen;
-                        while (v.samplePos < regionStart)  v.samplePos += regionLen;
-                        idx = static_cast<int>(v.samplePos);
-                    } else if (v.loopMode == 2 && regionLen > 1.0) {
-                        // Ping-pong: bounce direction
-                        if (v.samplePos >= regionEnd) {
-                            v.samplePos = regionEnd - (v.samplePos - regionEnd) - 1.0;
-                            v.samplePingDir = true;
-                        } else if (v.samplePos < regionStart) {
-                            v.samplePos = regionStart + (regionStart - v.samplePos);
-                            v.samplePingDir = false;
-                        }
-                        idx = std::clamp(static_cast<int>(v.samplePos), startFrame, endFrame - 1);
-                    } else {
-                        v.sampleActive = false;
-                        v.midiNote = -1;
-                        break;
+                if (v.loopMode > 0 && loopLen > 1.0) {
+                    // Check if we've entered the loop region yet
+                    if (!v.sampleHasEnteredLoopRegion && v.samplePos >= loopRegionStart) {
+                        v.sampleHasEnteredLoopRegion = true;
                     }
+                    
+                    // Looping: only apply wrapping once we've entered the loop region
+                    if (v.sampleHasEnteredLoopRegion) {
+                        if (v.loopMode == 1) {
+                            // Forward loop: wrap at loop region end.
+                            if (v.samplePos >= loopRegionEnd) {
+                                while (v.samplePos >= loopRegionEnd) v.samplePos -= loopLen;
+                            }
+                        } else {
+                            // Ping-pong: bounce at loop region boundaries.
+                            if (v.samplePos >= loopRegionEnd) {
+                                v.samplePos = loopRegionEnd - (v.samplePos - loopRegionEnd) - 1.0;
+                                v.samplePingDir = true;
+                            } else if (v.samplePos < loopRegionStart) {
+                                v.samplePos = loopRegionStart + (loopRegionStart - v.samplePos);
+                                v.samplePingDir = false;
+                            }
+                        }
+                    }
+                    // Safety clamp to full playback region.
+                    if (v.samplePos < regionStart) v.samplePos = regionStart;
+                    if (v.samplePos >= regionEnd)  v.samplePos = regionEnd - 1.0;
+                    idx = std::clamp(static_cast<int>(v.samplePos), startFrame, endFrame - 1);
+                } else if (idx < startFrame || idx >= endFrame) {
+                    // Non-looping: outside playback region = stop.
+                    v.sampleActive = false;
+                    v.midiNote = -1;
+                    break;
                 }
 
                 // Attack / release gain envelope. Enforce ~2 ms minimum so a
@@ -2681,11 +2723,29 @@ oboe::DataCallbackResult AudioEngine::onAudioReady(
                 if (elapsed < atkFrames) {
                     envGain = elapsed / atkFrames;
                 }
-                // Release fade: only for non-looping (looping needs note-off, future work)
+                // Release fade: for non-looping based on distance to end,
+                // for looping with release active, apply envelope and stop.
                 if (v.loopMode == 0) {
                     const double framesLeft = regionEnd - v.samplePos;
                     if (framesLeft < static_cast<double>(relFrames)) {
                         envGain *= static_cast<float>(std::max(0.0, framesLeft)) / relFrames;
+                    }
+                } else if (v.samplerReleaseActive) {
+                    // Looping sample in release: measure from when note-off was received.
+                    const float releaseElapsed = static_cast<float>(v.sampleElapsedFrames - v.samplerReleaseStartFrames);
+                    if (releaseElapsed >= relFrames) {
+                        envGain = 0.0f; // silence this frame before stopping to avoid click
+                        v.sampleActive = false;
+                        v.samplerReleaseActive = false;
+                        // Write zeroed sample then break — do NOT let next iteration
+                        // render with envGain=1 (that would produce a click).
+                        const float pan01 = std::clamp(v.pan, 0.0f, 1.0f);
+                        const float angle = pan01 * 1.57079632679f;
+                        mTrackBusL[trackIdx][i] += 0.0f;
+                        mTrackBusR[trackIdx][i] += 0.0f;
+                        break;
+                    } else {
+                        envGain *= std::max(0.0f, 1.0f - (releaseElapsed / relFrames));
                     }
                 }
 

@@ -557,6 +557,12 @@ class SamplerParams {
   double lpCutoff;        // 0..1 (0 = fully closed, 1 = bypass / fully open)
   double lpResonance;     // 0..1
 
+  // ── Loop region ───────────────────────────────────────────────────────────
+  // Defines where the loop wraps when loopMode != off.
+  // Independent of start/end (playback region). Defaults cover the full file.
+  double loopStart; // 0..1 — loop region start
+  double loopEnd;   // 0..1 — loop region end
+
   // keep legacy bool getter so existing code using p.loop still compiles
   bool get loop => loopMode != SamplerLoopMode.off;
 
@@ -579,6 +585,8 @@ class SamplerParams {
     this.hpResonance = 0.0,
     this.lpCutoff = 1.0,
     this.lpResonance = 0.0,
+    this.loopStart = 0.0,
+    this.loopEnd = 1.0,
   }) : sliceStarts = _normalizedSliceStarts(sliceStarts);
 
   static List<int> _normalizedSliceStarts(List<int>? values) {
@@ -672,6 +680,8 @@ class SamplerParams {
     'hpResonance': hpResonance,
     'lpCutoff': lpCutoff,
     'lpResonance': lpResonance,
+    'loopStart': loopStart,
+    'loopEnd': loopEnd,
   };
 
   factory SamplerParams.fromJson(Map<String, dynamic> j) => SamplerParams(
@@ -700,6 +710,8 @@ class SamplerParams {
     hpResonance: (j['hpResonance'] as num?)?.toDouble() ?? 0.0,
     lpCutoff: (j['lpCutoff'] as num?)?.toDouble() ?? 1.0,
     lpResonance: (j['lpResonance'] as num?)?.toDouble() ?? 0.0,
+    loopStart: (j['loopStart'] as num?)?.toDouble() ?? 0.0,
+    loopEnd: (j['loopEnd'] as num?)?.toDouble() ?? 1.0,
   );
 
   /// Create a deep copy of this sampler configuration.
@@ -722,10 +734,12 @@ class SamplerParams {
     hpResonance: hpResonance,
     lpCutoff: lpCutoff,
     lpResonance: lpResonance,
+    loopStart: loopStart,
+    loopEnd: loopEnd,
   );
 
   /// Highest Pxx param index supported for sampler instruments.
-  static const int maxParamIndex = 11;
+  static const int maxParamIndex = 13;
 
   /// Display name for sampler Pxx param slot [idx] (0=reset, 1–11=params).
   static String paramName(int idx) {
@@ -754,6 +768,10 @@ class SamplerParams {
         return 'LP Cut';
       case 11:
         return 'LP Res';
+      case 12:
+        return 'Loop Start';
+      case 13:
+        return 'Loop End';
       default:
         return 'P${idx.toString().padLeft(2, '0')}';
     }
@@ -786,6 +804,10 @@ class SamplerParams {
         return 'P10 LP Cut — low-pass cutoff (00=closed, 99=open). Filter must be ON.';
       case 11:
         return 'P11 LP Res — low-pass resonance (00–99). Filter must be ON.';
+      case 12:
+        return 'P12 Loop Start — loop region start point (00=beginning, 99=end)';
+      case 13:
+        return 'P13 Loop End — loop region end point (00=beginning, 99=end)';
       default:
         return '';
     }
