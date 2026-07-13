@@ -77,6 +77,17 @@ flutter:
   assets:
     - assets/stria_icon.png
     - assets/MANUAL.md
+    - assets/manual_01_overview.md
+    - assets/manual_02_core_concepts.md
+    - assets/manual_03_song_screen.md
+    - assets/manual_04_pattern_screen.md
+    - assets/manual_05_instrument_screen.md
+    - assets/manual_06_mixer_screen.md
+    - assets/manual_07_instruments.md
+    - assets/manual_08_fx_commands.md
+    - assets/manual_09_insert_effects.md
+    - assets/manual_10_transport_bar.md
+    - assets/manual_11_project_management.md
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images

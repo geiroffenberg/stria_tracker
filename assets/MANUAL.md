@@ -304,8 +304,11 @@ This makes it easy to audition a fill, check a transition, or loop a specific be
 
 ### Views
 
-- **Normal view** — all tracks visible, horizontal scroll.
-- **Collapsed view** — tracks compressed into a compact overview. *TBD*
+- **Normal view** — all tracks visible in full detail, with NOTE and IN (instrument) columns visible side-by-side. Horizontal scrolling lets you pan across tracks.
+
+- **Collapsed view** — all tracks compressed into a compact grid showing only NOTE and IN columns, allowing a full overview of the pattern at once. Useful for arranging melodies across multiple tracks.
+
+- **Drum mode** — ultra-compact layout where each track shows only a single instrument pill (IN column). The NOTE column is hidden. This mode is optimized for drum kit programming where each track typically corresponds to one drum sound. **Bonus feature:** when you tap an empty instrument cell in drum mode, it automatically fills with the track number (1-based), so track 1 defaults to instrument 01, track 2 to instrument 02, etc. This speeds up setup for kit-style arrangements where drum sounds are naturally distributed across slots.
 
 ---
 

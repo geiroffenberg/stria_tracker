@@ -746,9 +746,8 @@ class _SongScreenState extends State<SongScreen> {
 
   Future<void> _showManual(BuildContext ctx) async {
     final navigator = Navigator.of(ctx);
-    final content = await rootBundle.loadString('assets/MANUAL.md');
     await navigator.push<void>(
-      MaterialPageRoute<void>(builder: (_) => _ManualPage(content: content)),
+      MaterialPageRoute<void>(builder: (_) => const _ManualPage()),
     );
   }
 
@@ -1616,13 +1615,44 @@ class _SongActionBtn extends StatelessWidget {
   }
 }
 
-class _ManualPage extends StatelessWidget {
-  const _ManualPage({required this.content});
+enum _ManualSection {
+  overview('Overview', 'manual_01_overview.md'),
+  coreConcepts('Core Concepts', 'manual_02_core_concepts.md'),
+  songScreen('Song Screen', 'manual_03_song_screen.md'),
+  patternScreen('Pattern Screen', 'manual_04_pattern_screen.md'),
+  instrumentScreen('Instrument Screen', 'manual_05_instrument_screen.md'),
+  mixerScreen('Mixer Screen', 'manual_06_mixer_screen.md'),
+  instruments('Instruments', 'manual_07_instruments.md'),
+  fxCommands('FX Commands', 'manual_08_fx_commands.md'),
+  insertEffects('Insert Effects', 'manual_09_insert_effects.md'),
+  transportBar('Transport Bar', 'manual_10_transport_bar.md'),
+  projectManagement('Project Management', 'manual_11_project_management.md');
 
-  final String content;
+  final String title;
+  final String assetFile;
+
+  const _ManualSection(this.title, this.assetFile);
+}
+
+class _ManualPage extends StatefulWidget {
+  const _ManualPage();
+
+  @override
+  State<_ManualPage> createState() => _ManualPageState();
+}
+
+class _ManualPageState extends State<_ManualPage> {
+  _ManualSection? _selectedSection;
 
   @override
   Widget build(BuildContext context) {
+    if (_selectedSection == null) {
+      return _buildMenuPage(context);
+    }
+    return _buildSectionPage(context, _selectedSection!);
+  }
+
+  Widget _buildMenuPage(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFF1A1A2E),
       appBar: AppBar(
@@ -1630,48 +1660,110 @@ class _ManualPage extends StatelessWidget {
         title: const Text('How to Use', style: TextStyle(color: Colors.white)),
         iconTheme: const IconThemeData(color: Colors.white),
       ),
-      body: Markdown(
-        data: content,
-        styleSheet: MarkdownStyleSheet.fromTheme(Theme.of(context)).copyWith(
-          p: const TextStyle(color: Colors.white70, fontSize: 14),
-          h1: const TextStyle(
-            color: Colors.white,
-            fontSize: 22,
-            fontWeight: FontWeight.bold,
-          ),
-          h2: const TextStyle(
-            color: Colors.white,
-            fontSize: 18,
-            fontWeight: FontWeight.bold,
-          ),
-          h3: const TextStyle(
-            color: Colors.white,
-            fontSize: 15,
-            fontWeight: FontWeight.w600,
-          ),
-          code: const TextStyle(
-            color: Color(0xFFFFD700),
-            backgroundColor: Color(0xFF0D1B2A),
-            fontSize: 13,
-            fontFamily: 'monospace',
-          ),
-          codeblockDecoration: BoxDecoration(
-            color: const Color(0xFF0D1B2A),
-            borderRadius: BorderRadius.circular(4),
-          ),
-          blockquoteDecoration: BoxDecoration(
-            border: Border(left: BorderSide(color: Colors.white38, width: 3)),
-          ),
-          tableBody: const TextStyle(color: Colors.white70, fontSize: 13),
-          tableHead: const TextStyle(
-            color: Colors.white,
-            fontWeight: FontWeight.bold,
-            fontSize: 13,
-          ),
-          tableBorder: TableBorder.all(color: Colors.white24),
+      body: ListView.builder(
+        itemCount: _ManualSection.values.length,
+        itemBuilder: (ctx, idx) {
+          final section = _ManualSection.values[idx];
+          return GestureDetector(
+            onTap: () => setState(() => _selectedSection = section),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: const Color(0xFF16213E),
+                border: Border.all(color: Colors.white24, width: 1),
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: Text(
+                section.title,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildSectionPage(BuildContext context, _ManualSection section) {
+    return Scaffold(
+      backgroundColor: const Color(0xFF1A1A2E),
+      appBar: AppBar(
+        backgroundColor: const Color(0xFF16213E),
+        title: Text(section.title, style: const TextStyle(color: Colors.white)),
+        iconTheme: const IconThemeData(color: Colors.white),
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back),
+          onPressed: () => setState(() => _selectedSection = null),
         ),
-        selectable: true,
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      ),
+      body: FutureBuilder<String>(
+        future: rootBundle.loadString('assets/${section.assetFile}'),
+        builder: (ctx, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(
+              child: CircularProgressIndicator(color: Color(0xFFFFD700)),
+            );
+          }
+          if (snapshot.hasError) {
+            return Center(
+              child: Text(
+                'Error loading section: ${snapshot.error}',
+                style: const TextStyle(color: Colors.white70),
+              ),
+            );
+          }
+          final content = snapshot.data ?? '';
+          return Markdown(
+            data: content,
+            styleSheet: MarkdownStyleSheet.fromTheme(Theme.of(context))
+                .copyWith(
+              p: const TextStyle(color: Colors.white70, fontSize: 14),
+              h1: const TextStyle(
+                color: Colors.white,
+                fontSize: 22,
+                fontWeight: FontWeight.bold,
+              ),
+              h2: const TextStyle(
+                color: Colors.white,
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+              ),
+              h3: const TextStyle(
+                color: Colors.white,
+                fontSize: 15,
+                fontWeight: FontWeight.w600,
+              ),
+              code: const TextStyle(
+                color: Color(0xFFFFD700),
+                backgroundColor: Color(0xFF0D1B2A),
+                fontSize: 13,
+                fontFamily: 'monospace',
+              ),
+              codeblockDecoration: BoxDecoration(
+                color: const Color(0xFF0D1B2A),
+                borderRadius: BorderRadius.circular(4),
+              ),
+              blockquoteDecoration: BoxDecoration(
+                border: Border(
+                    left: BorderSide(color: Colors.white38, width: 3)),
+              ),
+              tableBody: const TextStyle(color: Colors.white70, fontSize: 13),
+              tableHead: const TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
+                fontSize: 13,
+              ),
+              tableBorder: TableBorder.all(color: Colors.white24),
+            ),
+            selectable: true,
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          );
+        },
       ),
     );
   }
