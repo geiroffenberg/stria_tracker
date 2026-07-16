@@ -2396,6 +2396,11 @@ class _SamplerEditorState extends State<_SamplerEditor>
     }
   }
 
+  /// Returns true if any slices are defined in the sampler.
+  bool _hasActiveSlices(SamplerParams p) {
+    return p.sliceStarts.any((slice) => slice > 0);
+  }
+
   // ── STRETCH card ──────────────────────────────────────────────────────────
 
   Widget _buildStretchEditor(SamplerParams p) {
@@ -2607,6 +2612,25 @@ class _SamplerEditorState extends State<_SamplerEditor>
   Widget _buildLoopEditor(SamplerParams p) {
     final state = AppStateScope.of(context);
     final isLooping = p.loopMode != SamplerLoopMode.off;
+    final hasSlices = _hasActiveSlices(p);
+    
+    if (hasSlices) {
+      return _Section(
+        title: 'LOOP',
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 8.0),
+          child: Text(
+            'Loop disabled while slices are active.\nClear slices to enable looping.',
+            style: kStyleBase.copyWith(
+              fontSize: 10,
+              color: kColInactive,
+              fontStyle: FontStyle.italic,
+            ),
+          ),
+        ),
+      );
+    }
+
     return _Section(
       title: 'LOOP',
       child: Column(
@@ -2669,9 +2693,9 @@ class _SamplerEditorState extends State<_SamplerEditor>
                 ),
                 SliderTheme(
                   data: SliderTheme.of(context).copyWith(
-                    activeTrackColor: kColAccent,
+                    activeTrackColor: kColComplement,
                     inactiveTrackColor: kColInactive.withAlpha(80),
-                    thumbColor: kColAccent,
+                    thumbColor: kColComplement,
                     overlayShape: SliderComponentShape.noOverlay,
                   ),
                   child: Slider(
@@ -2696,9 +2720,9 @@ class _SamplerEditorState extends State<_SamplerEditor>
                 ),
                 SliderTheme(
                   data: SliderTheme.of(context).copyWith(
-                    activeTrackColor: kColAccent,
+                    activeTrackColor: kColComplement,
                     inactiveTrackColor: kColInactive.withAlpha(80),
-                    thumbColor: kColAccent,
+                    thumbColor: kColComplement,
                     overlayShape: SliderComponentShape.noOverlay,
                   ),
                   child: Slider(
@@ -2735,30 +2759,23 @@ class _SamplerEditorState extends State<_SamplerEditor>
             width: 64,
             child: Text(
               label,
-              style: kStyleHeader.copyWith(
-                fontSize: 11,
-                color: p.filterEnabled ? kColHeader : kColInactive,
-              ),
+              style: kStyleHeader.copyWith(fontSize: 11),
             ),
           ),
           Expanded(
             child: SliderTheme(
               data: SliderTheme.of(context).copyWith(
-                activeTrackColor: p.filterEnabled
-                    ? kColComplement
-                    : kColInactive.withAlpha(60),
+                activeTrackColor: kColComplement,
                 inactiveTrackColor: kColInactive.withAlpha(80),
-                thumbColor: p.filterEnabled ? kColComplement : kColInactive,
+                thumbColor: kColComplement,
                 overlayShape: SliderComponentShape.noOverlay,
               ),
               child: Slider(
                 value: value.clamp(0.0, 1.0),
-                onChanged: p.filterEnabled
-                    ? (v) {
-                        onChanged(v.clamp(0.0, 1.0));
-                        state.instrumentParamsChanged();
-                      }
-                    : null,
+                onChanged: (v) {
+                  onChanged(v.clamp(0.0, 1.0));
+                  state.instrumentParamsChanged();
+                },
               ),
             ),
           ),
@@ -2767,10 +2784,7 @@ class _SamplerEditorState extends State<_SamplerEditor>
             child: Text(
               '$pct',
               textAlign: TextAlign.right,
-              style: kStyleHeader.copyWith(
-                fontSize: 11,
-                color: p.filterEnabled ? kColHeader : kColInactive,
-              ),
+              style: kStyleHeader.copyWith(fontSize: 11),
             ),
           ),
         ],
@@ -2782,31 +2796,17 @@ class _SamplerEditorState extends State<_SamplerEditor>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Row(
-            children: [
-              _OscOnOffButton(
-                on: p.filterEnabled,
-                onTap: () {
-                  setState(() => p.filterEnabled = !p.filterEnabled);
-                  state.instrumentParamsChanged();
-                },
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: Text(
+              'HP → LP filter (auto-bypassed at defaults)',
+              style: kStyleBase.copyWith(
+                fontSize: 10,
+                color: kColInactive,
+                fontStyle: FontStyle.italic,
               ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Text(
-                  p.filterEnabled
-                      ? 'HP → LP filter active'
-                      : 'Bypassed (zero CPU)',
-                  style: kStyleBase.copyWith(
-                    fontSize: 10,
-                    color: kColInactive,
-                    fontStyle: FontStyle.italic,
-                  ),
-                ),
-              ),
-            ],
+            ),
           ),
-          const SizedBox(height: 8),
           labeledSlider(
             label: 'HP CUT',
             value: p.hpCutoff,
@@ -2833,7 +2833,238 @@ class _SamplerEditorState extends State<_SamplerEditor>
     );
   }
 
+  Widget _buildLfoEditor(SamplerParams p) {
+    final state = AppStateScope.of(context);
+    final isOn = p.lfoWave != SamplerLfoWave.off;
+
+    // A compact toggle/selector chip used for wave, mode and target buttons.
+    Widget chip({
+      required String label,
+      required bool selected,
+      required VoidCallback onTap,
+      bool enabled = true,
+    }) {
+      return Padding(
+        padding: const EdgeInsets.only(right: 6, bottom: 6),
+        child: GestureDetector(
+          onTap: enabled ? onTap : null,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            decoration: BoxDecoration(
+              color: selected ? kColAccent.withAlpha(40) : Colors.transparent,
+              border: Border.all(
+                color: !enabled
+                    ? kColInactive.withAlpha(60)
+                    : (selected ? kColAccent : kColInactive),
+              ),
+              borderRadius: BorderRadius.circular(3),
+            ),
+            child: Text(
+              label,
+              style: kStyleHeader.copyWith(
+                fontSize: 12,
+                color: !enabled
+                    ? kColInactive.withAlpha(90)
+                    : (selected ? kColAccent : kColInactive),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    Widget labeledSlider({
+      required String label,
+      required String valueText,
+      required double value,
+      required ValueChanged<double> onChanged,
+    }) {
+      return Row(
+        children: [
+          SizedBox(
+            width: 64,
+            child: Text(
+              label,
+              style: kStyleHeader.copyWith(
+                fontSize: 11,
+                color: isOn ? kColHeader : kColInactive,
+              ),
+            ),
+          ),
+          Expanded(
+            child: SliderTheme(
+              data: SliderTheme.of(context).copyWith(
+                activeTrackColor: isOn ? kColComplement : kColInactive.withAlpha(60),
+                inactiveTrackColor: kColInactive.withAlpha(80),
+                thumbColor: isOn ? kColComplement : kColInactive,
+                overlayShape: SliderComponentShape.noOverlay,
+              ),
+              child: Slider(
+                value: value.clamp(0.0, 1.0),
+                onChanged: isOn
+                    ? (v) {
+                        onChanged(v.clamp(0.0, 1.0));
+                        state.instrumentParamsChanged();
+                      }
+                    : null,
+              ),
+            ),
+          ),
+          SizedBox(
+            width: 44,
+            child: Text(
+              valueText,
+              textAlign: TextAlign.right,
+              style: kStyleHeader.copyWith(
+                fontSize: 11,
+                color: isOn ? kColHeader : kColInactive,
+              ),
+            ),
+          ),
+        ],
+      );
+    }
+
+    return _Section(
+      title: 'LFO',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // ── Waveform selector (OFF disables the LFO) ─────────────────────
+          Text(
+            'WAVE',
+            style: kStyleHeader.copyWith(fontSize: 10, color: kColInactive),
+          ),
+          const SizedBox(height: 6),
+          Wrap(
+            children: [
+              for (final w in SamplerLfoWave.values)
+                chip(
+                  label: w.label,
+                  selected: p.lfoWave == w,
+                  onTap: () {
+                    setState(() => p.lfoWave = w);
+                    state.instrumentParamsChanged();
+                  },
+                ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          // ── Targets (multi-select) ───────────────────────────────────────
+          Text(
+            'TARGET',
+            style: kStyleHeader.copyWith(fontSize: 10, color: kColInactive),
+          ),
+          const SizedBox(height: 6),
+          Wrap(
+            children: [
+              chip(
+                label: 'VOL',
+                selected: p.lfoTargetVolume,
+                enabled: isOn,
+                onTap: () {
+                  setState(() => p.lfoTargetVolume = !p.lfoTargetVolume);
+                  state.instrumentParamsChanged();
+                },
+              ),
+              chip(
+                label: 'PITCH',
+                selected: p.lfoTargetPitch,
+                enabled: isOn,
+                onTap: () {
+                  setState(() => p.lfoTargetPitch = !p.lfoTargetPitch);
+                  state.instrumentParamsChanged();
+                },
+              ),
+              chip(
+                label: 'HP',
+                selected: p.lfoTargetHp,
+                enabled: isOn,
+                onTap: () {
+                  setState(() => p.lfoTargetHp = !p.lfoTargetHp);
+                  state.instrumentParamsChanged();
+                },
+              ),
+              chip(
+                label: 'LP',
+                selected: p.lfoTargetLp,
+                enabled: isOn,
+                onTap: () {
+                  setState(() => p.lfoTargetLp = !p.lfoTargetLp);
+                  state.instrumentParamsChanged();
+                },
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          // ── Anchor mode ──────────────────────────────────────────────────
+          Text(
+            'MODE',
+            style: kStyleHeader.copyWith(fontSize: 10, color: kColInactive),
+          ),
+          const SizedBox(height: 6),
+          Wrap(
+            children: [
+              for (final m in SamplerLfoMode.values)
+                chip(
+                  label: m.label,
+                  selected: p.lfoMode == m,
+                  enabled: isOn,
+                  onTap: () {
+                    setState(() => p.lfoMode = m);
+                    state.instrumentParamsChanged();
+                  },
+                ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          // ── Rate (BPM-synced cycle length) ───────────────────────────────
+          labeledSlider(
+            label: 'RATE',
+            valueText: samplerLfoDivLabel(p.lfoRateIndex),
+            value: kSamplerLfoDivBeats.length > 1
+                ? p.lfoRateIndex / (kSamplerLfoDivBeats.length - 1)
+                : 0.0,
+            onChanged: (v) {
+              final idx = (v * (kSamplerLfoDivBeats.length - 1)).round().clamp(
+                    0,
+                    kSamplerLfoDivBeats.length - 1,
+                  );
+              p.lfoRateIndex = idx;
+            },
+          ),
+          // ── Depth (how much the LFO affects the signal) ──────────────────
+          labeledSlider(
+            label: 'DEPTH',
+            valueText: '${(p.lfoDepth * 100).round()}',
+            value: p.lfoDepth,
+            onChanged: (v) => p.lfoDepth = v,
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildSliceEditor(SamplerParams p) {
+    final isLooping = p.loopMode != SamplerLoopMode.off;
+    
+    if (isLooping) {
+      return _Section(
+        title: 'SLICES',
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 8.0),
+          child: Text(
+            'Slices disabled while looping is active.\nTurn off loop to enable slices.',
+            style: kStyleBase.copyWith(
+              fontSize: 10,
+              color: kColInactive,
+              fontStyle: FontStyle.italic,
+            ),
+          ),
+        ),
+      );
+    }
+
     return _Section(
       title: 'SLICES',
       child: Column(
@@ -3306,7 +3537,6 @@ class _SamplerEditorState extends State<_SamplerEditor>
           ),
           _buildSliceEditor(p),
           _buildCropChopCard(p),
-          _buildStretchEditor(p),
           _Section(
             title: 'PARAMS',
             child: Column(
@@ -3410,7 +3640,9 @@ class _SamplerEditorState extends State<_SamplerEditor>
             ),
           ),
           _buildLoopEditor(p),
+          _buildStretchEditor(p),
           _buildFilterEditor(p),
+          _buildLfoEditor(p),
         ],
       ),
     );

@@ -325,6 +325,53 @@ float normToLfoHz(float n) {
     return 0.1f + x * x * 19.9f;
 }
 
+// Sampler LFO cycle-length divisions (beats per cycle). Index matches the Dart
+// kSamplerLfoDivBeats table exactly.
+static const double kSamplerLfoDivBeats[10] = {
+    1.0 / 32.0, 1.0 / 16.0, 1.0 / 8.0, 1.0 / 4.0, 1.0 / 2.0,
+    1.0, 2.0, 4.0, 8.0, 16.0
+};
+
+// Slew limiter for LFO modulation to avoid clicks. A 2ms window eliminates
+// square-wave clicks while staying responsive to pitch/filter changes.
+static const float kSamplerLfoSlewWindowMs = 2.0f;
+
+// Compute a unipolar [0..1] LFO value for the given waveform and phase [0..1).
+// [wave]: 1=sine,2=triangle,3=square,4=rampUp,5=rampDown,6=random.
+// [randVal] is the current sample-and-hold value for the random waveform.
+inline float samplerLfoValue(int wave, double phase, float randVal) {
+    switch (wave) {
+        case 1: // sine
+            return 0.5f + 0.5f * static_cast<float>(std::sin(2.0 * M_PI * phase));
+        case 2: // triangle
+            return static_cast<float>(1.0 - std::fabs(2.0 * phase - 1.0));
+        case 3: // square
+            return (phase < 0.5) ? 1.0f : 0.0f;
+        case 4: // ramp up
+            return static_cast<float>(phase);
+        case 5: // ramp down
+            return static_cast<float>(1.0 - phase);
+        case 6: // random (sample & hold)
+            return randVal;
+        default:
+            return 0.0f;
+    }
+}
+
+// Convert a unipolar LFO value [0..1] into a signed modulation offset [-1..1]
+// according to the anchor mode:
+//   0 = center: base is the midpoint, swings ±1   (lfo 0→1 maps -1→+1)
+//   1 = up:     base is the floor,   pushes 0→+1  (lfo 0→1 maps  0→+1)
+//   2 = down:   base is the ceiling, pulls -1→0   (lfo 0→1 maps -1→ 0)
+// Scale the returned value externally by depth * range.
+inline float samplerLfoOffset(int mode, float lfo) {
+    switch (mode) {
+        case 1:  return lfo;                    // UP
+        case 2:  return -(1.0f - lfo);          // DOWN
+        default: return (lfo - 0.5f) * 2.0f;    // CENTER
+    }
+}
+
 float normToCutoffHz(float n) {
     const float x = std::clamp(n, 0.0f, 1.0f);
     // Exponential mapping keeps low-end control usable.
@@ -817,11 +864,13 @@ void AudioEngine::triggerRowLocked(const std::vector<int>& rowData) {
     mPendingArp.clear();
     mPendingDelays.clear();
     mPendingKills.clear();
-    // Current canonical stride is 44 (as of sampler loop-region feature):
-    // [note, vol, pan, wave, instrumentType, 39 params].
-    // Fall back to legacy stride 42 / 39 / 36 / 34 / 25 / 24 / 23 / 18 / 4 packets.
+    // Current canonical stride is 49 (as of sampler LFO + mode feature):
+    // [note, vol, pan, wave, instrumentType, 44 params].
+    // Fall back to legacy stride 48 / 44 / 42 / 39 / 36 / 34 / 25 / 24 / 23 / 18 / 4.
     int stride = 4;
-    if      (rowData.size() % 44 == 0) stride = 44;
+    if      (rowData.size() % 49 == 0) stride = 49;
+    else if (rowData.size() % 48 == 0) stride = 48;
+    else if (rowData.size() % 44 == 0) stride = 44;
     else if (rowData.size() % 42 == 0) stride = 42;
     else if (rowData.size() % 39 == 0) stride = 39;
     else if (rowData.size() % 36 == 0) stride = 36;
@@ -907,6 +956,11 @@ void AudioEngine::triggerRowLocked(const std::vector<int>& rowData) {
         const int treModeRaw  = (stride >= 42) ? rowData[pBase + 36] : 0;
         const int loopStartRaw = (stride >= 44) ? rowData[pBase + 37] : 0;
         const int loopEndRaw   = (stride >= 44) ? rowData[pBase + 38] : 255;
+        const int lfoWaveRaw   = (stride >= 48) ? rowData[pBase + 39] : 0;
+        const int lfoRateIdxRaw= (stride >= 48) ? rowData[pBase + 40] : 5;
+        const int lfoTargetsRaw= (stride >= 48) ? rowData[pBase + 41] : 0;
+        const int lfoDepthRaw  = (stride >= 48) ? rowData[pBase + 42] : 0;
+        const int lfoModeRaw   = (stride >= 49) ? rowData[pBase + 43] : 2;
         auto& v = mVoices[i];
 
         // note encoding:
@@ -1026,6 +1080,16 @@ void AudioEngine::triggerRowLocked(const std::vector<int>& rowData) {
             v.samplerLpCutoff = byteToNorm(fatk);
             v.samplerLpRes    = byteToNorm(fdec);
 
+            // Sampler LFO params. Updated on every non-note-off row so an LFO
+            // set on a hold row can take effect mid-note (same policy as VIB).
+            if (n != -2) {
+                v.samplerLfoWave    = std::clamp(lfoWaveRaw, 0, 6);
+                v.samplerLfoRateIdx = std::clamp(lfoRateIdxRaw, 0, 9);
+                v.samplerLfoTargets = std::clamp(lfoTargetsRaw, 0, 15);
+                v.samplerLfoDepth   = byteToNorm(lfoDepthRaw);
+                v.samplerLfoMode    = std::clamp(lfoModeRaw, 0, 2);
+            }
+
             if (n >= 0) {
                 // Only update the playback region on note-on.
                 // Hold rows must not overwrite the slice boundaries set by the
@@ -1058,6 +1122,10 @@ void AudioEngine::triggerRowLocked(const std::vector<int>& rowData) {
                     v.samplerReleaseActive = false;
                     v.samplerReleaseStartFrames = 0.0;
                     v.sampleHasEnteredLoopRegion = false;
+                    // Reset LFO phase so the modulation restarts with each note
+                    // (enables ramp-up / envelope-style long cycles).
+                    v.samplerLfoPhase = 0.0;
+                    v.samplerLfoRandVal = 0.0f;
                     // Clear filter SVF state on note-on to avoid carryover thumps.
                     v.samplerHpLow = v.samplerHpBand = 0.0f;
                     v.samplerLpLow = v.samplerLpBand = 0.0f;
@@ -2641,6 +2709,28 @@ oboe::DataCallbackResult AudioEngine::onAudioReady(
             const double srRatio = static_cast<double>(s.sampleRate) / sampleRate;
             const double trePhaseInc = 2.0 * M_PI * normToLfoHz(v.treSpeedNorm) / sampleRate;
 
+            // ── Sampler LFO setup (note-synced, BPM-relative) ──────────────
+            const bool lfoActive = (v.samplerLfoWave > 0) &&
+                                   (v.samplerLfoTargets != 0) &&
+                                   (v.samplerLfoDepth > 0.001f);
+            double lfoPhaseInc = 0.0;
+            if (lfoActive) {
+                const double bpm = std::max(1.0, mBpm.load());
+                const double samplesPerBeat = sampleRate * 60.0 / bpm;
+                const double beatsPerCycle = kSamplerLfoDivBeats[
+                    std::clamp(v.samplerLfoRateIdx, 0, 9)];
+                const double samplesPerCycle = std::max(1.0, samplesPerBeat * beatsPerCycle);
+                lfoPhaseInc = 1.0 / samplesPerCycle;
+            }
+            const bool lfoTgtVol   = lfoActive && (v.samplerLfoTargets & 1);
+            const bool lfoTgtPitch = lfoActive && (v.samplerLfoTargets & 2);
+            const bool lfoTgtHp    = lfoActive && (v.samplerLfoTargets & 4);
+            const bool lfoTgtLp    = lfoActive && (v.samplerLfoTargets & 8);
+
+            // Slew limiter for volume modulation (eliminates square-wave clicks).
+            const float samplesInSlewWindow = kSamplerLfoSlewWindowMs * sampleRate / 1000.0f;
+            const float slewPerSample = 1.0f / std::max(1.0f, samplesInSlewWindow);
+
             // 4-point Hermite cubic interpolation. Smoother than linear, kills
             // the aliasing/zipper artifacts you hear when pitching a sample
             // down. Reads 4 samples around samplePos (idxA..idxD); region
@@ -2668,6 +2758,29 @@ oboe::DataCallbackResult AudioEngine::onAudioReady(
             const float minEnvFrames = 0.002f * static_cast<float>(sampleRate);
 
             for (int i = 0; i < numFrames; ++i) {
+                // ── Advance sampler LFO and compute its value for this frame ──
+                float lfoVal = 0.0f;
+                if (lfoActive) {
+                    // Random (sample & hold): pick a new value at each cycle wrap.
+                    if (v.samplerLfoWave == 6 && v.samplerLfoPhase == 0.0) {
+                        v.noiseState = v.noiseState * 1664525u + 1013904223u;
+                        v.samplerLfoRandVal =
+                            static_cast<float>((v.noiseState >> 8) & 0xFFFFu) / 65535.0f;
+                    }
+                    lfoVal = samplerLfoValue(v.samplerLfoWave, v.samplerLfoPhase,
+                                             v.samplerLfoRandVal);
+                    v.samplerLfoPhase += lfoPhaseInc;
+                    if (v.samplerLfoPhase >= 1.0) {
+                        v.samplerLfoPhase -= 1.0;
+                        // New random value at the start of each cycle.
+                        if (v.samplerLfoWave == 6) {
+                            v.noiseState = v.noiseState * 1664525u + 1013904223u;
+                            v.samplerLfoRandVal =
+                                static_cast<float>((v.noiseState >> 8) & 0xFFFFu) / 65535.0f;
+                        }
+                    }
+                }
+
                 // Apply SLU/SLD pitch ramp: interpolate sampleStep per sample.
                 if (v.pitchRampSamplesLeft > 0) {
                     v.sampleStep += static_cast<double>(v.sampleStepRampPerSample);
@@ -2675,7 +2788,13 @@ oboe::DataCallbackResult AudioEngine::onAudioReady(
                         v.sampleStep = static_cast<double>(v.sampleStepTarget);
                     }
                 }
-                const double ratio = srRatio * v.sampleStep;
+                double ratio = srRatio * v.sampleStep;
+                // LFO → pitch: ±12 semitones scaled by depth, per anchor mode.
+                if (lfoTgtPitch) {
+                    const float semis = samplerLfoOffset(v.samplerLfoMode, lfoVal)
+                                        * v.samplerLfoDepth * 12.0f;
+                    ratio *= std::pow(2.0f, semis / 12.0f);
+                }
                 int idx = static_cast<int>(v.samplePos);
                 if (v.loopMode > 0 && loopLen > 1.0) {
                     // Check if we've entered the loop region yet
@@ -2763,13 +2882,47 @@ oboe::DataCallbackResult AudioEngine::onAudioReady(
                 const float interpSample = hermite4(v.samplePos);
                 float dry = interpSample * v.level * v.instrumentVolume * v.sampleGain * envGain * treAmpMod;
 
+                // LFO → volume: gain multiplier per anchor mode. DOWN pulls the
+                // level below the knob value (envelope-style swell with Ramp Up).
+                // Slew-limited to eliminate clicks from sudden square-wave jumps.
+                if (lfoTgtVol) {
+                    const float target = 1.0f + samplerLfoOffset(v.samplerLfoMode, lfoVal)
+                                               * v.samplerLfoDepth;
+                    v.samplerLfoVolModTarget = std::clamp(target, 0.0f, 2.0f);
+                    // Slew: move current value toward target at max rate per sample.
+                    if (v.samplerLfoVolModCurr < v.samplerLfoVolModTarget) {
+                        v.samplerLfoVolModCurr = std::min(v.samplerLfoVolModTarget,
+                            v.samplerLfoVolModCurr + slewPerSample);
+                    } else if (v.samplerLfoVolModCurr > v.samplerLfoVolModTarget) {
+                        v.samplerLfoVolModCurr = std::max(v.samplerLfoVolModTarget,
+                            v.samplerLfoVolModCurr - slewPerSample);
+                    }
+                    dry *= v.samplerLfoVolModCurr;
+                }
+
+                // LFO → filter cutoffs: modulate HP/LP per anchor mode. When the
+                // LFO targets HP/LP the filter runs even if the static filter is
+                // off, so the modulation is always audible.
+                float hpCut = v.samplerHpCutoff;
+                float lpCut = v.samplerLpCutoff;
+                if (lfoTgtHp) {
+                    hpCut = std::clamp(v.samplerHpCutoff +
+                        samplerLfoOffset(v.samplerLfoMode, lfoVal) * v.samplerLfoDepth,
+                        0.0f, 1.0f);
+                }
+                if (lfoTgtLp) {
+                    lpCut = std::clamp(v.samplerLpCutoff +
+                        samplerLfoOffset(v.samplerLfoMode, lfoVal) * v.samplerLfoDepth,
+                        0.0f, 1.0f);
+                }
+
                 // ── Sampler HP → LP filter (in series). Zero CPU when OFF. ──
-                if (v.samplerFilterOn) {
+                if (v.samplerFilterOn || lfoTgtHp || lfoTgtLp) {
                     const float srF = static_cast<float>(sampleRate);
                     const float nyqLimit = srF * 0.20f;
                     // HP stage — skip when fully open (cutoff near 0).
-                    if (v.samplerHpCutoff > 0.005f) {
-                        const float hz = std::clamp(normToCutoffHz(v.samplerHpCutoff), 20.0f, nyqLimit);
+                    if (hpCut > 0.005f) {
+                        const float hz = std::clamp(normToCutoffHz(hpCut), 20.0f, nyqLimit);
                         const float f = std::clamp(2.0f * std::sin(static_cast<float>(M_PI) * hz / srF),
                                                    0.001f, 0.99f);
                         const float damp = std::max(0.05f, 1.0f - v.samplerHpRes * 0.95f);
@@ -2783,8 +2936,8 @@ oboe::DataCallbackResult AudioEngine::onAudioReady(
                         dry = high;
                     }
                     // LP stage — skip when fully open (cutoff near 1).
-                    if (v.samplerLpCutoff < 0.995f) {
-                        const float hz = std::clamp(normToCutoffHz(v.samplerLpCutoff), 20.0f, nyqLimit);
+                    if (lpCut < 0.995f) {
+                        const float hz = std::clamp(normToCutoffHz(lpCut), 20.0f, nyqLimit);
                         const float f = std::clamp(2.0f * std::sin(static_cast<float>(M_PI) * hz / srF),
                                                    0.001f, 0.99f);
                         const float damp = std::max(0.05f, 1.0f - v.samplerLpRes * 0.95f);

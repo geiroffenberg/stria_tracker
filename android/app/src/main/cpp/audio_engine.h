@@ -152,6 +152,20 @@ struct Voice {
     float  samplerHpBand     = 0.0f;
     float  samplerLpLow      = 0.0f;
     float  samplerLpBand     = 0.0f;
+
+    // Sampler LFO (dedicated, note-synced, BPM-relative). Independent of the
+    // synth VIB LFO above. Bypassed entirely (zero CPU) when samplerLfoWave==0.
+    int    samplerLfoWave    = 0;    // 0=off,1=sine,2=tri,3=square,4=rampUp,5=rampDown,6=rand
+    int    samplerLfoRateIdx = 5;    // index into LFO division table (cycle length)
+    int    samplerLfoTargets = 0;    // bitmask: 1=vol, 2=pitch, 4=hp, 8=lp
+    int    samplerLfoMode    = 2;    // anchor: 0=center, 1=up, 2=down
+    float  samplerLfoDepth   = 0.0f; // 0..1 modulation depth
+    double samplerLfoPhase   = 0.0;  // 0..1 normalized phase (accumulated per sample)
+    float  samplerLfoRandVal = 0.0f; // current sample-and-hold random value (RND wave)
+    float  samplerLfoRandNext = 0.0f; // next random value (for smoothing, unused for now)
+    // Slew-limited modulation targets (smooth out volume/pitch/filter clicks)
+    float  samplerLfoVolModTarget = 1.0f; // target gain multiplier for volume
+    float  samplerLfoVolModCurr   = 1.0f; // current (slewed) value
 };
 
 struct SampleData {

@@ -155,6 +155,13 @@ class _TrackerAppState extends State<TrackerApp> with WidgetsBindingObserver {
         title:        'Tracker',
         debugShowCheckedModeBanner: false,
         theme:        buildAppTheme(),
+        builder: (context, child) {
+          return SafeArea(
+            top: false,    // Let status bar overlay if you want
+            bottom: true,  // CRITICAL: Force safe margin above nav bar
+            child: child ?? const SizedBox(),
+          );
+        },
         home:         const MainScreen(),
       ),
     );

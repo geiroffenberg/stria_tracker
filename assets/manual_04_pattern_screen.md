@@ -94,3 +94,25 @@ This makes it easy to audition a fill, check a transition, or loop a specific be
 - **Collapsed view** — all tracks compressed into a compact grid showing only NOTE and IN columns, allowing a full overview of the pattern at once. Useful for arranging melodies across multiple tracks.
 
 - **Drum mode** — ultra-compact layout where each track shows only a single instrument pill (IN column). The NOTE column is hidden. This mode is optimized for drum kit programming where each track typically corresponds to one drum sound. **Bonus feature:** when you tap an empty instrument cell in drum mode, it automatically fills with the track number (1-based), so track 1 defaults to instrument 01, track 2 to instrument 02, etc. This speeds up setup for kit-style arrangements where drum sounds are naturally distributed across slots.
+
+### Drum Mode Velocity Control
+
+In drum mode, each drum hit supports three velocity (volume) states, accessed by **single-tapping** a drum pill:
+
+| Tap Sequence | State | Appearance | Volume |
+|---|---|---|---|
+| 1st tap | Default | Solid pill | Track default |
+| 2nd tap | Accent | Gradient (complement → accent) | 99 (loud) |
+| 3rd tap | Half | Gradient (accent → complement) | 50 (quiet) |
+| 4th tap | Empty | (cleared) | — |
+
+**How to use:**
+- Tap the drum pill once: cycles to the next state (Default → Accent → Half → Empty).
+- **Double-tap** any state: immediately clears the cell (deletes the note).
+- Each state's gradient provides instant visual feedback — bright overlays indicate accent hits.
+
+**Example workflow:**
+1. Build a drum pattern with steady hits in **Default** state.
+2. Single-tap accent hits to brighten key moments (kick on beat 1, snare on beat 2).
+3. Single-tap half hits for ghost notes or quiet ghost snares.
+4. The gradient colors auto-adapt to your theme — no manual color tweaking needed.

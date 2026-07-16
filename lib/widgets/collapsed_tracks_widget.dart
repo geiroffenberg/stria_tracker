@@ -17,6 +17,11 @@ import 'cell_widget.dart';
 ///   └─────────┴──────────────────────────────────────┘
 ///   The row-number column stays put on the left.
 ///   The track header and the cell area share a horizontal scroll controller.
+
+/// Drum mode velocity constants for accent and half-volume
+const int kDrumAccentVolume = 99;
+const int kDrumHalfVolume = 50;
+
 class CollapsedTracksWidget extends StatefulWidget {
   const CollapsedTracksWidget({super.key});
 
@@ -422,7 +427,6 @@ class _MiniCellState extends State<_MiniCell> {
     }
     state.selectCell(widget.row, widget.column);
   }
-
   void _handleTap(AppState state) {
     final now = DateTime.now();
     final last = _lastTapTime;
@@ -430,12 +434,21 @@ class _MiniCellState extends State<_MiniCell> {
 
     if (last != null && now.difference(last) < _doubleTapWindow) {
       _lastTapTime = null;
-      _select(state);
-      state.resetColumnToDefault(widget.row, widget.column);
+      // Double-tap: always clear the cell
+      state.clearCellInTrack(widget.row, widget.trackIndex);
       return;
     }
 
-    _select(state);
+    // Single tap:
+    // Drum mode on non-empty cell: cycle velocity
+    // Otherwise: just select
+    if (widget.drumPill && widget.cell.instrument != null && !widget.cell.note.isOff) {
+      // Non-empty drum cell: cycle velocity
+      state.cycleDrumVelocity(widget.row, widget.trackIndex);
+    } else {
+      // Empty or normal cell: just select
+      _select(state);
+    }
   }
 
   void _onDragStart(AppState state) {
@@ -503,8 +516,10 @@ class _MiniCellState extends State<_MiniCell> {
     );
   }
 
-  /// Drum-mode pill: instrument number on an accent pill, OFF as a red
-  /// pill with an ✕, and empty cells as a faint dot.
+  /// Drum-mode pill: instrument number on a colored pill with velocity gradient,
+  /// OFF as a red pill with an ✕, and empty cells as a faint dot.
+  /// Velocity is shown via gradient: accent has complement at top,
+  /// half-volume has complement at bottom.
   Widget _buildDrumPill(bool isBoxSelected) {
     final cell = widget.cell;
     final selected = widget.isSelected || isBoxSelected;
@@ -523,8 +538,29 @@ class _MiniCellState extends State<_MiniCell> {
         ),
       );
     } else if (cell.instrument != null) {
+      // Render with gradient based on drum velocity
+      Gradient? gradient;
+      if (cell.drumVelocity == DrumVelocity.accent) {
+        // Top half: complement color, bottom half: pill color
+        gradient = LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [kColComplement, kColAccent],
+          stops: const [0.0, 0.5],
+        );
+      } else if (cell.drumVelocity == DrumVelocity.half) {
+        // Top half: pill color, bottom half: complement color
+        gradient = LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [kColAccent, kColComplement],
+          stops: const [0.5, 1.0],
+        );
+      }
+
       pill = _pill(
         color: kColAccent,
+        gradient: gradient,
         child: Text(
           cell.instrument!.toString().padLeft(2, '0'),
           style: const TextStyle(
@@ -559,14 +595,19 @@ class _MiniCellState extends State<_MiniCell> {
     );
   }
 
-  Widget _pill({required Color color, required Widget child}) {
+  Widget _pill({
+    required Color color,
+    Gradient? gradient,
+    required Widget child,
+  }) {
     return Container(
       constraints: const BoxConstraints(minWidth: 28),
       height: 20,
       alignment: Alignment.center,
       padding: const EdgeInsets.symmetric(horizontal: 6),
       decoration: BoxDecoration(
-        color: color,
+        color: gradient == null ? color : null,
+        gradient: gradient,
         borderRadius: BorderRadius.circular(10),
       ),
       child: child,

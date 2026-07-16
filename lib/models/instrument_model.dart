@@ -530,6 +530,83 @@ extension SamplerLoopModeLabel on SamplerLoopMode {
   }
 }
 
+/// Sampler LFO waveform shapes. [off] disables the LFO entirely (zero CPU).
+enum SamplerLfoWave { off, sine, triangle, square, rampUp, rampDown, random }
+
+extension SamplerLfoWaveLabel on SamplerLfoWave {
+  String get label {
+    switch (this) {
+      case SamplerLfoWave.off:
+        return 'OFF';
+      case SamplerLfoWave.sine:
+        return 'SINE';
+      case SamplerLfoWave.triangle:
+        return 'TRI';
+      case SamplerLfoWave.square:
+        return 'SQR';
+      case SamplerLfoWave.rampUp:
+        return 'R↑';
+      case SamplerLfoWave.rampDown:
+        return 'R↓';
+      case SamplerLfoWave.random:
+        return 'RND';
+    }
+  }
+}
+
+/// LFO anchor mode: how the LFO relates to each target's base (knob) value.
+/// - [center]: base value is the center; LFO swings ± depth around it (bipolar).
+/// - [up]: base value is the floor; LFO pushes up by depth.
+/// - [down]: base value is the ceiling; LFO pulls down by depth (envelope-style).
+enum SamplerLfoMode { center, up, down }
+
+extension SamplerLfoModeLabel on SamplerLfoMode {
+  String get label {
+    switch (this) {
+      case SamplerLfoMode.center:
+        return 'CTR';
+      case SamplerLfoMode.up:
+        return 'UP';
+      case SamplerLfoMode.down:
+        return 'DOWN';
+    }
+  }
+}
+
+/// LFO cycle-length divisions relative to a beat (BPM-synced).
+/// Index into this list is stored/serialized; native uses the same table.
+const List<double> kSamplerLfoDivBeats = <double>[
+  1.0 / 32, // 0
+  1.0 / 16, // 1
+  1.0 / 8, //  2
+  1.0 / 4, //  3
+  1.0 / 2, //  4
+  1.0, //      5
+  2.0, //      6
+  4.0, //      7
+  8.0, //      8
+  16.0, //     9
+];
+
+/// Display label for LFO division at [index].
+String samplerLfoDivLabel(int index) {
+  const labels = [
+    '1/32',
+    '1/16',
+    '1/8',
+    '1/4',
+    '1/2',
+    '1',
+    '2',
+    '4',
+    '8',
+    '16',
+  ];
+  if (index < 0 || index >= labels.length) return '?';
+  return labels[index];
+}
+
+
 class SamplerParams {
   static const int sliceCount = 9;
 
@@ -550,8 +627,7 @@ class SamplerParams {
   bool stretchPreservePitch; // true = time-stretch only; false = pitch follows rate
 
   // ── Filter (HP → LP in series) ────────────────────────────────────────────
-  // Bypassed entirely (zero CPU) when filterEnabled = false.
-  bool filterEnabled;     // master ON/OFF
+  // Auto-bypassed (zero CPU) when hpCutoff = 0 and lpCutoff = 1 (default bypass state).
   double hpCutoff;        // 0..1 (0 = bypass, 1 = fully closed)
   double hpResonance;     // 0..1
   double lpCutoff;        // 0..1 (0 = fully closed, 1 = bypass / fully open)
@@ -563,8 +639,44 @@ class SamplerParams {
   double loopStart; // 0..1 — loop region start
   double loopEnd;   // 0..1 — loop region end
 
+  // ── LFO (note-synced, BPM-relative) ─────────────────────────────────────────
+  // Starts on note-on. Bypassed entirely (zero CPU) when lfoWave == off.
+  SamplerLfoWave lfoWave;   // shape / OFF
+  int lfoRateIndex;         // index into kSamplerLfoDivBeats (cycle length)
+  double lfoDepth;          // 0..1 modulation amount
+  SamplerLfoMode lfoMode;   // anchor: center / up / down
+  bool lfoTargetVolume;     // modulate volume
+  bool lfoTargetPitch;      // modulate pitch
+  bool lfoTargetHp;         // modulate HP filter cutoff
+  bool lfoTargetLp;         // modulate LP filter cutoff
+
   // keep legacy bool getter so existing code using p.loop still compiles
   bool get loop => loopMode != SamplerLoopMode.off;
+
+  /// Returns true if the filter is in complete bypass state
+  /// (HP fully open at 0 cutoff, LP fully open at 1.0 cutoff).
+  /// When true, no filter processing is needed.
+  bool get isFilterBypassed {
+    return hpCutoff == 0.0 && lpCutoff == 1.0;
+  }
+
+  /// True when the LFO is active (a waveform is selected and at least one
+  /// target is enabled). When false the native engine skips LFO processing.
+  bool get isLfoActive {
+    return lfoWave != SamplerLfoWave.off &&
+        (lfoTargetVolume || lfoTargetPitch || lfoTargetHp || lfoTargetLp);
+  }
+
+  /// Packed target bitmask sent to the native engine:
+  /// bit0=volume, bit1=pitch, bit2=HP, bit3=LP.
+  int get lfoTargetMask {
+    int mask = 0;
+    if (lfoTargetVolume) mask |= 1;
+    if (lfoTargetPitch) mask |= 2;
+    if (lfoTargetHp) mask |= 4;
+    if (lfoTargetLp) mask |= 8;
+    return mask;
+  }
 
   SamplerParams({
     this.sampleName,
@@ -580,13 +692,20 @@ class SamplerParams {
     this.stretchEnabled = false,
     this.stretchBeats = 4,
     this.stretchPreservePitch = true,
-    this.filterEnabled = false,
     this.hpCutoff = 0.0,
     this.hpResonance = 0.0,
     this.lpCutoff = 1.0,
     this.lpResonance = 0.0,
     this.loopStart = 0.0,
     this.loopEnd = 1.0,
+    this.lfoWave = SamplerLfoWave.off,
+    this.lfoRateIndex = 5,
+    this.lfoDepth = 0.5,
+    this.lfoMode = SamplerLfoMode.down,
+    this.lfoTargetVolume = false,
+    this.lfoTargetPitch = false,
+    this.lfoTargetHp = false,
+    this.lfoTargetLp = false,
   }) : sliceStarts = _normalizedSliceStarts(sliceStarts);
 
   static List<int> _normalizedSliceStarts(List<int>? values) {
@@ -675,13 +794,20 @@ class SamplerParams {
     'stretchEnabled': stretchEnabled,
     'stretchBeats': stretchBeats,
     'stretchPreservePitch': stretchPreservePitch,
-    'filterEnabled': filterEnabled,
     'hpCutoff': hpCutoff,
     'hpResonance': hpResonance,
     'lpCutoff': lpCutoff,
     'lpResonance': lpResonance,
     'loopStart': loopStart,
     'loopEnd': loopEnd,
+    'lfoWave': lfoWave.index,
+    'lfoRateIndex': lfoRateIndex,
+    'lfoDepth': lfoDepth,
+    'lfoMode': lfoMode.index,
+    'lfoTargetVolume': lfoTargetVolume,
+    'lfoTargetPitch': lfoTargetPitch,
+    'lfoTargetHp': lfoTargetHp,
+    'lfoTargetLp': lfoTargetLp,
   };
 
   factory SamplerParams.fromJson(Map<String, dynamic> j) => SamplerParams(
@@ -705,13 +831,23 @@ class SamplerParams {
     stretchEnabled: (j['stretchEnabled'] as bool?) ?? false,
     stretchBeats: (j['stretchBeats'] as int?) ?? 4,
     stretchPreservePitch: (j['stretchPreservePitch'] as bool?) ?? true,
-    filterEnabled: (j['filterEnabled'] as bool?) ?? false,
     hpCutoff: (j['hpCutoff'] as num?)?.toDouble() ?? 0.0,
     hpResonance: (j['hpResonance'] as num?)?.toDouble() ?? 0.0,
     lpCutoff: (j['lpCutoff'] as num?)?.toDouble() ?? 1.0,
     lpResonance: (j['lpResonance'] as num?)?.toDouble() ?? 0.0,
     loopStart: (j['loopStart'] as num?)?.toDouble() ?? 0.0,
     loopEnd: (j['loopEnd'] as num?)?.toDouble() ?? 1.0,
+    lfoWave: SamplerLfoWave.values[((j['lfoWave'] as int?) ?? 0)
+        .clamp(0, SamplerLfoWave.values.length - 1)],
+    lfoRateIndex: ((j['lfoRateIndex'] as int?) ?? 5)
+        .clamp(0, kSamplerLfoDivBeats.length - 1),
+    lfoDepth: ((j['lfoDepth'] as num?)?.toDouble() ?? 0.5).clamp(0.0, 1.0),
+    lfoMode: SamplerLfoMode.values[((j['lfoMode'] as int?) ?? 2)
+        .clamp(0, SamplerLfoMode.values.length - 1)],
+    lfoTargetVolume: (j['lfoTargetVolume'] as bool?) ?? false,
+    lfoTargetPitch: (j['lfoTargetPitch'] as bool?) ?? false,
+    lfoTargetHp: (j['lfoTargetHp'] as bool?) ?? false,
+    lfoTargetLp: (j['lfoTargetLp'] as bool?) ?? false,
   );
 
   /// Create a deep copy of this sampler configuration.
@@ -729,13 +865,20 @@ class SamplerParams {
     stretchEnabled: stretchEnabled,
     stretchBeats: stretchBeats,
     stretchPreservePitch: stretchPreservePitch,
-    filterEnabled: filterEnabled,
     hpCutoff: hpCutoff,
     hpResonance: hpResonance,
     lpCutoff: lpCutoff,
     lpResonance: lpResonance,
     loopStart: loopStart,
     loopEnd: loopEnd,
+    lfoWave: lfoWave,
+    lfoRateIndex: lfoRateIndex,
+    lfoDepth: lfoDepth,
+    lfoMode: lfoMode,
+    lfoTargetVolume: lfoTargetVolume,
+    lfoTargetPitch: lfoTargetPitch,
+    lfoTargetHp: lfoTargetHp,
+    lfoTargetLp: lfoTargetLp,
   );
 
   /// Highest Pxx param index supported for sampler instruments.

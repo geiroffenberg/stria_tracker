@@ -174,7 +174,7 @@ enum PatternViewMode { normal, collapsed, drum }
 
 class AppState extends ChangeNotifier {
   static const int _audioVoiceCount = kMaxTracks;
-  static const int _audioRowStride = 44;
+  static const int _audioRowStride = 49;
 
   /// Max master fader gain (linear). 2.0 = +6 dB headroom for intentionally
   /// driving the always-on safety limiter (makeup-style gain).
@@ -2011,6 +2011,35 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Clear a cell in any track (used for drum mode in collapsed view).
+  void clearCellInTrack(int row, int trackIndex) {
+    if (trackIndex < 0 || trackIndex >= currentPattern.tracks.length) return;
+    _pushPatternUndo('clear cell');
+    currentPattern.tracks[trackIndex].cells[row] = TrackerCell.empty();
+    notifyListeners();
+  }
+
+  /// Cycle drum velocity state and set volume accordingly.
+  /// Cycles: default (vol=null) → accent (vol=99) → half (vol=50) → default
+  void cycleDrumVelocity(int row, int trackIndex) {
+    if (trackIndex < 0 || trackIndex >= currentPattern.tracks.length) return;
+    if (row < 0 || row >= currentPattern.tracks[trackIndex].cells.length) return;
+    _pushPatternUndo('drum velocity');
+    final cell = currentPattern.tracks[trackIndex].cells[row];
+    final nextVelocity = switch (cell.drumVelocity) {
+      DrumVelocity.default_ => DrumVelocity.accent,
+      DrumVelocity.accent => DrumVelocity.half,
+      DrumVelocity.half => DrumVelocity.default_,
+    };
+    cell.drumVelocity = nextVelocity;
+    cell.volume = switch (nextVelocity) {
+      DrumVelocity.default_ => null,
+      DrumVelocity.accent => 99,
+      DrumVelocity.half => 50,
+    };
+    notifyListeners();
+  }
+
   /// Reads the FX command for an fxval column (null if not an fxval column).
   int? _fxCommandFor(TrackerCell cell, CellColumn col) {
     switch (col) {
@@ -2926,7 +2955,8 @@ class AppState extends ChangeNotifier {
         _norm01ToAudio255(detuneNorm), // sampler pitch / synth detune
         _norm01ToAudio255(sp.hpCutoff), // cutoff  → sampler HP cutoff
         _norm01ToAudio255(sp.hpResonance), // resonance → sampler HP resonance
-        sp.filterEnabled ? 1 : 0, // filterMode reused as sampler filter ON/OFF
+        // Filter is OFF if in complete bypass state (hpCutoff=0, lpCutoff=1)
+        sp.isFilterBypassed ? 0 : 1,
         _norm01ToAudio255(sp.lpCutoff), // filterAtk → sampler LP cutoff
         _norm01ToAudio255(sp.lpResonance), // filterDec → sampler LP resonance
         _norm01ToAudio255(0.00), // filterSus
@@ -2965,6 +2995,12 @@ class AppState extends ChangeNotifier {
         treMode ?? 0, // treMode: 0=off, 1=TRE(sine), 2=GAT(square)
         _norm01ToAudio255(sp.loopStart), // loopStart (sampler loop region)
         _norm01ToAudio255(sp.loopEnd), // loopEnd (sampler loop region)
+        // ── Sampler LFO (note-synced, BPM-relative) ──────────────────────
+        sp.isLfoActive ? sp.lfoWave.index : 0, // LFO waveform (0=off)
+        sp.lfoRateIndex, // LFO cycle-length division index
+        sp.lfoTargetMask, // LFO target bitmask: 1=vol,2=pitch,4=hp,8=lp
+        _norm01ToAudio255(sp.lfoDepth), // LFO depth 0..255
+        sp.lfoMode.index, // LFO anchor mode: 0=center,1=up,2=down
       ];
     }
     if (ins.type == InstrumentType.karplusStrong) {
@@ -3010,6 +3046,11 @@ class AppState extends ChangeNotifier {
         treMode ?? 0, // treMode: 0=off, 1=TRE(sine), 2=GAT(square)
         0, // loopStart padding (sampler-only, unused for Karplus)
         0, // loopEnd padding (sampler-only, unused for Karplus)
+        0, // LFO waveform padding (sampler-only)
+        0, // LFO rate index padding (sampler-only)
+        0, // LFO target mask padding (sampler-only)
+        0, // LFO depth padding (sampler-only)
+        0, // LFO mode padding (sampler-only)
       ];
     }
     final p = ins.synth;
@@ -3056,6 +3097,11 @@ class AppState extends ChangeNotifier {
       treMode ?? 0, // treMode: 0=off, 1=TRE(sine), 2=GAT(square)
       0, // loopStart padding (sampler-only, unused for synth)
       0, // loopEnd padding (sampler-only, unused for synth)
+      0, // LFO waveform padding (sampler-only)
+      0, // LFO rate index padding (sampler-only)
+      0, // LFO target mask padding (sampler-only)
+      0, // LFO depth padding (sampler-only)
+      0, // LFO mode padding (sampler-only)
     ];
   }
 

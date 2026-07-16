@@ -1,5 +1,12 @@
 import 'note_value.dart';
 
+/// Drum mode velocity state — controls rendering in pill.
+enum DrumVelocity {
+  default_,  // 0: no gradient, volume null
+  accent,    // 1: gradient top, volume 99
+  half,      // 2: gradient bottom, volume 50
+}
+
 /// One FX slot: command byte + value byte. Both nullable (empty = not set).
 class FxSlot {
   int? command; // 0x00–0xFF, null = empty
@@ -571,6 +578,7 @@ class TrackerCell {
   int? instrument; // 0x00–0xFF, null = empty
   int? volume; // 0x00–0xFF, null = empty (FF = max)
   int? pan; // 0x00–0xFF, null = empty (80 = centre)
+  DrumVelocity drumVelocity; // drum mode velocity state (default_/accent/half)
   List<FxSlot> fxSlots; // always length 3
 
   TrackerCell({
@@ -578,9 +586,21 @@ class TrackerCell {
     this.instrument,
     this.volume,
     this.pan,
+    this.drumVelocity = DrumVelocity.default_,
     List<FxSlot>? fxSlots,
   }) : note = note ?? NoteValue.empty,
-       fxSlots = fxSlots ?? List.generate(3, (_) => FxSlot());
+       fxSlots = _ensureThreeSlots(fxSlots ?? List.generate(3, (_) => FxSlot()));
+
+  static List<FxSlot> _ensureThreeSlots(List<FxSlot> slots) {
+    // Ensure exactly 3 slots
+    while (slots.length < 3) {
+      slots.add(FxSlot());
+    }
+    if (slots.length > 3) {
+      slots = slots.sublist(0, 3);
+    }
+    return slots;
+  }
 
   static TrackerCell empty() => TrackerCell();
 
@@ -595,6 +615,7 @@ class TrackerCell {
     instrument: instrument,
     volume: volume,
     pan: pan,
+    drumVelocity: drumVelocity,
     fxSlots: fxSlots
         .map((f) => FxSlot(command: f.command, value: f.value))
         .toList(),
@@ -605,20 +626,30 @@ class TrackerCell {
     'inst': instrument,
     'vol': volume,
     'pan': pan,
+    'vel': drumVelocity.index,
     'fx': fxSlots.map((f) => f.toJson()).toList(),
   };
 
-  factory TrackerCell.fromJson(Map<String, dynamic> j) => TrackerCell(
-    note: NoteValue.fromScrollIndex((j['note'] as int?) ?? 0),
-    instrument: j['inst'] as int?,
-    volume: j['vol'] as int?,
-    pan: j['pan'] as int?,
-    fxSlots:
+  factory TrackerCell.fromJson(Map<String, dynamic> j) {
+    List<FxSlot> slots =
         (j['fx'] as List<dynamic>?)
             ?.map((e) => FxSlot.fromJson(e as Map<String, dynamic>))
             .toList() ??
-        List.generate(3, (_) => FxSlot()),
-  );
+        List.generate(3, (_) => FxSlot());
+    final velIndex = (j['vel'] as int?) ?? 0;
+    final vel = velIndex >= 0 && velIndex < DrumVelocity.values.length
+        ? DrumVelocity.values[velIndex]
+        : DrumVelocity.default_;
+    // Ensure fxSlots always has exactly 3 slots via the constructor's helper
+    return TrackerCell(
+      note: NoteValue.fromScrollIndex((j['note'] as int?) ?? 0),
+      instrument: j['inst'] as int?,
+      volume: j['vol'] as int?,
+      pan: j['pan'] as int?,
+      drumVelocity: vel,
+      fxSlots: slots,
+    );
+  }
 }
 
 /// Column indices used throughout the UI.
