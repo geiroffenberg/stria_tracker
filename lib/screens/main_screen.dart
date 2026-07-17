@@ -158,7 +158,7 @@ class _MainScreenState extends State<MainScreen> {
                 Expanded(
                   child: IndexedStack(
                     index: _tabIndex,
-                    children: const [
+                    children: [
                       SongScreen(),
                       PatternScreen(),
                       InstrumentScreen(),

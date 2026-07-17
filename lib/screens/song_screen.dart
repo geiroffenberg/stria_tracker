@@ -342,7 +342,7 @@ class _SongScreenState extends State<SongScreen> {
     const laneGap = 1.0;
     const originX = 4.0;
     return Container(
-      height: 28,
+      height: 40,
       color: kBgHeader,
       child: LayoutBuilder(
         builder: (context, constraints) {
@@ -350,23 +350,52 @@ class _SongScreenState extends State<SongScreen> {
           final laneW = (laneAreaW - (kMaxTracks - 1) * laneGap) / kMaxTracks;
           return Stack(
             children: [
+              // Draw divider lines between lanes
+              for (int t = 1; t < kMaxTracks; t++)
+                Positioned(
+                  left: originX + t * (laneW + laneGap) - laneGap / 2,
+                  top: 0,
+                  bottom: 0,
+                  width: laneGap,
+                  child: Container(
+                    color: kColInactive.withAlpha(80),
+                  ),
+                ),
+              // Track number buttons
               for (int t = 0; t < kMaxTracks; t++)
                 Positioned(
                   left: originX + t * (laneW + laneGap),
                   top: 0,
                   bottom: 0,
                   width: laneW,
-                  child: GestureDetector(
-                    onTap: () => state.toggleTrackMixerSolo(t),
-                    child: Align(
-                      alignment: Alignment.centerLeft,
-                      child: Text(
-                        '${t + 1}',
-                        style: kStyleHeader.copyWith(
-                          color: t < state.currentPattern.tracks.length &&
+                  child: Material(
+                    color: Colors.transparent,
+                    child: InkWell(
+                      onTap: () => state.toggleTrackMixerSolo(t),
+                      child: Container(
+                        alignment: Alignment.center,
+                        decoration: BoxDecoration(
+                          border: Border.all(
+                            color: t < state.currentPattern.tracks.length &&
+                                    state.currentPattern.tracks[t].mixerSolo
+                                ? kColStopBtn
+                                : kColInactive.withAlpha(60),
+                            width: 0.5,
+                          ),
+                        ),
+                        child: Text(
+                          t < state.currentPattern.tracks.length &&
                                   state.currentPattern.tracks[t].mixerSolo
-                              ? kColStopBtn
-                              : kColAccent,
+                              ? 'S'
+                              : '${t + 1}',
+                          style: kStyleHeader.copyWith(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w700,
+                            color: t < state.currentPattern.tracks.length &&
+                                    state.currentPattern.tracks[t].mixerSolo
+                                ? kColStopBtn
+                                : kColAccent,
+                          ),
                         ),
                       ),
                     ),
@@ -396,8 +425,8 @@ class _SongScreenState extends State<SongScreen> {
                 Expanded(
                   child: Text(
                     state.song.name,
-                    style: const TextStyle(
-                      color: Colors.white,
+                    style: TextStyle(
+                      color: kColHeader,
                       fontSize: 20,
                       fontWeight: FontWeight.w600,
                     ),
@@ -406,7 +435,7 @@ class _SongScreenState extends State<SongScreen> {
                 ),
                 GestureDetector(
                   onTap: () => _startRename(state),
-                  child: Icon(Icons.edit, size: 22, color: Colors.white54),
+                  child: Icon(Icons.edit, size: 22, color: kColInactive),
                 ),
                 const SizedBox(width: 4),
                 IconButton(
@@ -521,7 +550,7 @@ class _SongScreenState extends State<SongScreen> {
                       controller: _nameCtrl,
                       focusNode: _nameFocus,
                       autofocus: true,
-                      style: const TextStyle(color: Colors.white),
+                      style: TextStyle(color: kColHeader),
                       autocorrect: false,
                       enableSuggestions: false,
                       autofillHints: const <String>[],
@@ -856,8 +885,8 @@ class _SongScreenState extends State<SongScreen> {
                           ),
                           child: Text(
                             names[i],
-                            style: const TextStyle(
-                              color: Colors.white,
+                            style: TextStyle(
+                              color: kColHeader,
                               fontSize: 17,
                             ),
                           ),
@@ -966,76 +995,98 @@ class _SongScreenState extends State<SongScreen> {
     showModalBottomSheet<void>(
       context: ctx,
       backgroundColor: kBgTrackHeader,
+      isScrollControlled: true,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
       ),
       builder: (_) => ValueListenableBuilder<TrackerPalette>(
         valueListenable: paletteNotifier,
-        builder: (_, active, _) => Padding(
-          padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 20),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Color Palette',
-                style: TextStyle(
-                  color: kColAccent,
-                  fontSize: 18,
-                  fontWeight: FontWeight.w700,
-                  fontFamily: kFontMono,
-                ),
-              ),
-              const SizedBox(height: 20),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                children: kAllPalettes.map((p) {
-                  final selected = p.name == active.name;
-                  return GestureDetector(
-                    onTap: () {
-                      switchPalette(p);
-                      Navigator.of(ctx).pop();
-                    },
-                    child: Column(
-                      children: [
-                        Container(
-                          width: 44,
-                          height: 44,
-                          decoration: BoxDecoration(
-                            color: p.previewColor,
-                            shape: BoxShape.circle,
-                            border: Border.all(
-                              color: selected
-                                  ? Colors.white
-                                  : Colors.transparent,
-                              width: 3,
-                            ),
-                            boxShadow: selected
-                                ? [
-                                    BoxShadow(
-                                      color: p.previewColor.withAlpha(180),
-                                      blurRadius: 12,
-                                    ),
-                                  ]
-                                : null,
-                          ),
-                        ),
-                        const SizedBox(height: 6),
-                        Text(
-                          p.name,
-                          style: TextStyle(
-                            color: selected ? Colors.white : kColHeader,
-                            fontSize: 11,
-                            fontFamily: kFontMono,
-                          ),
-                        ),
-                      ],
+        builder: (_, active, _) => ConstrainedBox(
+          constraints: BoxConstraints(
+            maxHeight: MediaQuery.of(ctx).size.height * 0.7,
+          ),
+          child: SingleChildScrollView(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 20),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Color Palette',
+                    style: TextStyle(
+                      color: kColAccent,
+                      fontSize: 18,
+                      fontWeight: FontWeight.w700,
+                      fontFamily: kFontMono,
                     ),
-                  );
-                }).toList(),
+                  ),
+                  const SizedBox(height: 20),
+                  Wrap(
+                    alignment: WrapAlignment.spaceEvenly,
+                    spacing: 12,
+                    runSpacing: 16,
+                    children: kAllPalettes.map((p) {
+                      final selected = p.name == active.name;
+                      return GestureDetector(
+                        onTap: () {
+                          switchPalette(p);
+                          Navigator.of(ctx).pop();
+                        },
+                        child: SizedBox(
+                          width: 64,
+                          child: Column(
+                            children: [
+                              Container(
+                                width: 44,
+                                height: 44,
+                                decoration: BoxDecoration(
+                                  color: p.previewColor,
+                                  shape: BoxShape.circle,
+                                  border: Border.all(
+                                    color: selected
+                                        ? (ThemeData.estimateBrightnessForColor(
+                                                  p.previewColor,
+                                                ) ==
+                                                Brightness.dark
+                                            ? Colors.white
+                                            : Colors.black)
+                                        : Colors.transparent,
+                                    width: 3,
+                                  ),
+                                  boxShadow: selected
+                                      ? [
+                                          BoxShadow(
+                                            color: p.previewColor.withAlpha(180),
+                                            blurRadius: 12,
+                                          ),
+                                        ]
+                                      : null,
+                                ),
+                              ),
+                              const SizedBox(height: 6),
+                              Text(
+                                p.name,
+                                style: TextStyle(
+                                  color: selected ? kColAccent : kColHeader,
+                                  fontSize: 11,
+                                  fontFamily: kFontMono,
+                                  fontWeight: selected
+                                      ? FontWeight.w700
+                                      : FontWeight.normal,
+                                ),
+                                textAlign: TextAlign.center,
+                              ),
+                            ],
+                          ),
+                        ),
+                      );
+                    }).toList(),
+                  ),
+                  const SizedBox(height: 8),
+                ],
               ),
-              const SizedBox(height: 8),
-            ],
+            ),
           ),
         ),
       ),

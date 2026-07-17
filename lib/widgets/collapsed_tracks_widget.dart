@@ -540,6 +540,7 @@ class _MiniCellState extends State<_MiniCell> {
     } else if (cell.instrument != null) {
       // Render with gradient based on drum velocity
       Gradient? gradient;
+      Color textBg = kColAccent;
       if (cell.drumVelocity == DrumVelocity.accent) {
         // Top half: complement color, bottom half: pill color
         gradient = LinearGradient(
@@ -548,6 +549,7 @@ class _MiniCellState extends State<_MiniCell> {
           colors: [kColComplement, kColAccent],
           stops: const [0.0, 0.5],
         );
+        textBg = Color.lerp(kColComplement, kColAccent, 0.5)!;
       } else if (cell.drumVelocity == DrumVelocity.half) {
         // Top half: pill color, bottom half: complement color
         gradient = LinearGradient(
@@ -556,6 +558,7 @@ class _MiniCellState extends State<_MiniCell> {
           colors: [kColAccent, kColComplement],
           stops: const [0.5, 1.0],
         );
+        textBg = Color.lerp(kColAccent, kColComplement, 0.5)!;
       }
 
       pill = _pill(
@@ -563,8 +566,8 @@ class _MiniCellState extends State<_MiniCell> {
         gradient: gradient,
         child: Text(
           cell.instrument!.toString().padLeft(2, '0'),
-          style: const TextStyle(
-            color: Colors.black,
+          style: TextStyle(
+            color: _contrastTextColor(textBg),
             fontSize: 12,
             fontWeight: FontWeight.w700,
             fontFamily: kFontMono,
@@ -613,4 +616,13 @@ class _MiniCellState extends State<_MiniCell> {
       child: child,
     );
   }
+}
+
+/// Picks black or white — whichever is more readable on top of [bg] —
+/// so pill text stays legible regardless of how bright/dark the active
+/// palette's accent/complement colours are (e.g. Paper's near-black accent).
+Color _contrastTextColor(Color bg) {
+  return ThemeData.estimateBrightnessForColor(bg) == Brightness.dark
+      ? Colors.white
+      : Colors.black;
 }

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../main.dart' show paletteNotifier;
 import '../state/app_state.dart';
 import '../theme/app_theme.dart';
 import '../widgets/track_page_widget.dart';
@@ -13,7 +14,7 @@ import '../widgets/cell_action_bar.dart';
 ///   • Collapsed (collapsedView=true): all tracks visible side-by-side,
 ///     each showing only NOTE + INST.
 class PatternScreen extends StatefulWidget {
-  const PatternScreen({super.key});
+  PatternScreen({super.key});
 
   @override
   State<PatternScreen> createState() => _PatternScreenState();
@@ -60,32 +61,35 @@ class _PatternScreenState extends State<PatternScreen> {
       }
     });
 
-    return Column(
-      children: [
-        _buildTrackHeader(context, state),
-        Expanded(
-          child: state.collapsedView
-              ? const CollapsedTracksWidget()
-              : PageView.builder(
-                  key: ValueKey<int>(state.currentPatternIndex),
-                  controller: _pageCtrl,
-                  itemCount: state.trackCount,
-                  physics: state.isBoxSelecting || state.hasBoxSelection
-                    ? const NeverScrollableScrollPhysics()
-                    : const PageScrollPhysics(),
-                  onPageChanged: (i) => state.selectTrack(i),
-                  itemBuilder: (_, i) {
-                    final track = state.currentPattern.tracks[i];
-                    return TrackPageWidget(track: track, trackIndex: i);
-                  },
-                ),
-        ),
-        Container(
-          height: 1,
-          color: const Color(0xFF226666),
-        ),
-        const CellActionBar(),
-      ],
+    return ValueListenableBuilder<TrackerPalette>(
+      valueListenable: paletteNotifier,
+      builder: (_, __, ___) => Column(
+        children: [
+          _buildTrackHeader(context, state),
+          Expanded(
+            child: state.collapsedView
+                ? CollapsedTracksWidget()
+                : PageView.builder(
+                    key: ValueKey<int>(state.currentPatternIndex),
+                    controller: _pageCtrl,
+                    itemCount: state.trackCount,
+                    physics: state.isBoxSelecting || state.hasBoxSelection
+                      ? const NeverScrollableScrollPhysics()
+                      : const PageScrollPhysics(),
+                    onPageChanged: (i) => state.selectTrack(i),
+                    itemBuilder: (_, i) {
+                      final track = state.currentPattern.tracks[i];
+                      return TrackPageWidget(track: track, trackIndex: i);
+                    },
+                  ),
+          ),
+          Container(
+            height: 1,
+            color: const Color(0xFF226666),
+          ),
+          const CellActionBar(),
+        ],
+      ),
     );
   }
 
