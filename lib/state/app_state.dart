@@ -3257,6 +3257,83 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Copy pattern [sourceIndex] to [targetIndex], overwriting the target.
+  /// If target slot doesn't exist, creates empty patterns to fill the gap.
+  void duplicatePatternTo(int sourceIndex, int targetIndex) {
+    if (sourceIndex < 0 || sourceIndex >= song.patterns.length) return;
+    if (targetIndex < 0 || targetIndex >= kMaxSongPatterns) return;
+    _pushSongUndo('copy pattern to slot');
+
+    // Ensure target slot exists
+    while (song.patterns.length <= targetIndex) {
+      if (song.patterns.length >= kMaxSongPatterns) return;
+      final pattern = song.createEmptyPattern();
+      _copyProjectMixerStateToPattern(pattern);
+      _copyProjectSendRoutingToPattern(pattern);
+      song.patterns.add(pattern);
+    }
+
+    // Deep copy source pattern to target slot
+    final sourcePat = song.patterns[sourceIndex];
+    final newPatNumber = song.patterns.length;
+    song.patterns[targetIndex] = sourcePat.copyWithName(
+      'PAT ${newPatNumber.toString().padLeft(2, '0')}',
+    );
+
+    _currentPatternIndex = targetIndex;
+    _currentArrangementSlotIndex = targetIndex;
+    notifyListeners();
+  }
+
+  /// Move pattern [sourceIndex] to [targetIndex] by reordering other patterns.
+  /// Patterns between source and target shift to fill the gap.
+  void movePatternTo(int sourceIndex, int targetIndex) {
+    if (sourceIndex == targetIndex) return;
+    if (sourceIndex < 0 || sourceIndex >= song.patterns.length) return;
+    if (targetIndex < 0 || targetIndex >= kMaxSongPatterns) return;
+    _pushSongUndo('move pattern to slot');
+
+    // Ensure target slot exists
+    while (song.patterns.length <= targetIndex) {
+      if (song.patterns.length >= kMaxSongPatterns) return;
+      final pattern = song.createEmptyPattern();
+      _copyProjectMixerStateToPattern(pattern);
+      _copyProjectSendRoutingToPattern(pattern);
+      song.patterns.add(pattern);
+    }
+
+    // Remove source pattern
+    final pat = song.patterns.removeAt(sourceIndex);
+
+    // Calculate adjusted target index after removal
+    final adjustedTarget = targetIndex > sourceIndex
+        ? targetIndex - 1
+        : targetIndex;
+
+    // Insert at new position
+    song.patterns.insert(adjustedTarget, pat);
+
+    _currentPatternIndex = adjustedTarget;
+    _currentArrangementSlotIndex = adjustedTarget;
+    notifyListeners();
+  }
+
+  /// Swap patterns at [index1] and [index2].
+  void swapPatterns(int index1, int index2) {
+    if (index1 == index2) return;
+    if (index1 < 0 || index1 >= song.patterns.length) return;
+    if (index2 < 0 || index2 >= song.patterns.length) return;
+    _pushSongUndo('swap patterns');
+
+    final temp = song.patterns[index1];
+    song.patterns[index1] = song.patterns[index2];
+    song.patterns[index2] = temp;
+
+    _currentPatternIndex = index2;
+    _currentArrangementSlotIndex = index2;
+    notifyListeners();
+  }
+
   /// Ensure a real pattern exists at [index], filling any gap with empty
   /// patterns. Used to "park" a new pattern below the song boundary.
   void createPatternAt(int index) {
@@ -3276,14 +3353,21 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Clears pattern [index]'s data, turning it into an empty pattern in
+  /// place. The slot itself is never removed — other patterns keep their
+  /// indices, and the arrangement length never shrinks.
   void removePattern(int index) {
-    if (song.patterns.length <= 1) return;
     if (index < 0 || index >= song.patterns.length) return;
     _pushSongUndo('delete pattern');
-    song.patterns.removeAt(index);
-    if (_currentPatternIndex >= song.patterns.length) {
-      _currentPatternIndex = song.patterns.length - 1;
-    }
+    final oldName = song.patterns[index].name;
+    final empty = song.createEmptyPattern().copyWithName(oldName);
+    _copyProjectMixerStateToPattern(empty);
+    _copyProjectSendRoutingToPattern(empty);
+    song.patterns[index] = empty;
+    _currentPatternIndex = _currentPatternIndex.clamp(
+      0,
+      song.patterns.length - 1,
+    );
     _currentArrangementSlotIndex = _currentArrangementSlotIndex.clamp(
       0,
       song.patterns.length - 1,
@@ -4616,8 +4700,17 @@ class AppState extends ChangeNotifier {
 
       _songFlatRowIndex += advanced;
 
-      // Song exhausted — stop playback.
+      // Song exhausted (end of the current cluster — the queue only ever
+      // covers one cluster since it stops at the first empty pattern).
       if (_songFlatRowIndex >= _songRowMap.length) {
+        // A queued cross-cluster jump takes priority over looping/stopping —
+        // this is how performance-mode jumps between clusters get applied.
+        final queuedAtEnd = _queuedArrangementSlot;
+        if (queuedAtEnd != null) {
+          _queuedArrangementSlot = null;
+          await _rebuildNativeSongQueueFromSlot(queuedAtEnd);
+          return; // _rebuildNativeSongQueueFromSlot calls notifyListeners
+        }
         if (_loopPlaybackEnabled) {
           // Loop back to the start of the current cluster (bounded by empty patterns)
           final clusterStart = _findClusterStartSlot(_playheadArrangementSlot);

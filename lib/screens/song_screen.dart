@@ -54,6 +54,8 @@ class _SongScreenState extends State<SongScreen> {
   bool _editingName = false;
   bool _saveAfterRename = false;
   int? _selectedPatternIndex;
+  int? _draggedPatternIndex; // Source pattern during pattern slot drag
+  int? _dragTargetPatternIndex; // Target pattern slot during drag
   ({int patternIndex, int trackIndex})? _selectedTimelineCell;
   ({int patternIndex, int trackIndex})? _dragTargetTimelineCell;
   int? _selectedFullTrackIndex; // Entire track column selected
@@ -88,7 +90,87 @@ class _SongScreenState extends State<SongScreen> {
     if (!(state.isPlaying && state.playbackFollowsSong)) {
       state.selectSongPattern(patternIndex);
     }
-    setState(() => _selectedPatternIndex = patternIndex);
+    setState(() {
+      _selectedPatternIndex = patternIndex;
+      _draggedPatternIndex = patternIndex;
+      _dragTargetPatternIndex = null;
+    });
+  }
+
+  int _hitTestPatternSlot(Offset localPosition, double slotPitch) {
+    // Calculate which slot is being hovered
+    final scrollOffset = _slotsCtrl.offset;
+    final relativeY = localPosition.dy + scrollOffset;
+    final slotIndex = (relativeY / slotPitch).floor();
+    return slotIndex.clamp(0, kMaxSongPatterns - 1);
+  }
+
+  void _handlePatternSlotDragDrop(
+    BuildContext context,
+    AppState state,
+    int sourceIndex,
+    int targetIndex,
+  ) {
+    if (sourceIndex == targetIndex) return;
+
+    final sourceExists = sourceIndex < state.song.patterns.length;
+    final targetExists = targetIndex < state.song.patterns.length;
+    final sourceEmpty =
+        !sourceExists || state.song.patterns[sourceIndex].isEmpty;
+    final targetEmpty =
+        !targetExists || state.song.patterns[targetIndex].isEmpty;
+
+    // If target is empty, just copy the pattern
+    if (targetEmpty) {
+      if (sourceEmpty) return; // Can't copy empty pattern to empty slot
+      state.duplicatePatternTo(sourceIndex, targetIndex);
+      setState(() => _selectedPatternIndex = targetIndex);
+      return;
+    }
+
+    // Target has data — show dialog with Move or Swap options
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: kBgColor,
+        title: Text(
+          'Pattern ${targetIndex + 1} has data',
+          style: kStyleLabel.copyWith(color: kColAccent),
+        ),
+        content: Text(
+          'Choose how to combine with pattern ${sourceIndex + 1}.',
+          style: kStyleBase.copyWith(color: kColHeader),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text(
+              'Cancel',
+              style: kStyleBase.copyWith(color: kColInactive),
+            ),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              state.swapPatterns(sourceIndex, targetIndex);
+              setState(() => _selectedPatternIndex = targetIndex);
+            },
+            child: Text(
+              'Swap',
+              style: kStyleBase.copyWith(color: kColSelection),
+            ),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              state.movePatternTo(sourceIndex, targetIndex);
+              setState(() => _selectedPatternIndex = targetIndex);
+            },
+            child: Text('Move', style: kStyleBase.copyWith(color: kColActive)),
+          ),
+        ],
+      ),
+    );
   }
 
   void _moveSelectedPatternUp(AppState state, int patternIndex) {
@@ -151,12 +233,14 @@ class _SongScreenState extends State<SongScreen> {
   }
 
   void _deleteSelectedPattern(AppState state, int patternIndex) {
-    if (state.song.patterns.length <= 1) return;
+    // Clears the pattern's data in place — the slot stays, just empty.
     state.removePattern(patternIndex);
-    final nextIndex = state.song.patterns.isEmpty
-        ? null
-        : patternIndex.clamp(0, state.song.patterns.length - 1);
-    setState(() => _selectedPatternIndex = nextIndex);
+    setState(
+      () => _selectedPatternIndex = patternIndex.clamp(
+        0,
+        state.song.patterns.length - 1,
+      ),
+    );
   }
 
   void _handleTrackDragDrop(
@@ -358,35 +442,89 @@ class _SongScreenState extends State<SongScreen> {
                       _buildLeftHeader(),
                       Container(height: 1, color: kColActive.withAlpha(160)),
                       Expanded(
-                        child: ListView.builder(
-                          controller: _slotsCtrl,
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 8,
-                            vertical: 4,
-                          ),
-                          itemExtent: slotPitch,
-                          itemCount: kMaxSongPatterns,
-                          itemBuilder: (_, i) {
-                            // Every slot renders identically whether or not a
-                            // real pattern exists yet — empty ones are just
-                            // dimmed. No separate "virtual"/plus-sign state.
-                            return _PatternSlot(
-                              patternIndex: i,
-                              isCurrent:
-                                  selectedPatternIndex == null &&
-                                  i ==
-                                      (state.isPlaying
-                                          ? state.playheadArrangementSlot
-                                          : state.currentArrangementSlotIndex),
-                              isPending: shouldBlink && i == pendingSlot,
-                              pendingBlinkOn: pendingBlinkOn,
-                              isMenuSelected: selectedPatternIndex == i,
-                              size: kSlotSize,
-                              gap: kSlotGap,
-                              onTap: () => _handleSlotTap(state, i),
-                              onLongPress: () => _handleSlotLongPress(state, i),
+                        child: GestureDetector(
+                          behavior: HitTestBehavior.opaque,
+                          onTapDown: (details) {
+                            // Tap on specific position to hit-test exact slot
+                            final slotIndex = _hitTestPatternSlot(
+                              details.localPosition,
+                              slotPitch,
                             );
+                            _handleSlotTap(state, slotIndex);
                           },
+                          onLongPressStart: (details) {
+                            final slotIndex = _hitTestPatternSlot(
+                              details.localPosition,
+                              slotPitch,
+                            );
+                            _handleSlotLongPress(state, slotIndex);
+                          },
+                          onLongPressMoveUpdate: (details) {
+                            if (_draggedPatternIndex == null) return;
+                            final slotIndex = _hitTestPatternSlot(
+                              details.localPosition,
+                              slotPitch,
+                            );
+                            if (slotIndex != _dragTargetPatternIndex) {
+                              setState(
+                                () => _dragTargetPatternIndex = slotIndex,
+                              );
+                            }
+                          },
+                          onLongPressEnd: (details) {
+                            if (_draggedPatternIndex != null &&
+                                _dragTargetPatternIndex != null &&
+                                _dragTargetPatternIndex !=
+                                    _draggedPatternIndex) {
+                              _handlePatternSlotDragDrop(
+                                context,
+                                state,
+                                _draggedPatternIndex!,
+                                _dragTargetPatternIndex!,
+                              );
+                            }
+                            setState(() {
+                              _draggedPatternIndex = null;
+                              _dragTargetPatternIndex = null;
+                            });
+                          },
+                          onLongPressCancel: () {
+                            setState(() {
+                              _draggedPatternIndex = null;
+                              _dragTargetPatternIndex = null;
+                            });
+                          },
+                          child: ListView.builder(
+                            controller: _slotsCtrl,
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 4,
+                            ),
+                            itemExtent: slotPitch,
+                            itemCount: kMaxSongPatterns,
+                            itemBuilder: (_, i) {
+                              // Every slot renders identically whether or not a
+                              // real pattern exists yet — empty ones are just
+                              // dimmed. No separate "virtual"/plus-sign state.
+                              return _PatternSlot(
+                                patternIndex: i,
+                                isCurrent:
+                                    selectedPatternIndex == null &&
+                                    i ==
+                                        (state.isPlaying
+                                            ? state.playheadArrangementSlot
+                                            : state
+                                                  .currentArrangementSlotIndex),
+                                isPending: shouldBlink && i == pendingSlot,
+                                pendingBlinkOn: pendingBlinkOn,
+                                isMenuSelected: selectedPatternIndex == i,
+                                isDragSource: _draggedPatternIndex == i,
+                                isDragTarget: _dragTargetPatternIndex == i,
+                                size: kSlotSize,
+                                gap: kSlotGap,
+                              );
+                            },
+                          ),
                         ),
                       ),
                     ],
@@ -421,7 +559,7 @@ class _SongScreenState extends State<SongScreen> {
                   selectedPatternIndex < state.song.patterns.length - 1,
               canDouble: state.canDoublePattern(selectedPatternIndex),
               canMerge: state.canMergePatternWithNext(selectedPatternIndex),
-              canDelete: state.song.patterns.length > 1,
+              canDelete: !state.song.patterns[selectedPatternIndex].isEmpty,
               onMoveUp: () =>
                   _moveSelectedPatternUp(state, selectedPatternIndex),
               onMoveDown: () =>
@@ -1502,16 +1640,17 @@ class _SongScreenState extends State<SongScreen> {
 // ─── Left column widgets ─────────────────────────────────────────────────────
 
 /// A song arrangement slot. Tap focuses/queues it, long-press opens actions.
+/// Display-only; gesture handling is at the outer GestureDetector level.
 class _PatternSlot extends StatelessWidget {
   final int patternIndex; // index in song.patterns
   final bool isCurrent;
   final bool isPending;
   final bool pendingBlinkOn;
   final bool isMenuSelected;
+  final bool isDragSource;
+  final bool isDragTarget;
   final double size;
   final double gap;
-  final VoidCallback onTap;
-  final VoidCallback onLongPress;
 
   const _PatternSlot({
     required this.patternIndex,
@@ -1519,10 +1658,10 @@ class _PatternSlot extends StatelessWidget {
     required this.isPending,
     required this.pendingBlinkOn,
     required this.isMenuSelected,
+    required this.isDragSource,
+    required this.isDragTarget,
     required this.size,
     required this.gap,
-    required this.onTap,
-    required this.onLongPress,
   });
 
   @override
@@ -1570,19 +1709,19 @@ class _PatternSlot extends StatelessWidget {
 
     return Padding(
       padding: EdgeInsets.only(bottom: gap),
-      child: GestureDetector(
-        onTap: onTap,
-        onLongPress: onLongPress,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 120),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(6),
-            color: isMenuSelected
-                ? kColAccent.withAlpha(20)
-                : Colors.transparent,
-          ),
-          child: Opacity(opacity: slotOpacity, child: square),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 120),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(6),
+          color: isDragTarget
+              ? kColSelection.withAlpha(60)
+              : (isDragSource
+                    ? kColSelection.withAlpha(40)
+                    : (isMenuSelected
+                          ? kColAccent.withAlpha(20)
+                          : Colors.transparent)),
         ),
+        child: Opacity(opacity: slotOpacity, child: square),
       ),
     );
   }
