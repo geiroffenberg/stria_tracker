@@ -407,6 +407,34 @@ const TrackerPalette kPaletteAutumn = TrackerPalette(
   colComplement: Color(0xFF4FC3F7),
 );
 
+const TrackerPalette kPaletteBaby = TrackerPalette(
+  name: 'Baby',
+  previewColor: Color(0xFFFFB6E1),
+  bgColor: Color(0xFF0A0B12),
+  bgBeat: Color(0xFF0F131E),
+  bgBar: Color(0xFF161D2A),
+  bgSelected: Color(0xFF1A1F32),
+  bgPlayhead: Color(0xFF2A3348),
+  bgHeader: Color(0xFF0C0D14),
+  bgTrackHeader: Color(0xFF0F1017),
+  bgTopNav: Color(0xFF0E0F16),
+  colNote: Color(0xFFFFB6E1),
+  colInst: Color(0xFFFF9ED4),
+  colVol: Color(0xFF87CEEB),
+  colPan: Color(0xFF87CEEB),
+  colFxCmd: Color(0xFFB4D7FF),
+  colFxVal: Color(0xFFDDE7FF),
+  colEmpty: Color(0xFF5A5E7A),
+  colRowNum: Color(0xFF8A90B8),
+  colHeader: Color(0xFFC4B0E0),
+  colAccent: Color(0xFFFFB6E1),
+  colActive: Color(0xFFE091D4),
+  colInactive: Color(0xFF6A7090),
+  colSelection: Color(0xFFFFFFFF),
+  colPlayBtn: Color(0xFFFF9ED4),
+  colComplement: Color(0xFF87CEEB),
+);
+
 const TrackerPalette kPaletteMono = TrackerPalette(
   name: 'Mono',
   previewColor: Color(0xFFDDDDDD),
@@ -478,6 +506,7 @@ const List<TrackerPalette> kAllPalettes = [
   kPaletteForest,
   kPaletteNeon,
   kPaletteAutumn,
+  kPaletteBaby,
   kPaletteMono,
   kPaletteLight,
 ];

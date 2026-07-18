@@ -14,7 +14,7 @@ import '../widgets/cell_action_bar.dart';
 ///   • Collapsed (collapsedView=true): all tracks visible side-by-side,
 ///     each showing only NOTE + INST.
 class PatternScreen extends StatefulWidget {
-  PatternScreen({super.key});
+  const PatternScreen({super.key});
 
   @override
   State<PatternScreen> createState() => _PatternScreenState();
@@ -63,7 +63,7 @@ class _PatternScreenState extends State<PatternScreen> {
 
     return ValueListenableBuilder<TrackerPalette>(
       valueListenable: paletteNotifier,
-      builder: (_, __, ___) => Column(
+      builder: (_, _, _) => Column(
         children: [
           _buildTrackHeader(context, state),
           Expanded(

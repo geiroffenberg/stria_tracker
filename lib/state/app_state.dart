@@ -328,6 +328,35 @@ class AppState extends ChangeNotifier {
   bool get hasRowClipboard =>
       _rowClipboard != null && _rowClipboard!.isNotEmpty;
 
+  // Full-track clipboard (Song view "select whole track column" feature).
+  // Stores one cell-list per pattern (aligned to song.patterns order) so
+  // copy/cut/paste preserves data across every pattern, not just the first.
+  List<List<TrackerCell>>? _fullTrackClipboard;
+  int? _fullTrackClipboardSource;
+  bool get hasFullTrackClipboard =>
+      _fullTrackClipboard != null && _fullTrackClipboard!.isNotEmpty;
+  int? get fullTrackClipboardSource => _fullTrackClipboardSource;
+
+  // Mixer settings (volume/pan/mute/solo/send) captured alongside the
+  // full-track clipboard so they always travel with the track's data —
+  // the sound of a moved/swapped/pasted track should stay identical.
+  double? _fullTrackClipboardVolume;
+  double? _fullTrackClipboardPan;
+  bool? _fullTrackClipboardMute;
+  bool? _fullTrackClipboardSolo;
+  int? _fullTrackClipboardSendChannel;
+
+  // Insert-FX rack (params + slot occupancy + effect names) captured
+  // alongside the full-track clipboard. A whole-track paste/swap/move
+  // overwrites/relocates every pattern the destination track owns, so its
+  // own insert chain has nothing left to serve — the source's own-channel
+  // F-slot commands would otherwise silently start controlling whatever
+  // (if anything) already sits in those slots on the destination. Carrying
+  // the rack along keeps everything self-consistent.
+  List<Map<String, dynamic>?>? _fullTrackClipboardInsertChain;
+  List<bool>? _fullTrackClipboardInsertOccupied;
+  List<String?>? _fullTrackClipboardInsertNames;
+
   // Box-selection clipboard (column-aware — only the selected columns are pasted).
   List<TrackerCell>? _boxClipboard;
   List<CellColumn>? _boxClipboardColumns;
@@ -2328,11 +2357,14 @@ class AppState extends ChangeNotifier {
   }
 
   /// Cut a track: copy all cells then clear them.
+  /// Recorded on the song-level undo stack (visible via the Song screen's
+  /// undo/redo buttons) since this is a Song-view action that can span
+  /// multiple patterns.
   void cutTrackFull(int patternIndex, int trackIndex) {
     if (patternIndex < 0 || patternIndex >= song.patterns.length) return;
     final pat = song.patterns[patternIndex];
     if (trackIndex < 0 || trackIndex >= pat.tracks.length) return;
-    _pushUndoFor(pat, 'cut track');
+    _pushSongUndo('cut track');
     final track = pat.tracks[trackIndex];
     _rowClipboard = track.cells.map((c) => c.copy()).toList();
     for (int r = 0; r < track.cells.length; r++) {
@@ -2347,7 +2379,7 @@ class AppState extends ChangeNotifier {
     if (patternIndex < 0 || patternIndex >= song.patterns.length) return;
     final pat = song.patterns[patternIndex];
     if (trackIndex < 0 || trackIndex >= pat.tracks.length) return;
-    _pushUndoFor(pat, 'paste track');
+    _pushSongUndo('paste track');
     final cells = pat.tracks[trackIndex].cells;
     final count = _rowClipboard!.length.clamp(0, cells.length);
     for (int i = 0; i < count; i++) {
@@ -2361,10 +2393,411 @@ class AppState extends ChangeNotifier {
     if (patternIndex < 0 || patternIndex >= song.patterns.length) return;
     final pat = song.patterns[patternIndex];
     if (trackIndex < 0 || trackIndex >= pat.tracks.length) return;
-    _pushUndoFor(pat, 'delete track');
+    _pushSongUndo('delete track');
     final track = pat.tracks[trackIndex];
     for (int r = 0; r < track.cells.length; r++) {
       track.cells[r] = TrackerCell.empty();
+    }
+    notifyListeners();
+  }
+
+  /// Check if a track has any non-empty cells.
+  bool isTrackEmpty(int patternIndex, int trackIndex) {
+    if (patternIndex < 0 || patternIndex >= song.patterns.length) return true;
+    final pat = song.patterns[patternIndex];
+    if (trackIndex < 0 || trackIndex >= pat.tracks.length) return true;
+    final track = pat.tracks[trackIndex];
+    return track.cells.every((cell) => cell.isEmpty);
+  }
+
+  /// Swap the contents of two tracks in the song.
+  /// Both tracks must be in valid patterns. Recorded on the song-level undo
+  /// stack (a single snapshot of the full arrangement covers both patterns,
+  /// whether they're the same pattern or two different ones).
+  void swapTracks(int srcPattern, int srcTrack, int dstPattern, int dstTrack) {
+    if (srcPattern < 0 || srcPattern >= song.patterns.length) return;
+    if (dstPattern < 0 || dstPattern >= song.patterns.length) return;
+    final srcPat = song.patterns[srcPattern];
+    final dstPat = song.patterns[dstPattern];
+    if (srcTrack < 0 || srcTrack >= srcPat.tracks.length) return;
+    if (dstTrack < 0 || dstTrack >= dstPat.tracks.length) return;
+
+    _pushSongUndo('swap tracks');
+
+    final srcCells = srcPat.tracks[srcTrack].cells;
+    final dstCells = dstPat.tracks[dstTrack].cells;
+
+    // Swap cell contents
+    for (int i = 0; i < srcCells.length && i < dstCells.length; i++) {
+      final temp = srcCells[i];
+      srcCells[i] = dstCells[i];
+      dstCells[i] = temp;
+    }
+
+    notifyListeners();
+  }
+
+  /// Copy a track across all patterns. Used by full-track selection in Song view.
+  /// Does not modify state; only sets the full-track clipboard.
+  void copyTrackFullAllPatterns(int trackIndex) {
+    if (trackIndex < 0) return;
+    _fullTrackClipboard = song.patterns
+        .map((p) => trackIndex < p.tracks.length
+            ? p.tracks[trackIndex].cells.map((c) => c.copy()).toList()
+            : <TrackerCell>[])
+        .toList();
+    _fullTrackClipboardSource = trackIndex;
+    _captureFullTrackMixerClipboard(trackIndex);
+    _captureFullTrackInsertClipboard(trackIndex);
+    notifyListeners();
+  }
+
+  /// Cut a track across all patterns. Used by full-track selection in Song view.
+  /// Copies to the full-track clipboard and clears the track in every pattern.
+  void cutTrackFullAllPatterns(int trackIndex) {
+    if (trackIndex < 0) return;
+    _pushSongUndo('cut full track');
+
+    _fullTrackClipboard = song.patterns
+        .map((p) => trackIndex < p.tracks.length
+            ? p.tracks[trackIndex].cells.map((c) => c.copy()).toList()
+            : <TrackerCell>[])
+        .toList();
+    _fullTrackClipboardSource = trackIndex;
+    _captureFullTrackMixerClipboard(trackIndex);
+    _captureFullTrackInsertClipboard(trackIndex);
+
+    for (final pattern in song.patterns) {
+      if (trackIndex < pattern.tracks.length) {
+        final track = pattern.tracks[trackIndex];
+        for (int r = 0; r < track.cells.length; r++) {
+          track.cells[r] = TrackerCell.empty();
+        }
+      }
+    }
+    notifyListeners();
+  }
+
+  /// Snapshot a track's volume/pan/mute/solo/send into the full-track
+  /// clipboard. Mixer fields are already kept in sync across every pattern
+  /// for a given track index, so pattern 0 is representative.
+  void _captureFullTrackMixerClipboard(int trackIndex) {
+    if (song.patterns.isEmpty || trackIndex >= song.patterns[0].tracks.length) {
+      _fullTrackClipboardVolume = null;
+      _fullTrackClipboardPan = null;
+      _fullTrackClipboardMute = null;
+      _fullTrackClipboardSolo = null;
+      _fullTrackClipboardSendChannel = null;
+      return;
+    }
+    final track = song.patterns[0].tracks[trackIndex];
+    _fullTrackClipboardVolume = track.mixerVolume;
+    _fullTrackClipboardPan = track.mixerPan;
+    _fullTrackClipboardMute = track.mixerMute;
+    _fullTrackClipboardSolo = track.mixerSolo;
+    _fullTrackClipboardSendChannel = track.sendChannel;
+  }
+
+  // ── Insert-FX rack helpers (used by full-track paste/swap/move) ──────────
+  // Insert FX live outside TrackModel entirely — in _insertSnapshot (native
+  // engine params), _trackInsertOccupied and _trackInsertEffectNames (UI
+  // badges) — all indexed [trackIdx][slotIdx], 6 slots per track. These
+  // helpers let a full track column carry its whole effects rack along when
+  // it moves, swaps, or is pasted-over, since a whole-column operation wipes
+  // out whatever the destination's own rack was serving.
+
+  /// Grow the three insert-FX structures so [trackIndex] is addressable.
+  void _ensureInsertTrackCapacity(int trackIndex) {
+    while (_trackInsertOccupied.length <= trackIndex) {
+      _trackInsertOccupied.add(List<bool>.filled(6, false));
+    }
+    while (_trackInsertEffectNames.length <= trackIndex) {
+      _trackInsertEffectNames.add(List<String?>.filled(6, null));
+    }
+    final tracksData = _insertSnapshot['tracks'];
+    final List tracksList;
+    if (tracksData is List) {
+      tracksList = tracksData;
+    } else {
+      tracksList = [];
+      _insertSnapshot['tracks'] = tracksList;
+    }
+    while (tracksList.length <= trackIndex) {
+      tracksList.add(List<Map<String, dynamic>?>.filled(6, null));
+    }
+  }
+
+  /// Read a copy of [trackIndex]'s 6-slot insert-FX param maps.
+  List<Map<String, dynamic>?> _insertChainForTrack(int trackIndex) {
+    final tracksData = _insertSnapshot['tracks'];
+    if (tracksData is List &&
+        trackIndex < tracksData.length &&
+        tracksData[trackIndex] is List) {
+      final row = tracksData[trackIndex] as List;
+      return List<Map<String, dynamic>?>.generate(
+        6,
+        (s) => s < row.length && row[s] is Map<String, dynamic>
+            ? Map<String, dynamic>.from(row[s] as Map<String, dynamic>)
+            : null,
+      );
+    }
+    return List<Map<String, dynamic>?>.filled(6, null);
+  }
+
+  void _setInsertChainForTrack(
+    int trackIndex,
+    List<Map<String, dynamic>?> chain,
+  ) {
+    _ensureInsertTrackCapacity(trackIndex);
+    (_insertSnapshot['tracks'] as List)[trackIndex] = chain;
+  }
+
+  /// Overwrite [to]'s insert-FX rack with a copy of [from]'s.
+  void _copyTrackInsertChain(int from, int to) {
+    _ensureInsertTrackCapacity(from);
+    _ensureInsertTrackCapacity(to);
+    _setInsertChainForTrack(to, _insertChainForTrack(from));
+    _trackInsertOccupied[to] = List<bool>.from(_trackInsertOccupied[from]);
+    _trackInsertEffectNames[to] = List<String?>.from(
+      _trackInsertEffectNames[from],
+    );
+  }
+
+  /// Swap the full insert-FX rack between two track indices.
+  void _swapTrackInsertChain(int a, int b) {
+    _ensureInsertTrackCapacity(a);
+    _ensureInsertTrackCapacity(b);
+    final chainA = _insertChainForTrack(a);
+    final chainB = _insertChainForTrack(b);
+    _setInsertChainForTrack(a, chainB);
+    _setInsertChainForTrack(b, chainA);
+
+    final occA = _trackInsertOccupied[a];
+    _trackInsertOccupied[a] = _trackInsertOccupied[b];
+    _trackInsertOccupied[b] = occA;
+
+    final namesA = _trackInsertEffectNames[a];
+    _trackInsertEffectNames[a] = _trackInsertEffectNames[b];
+    _trackInsertEffectNames[b] = namesA;
+  }
+
+  /// Snapshot [trackIndex]'s insert-FX rack into the full-track clipboard.
+  void _captureFullTrackInsertClipboard(int trackIndex) {
+    _fullTrackClipboardInsertChain = _insertChainForTrack(trackIndex);
+    _fullTrackClipboardInsertOccupied = trackIndex < _trackInsertOccupied.length
+        ? List<bool>.from(_trackInsertOccupied[trackIndex])
+        : List<bool>.filled(6, false);
+    _fullTrackClipboardInsertNames = trackIndex < _trackInsertEffectNames.length
+        ? List<String?>.from(_trackInsertEffectNames[trackIndex])
+        : List<String?>.filled(6, null);
+  }
+
+  /// Apply the captured insert-FX clipboard onto [trackIndex] and push the
+  /// result to the native engine.
+  void _applyFullTrackInsertClipboard(int trackIndex) {
+    final chain = _fullTrackClipboardInsertChain;
+    if (chain == null) return;
+    _ensureInsertTrackCapacity(trackIndex);
+    _setInsertChainForTrack(trackIndex, chain);
+    _trackInsertOccupied[trackIndex] = List<bool>.from(
+      _fullTrackClipboardInsertOccupied!,
+    );
+    _trackInsertEffectNames[trackIndex] = List<String?>.from(
+      _fullTrackClipboardInsertNames!,
+    );
+    unawaited(_applyInsertSnapshotToEngine());
+  }
+
+  /// Apply the captured mixer clipboard onto a track across all patterns.
+  void _applyFullTrackMixerClipboard(int trackIndex) {
+    if (_fullTrackClipboardVolume == null) return;
+    for (final pattern in song.patterns) {
+      if (trackIndex >= pattern.tracks.length) continue;
+      final track = pattern.tracks[trackIndex];
+      track.mixerVolume = _fullTrackClipboardVolume!;
+      track.mixerPan = _fullTrackClipboardPan!;
+      track.mixerMute = _fullTrackClipboardMute!;
+      track.mixerSolo = _fullTrackClipboardSolo!;
+      track.sendChannel = _fullTrackClipboardSendChannel!;
+    }
+    _queueCurrentMixerSnapshotToEngine(trackIndex: trackIndex);
+  }
+
+  /// Paste the full-track clipboard into a track across all patterns.
+  /// Fully replaces the target track's contents (rows beyond the clipboard's
+  /// length are cleared) since this is a whole-column paste/overwrite.
+  /// Mixer settings (volume/pan/mute/solo/send) AND the insert-FX rack always
+  /// travel with the data — the destination's own rack has nothing left to
+  /// serve once every pattern it owns is overwritten, so the track should
+  /// sound identical after the paste.
+  void pasteTrackFullAllPatterns(int trackIndex) {
+    if (_fullTrackClipboard == null || _fullTrackClipboard!.isEmpty) return;
+    if (trackIndex < 0) return;
+    _pushSongUndo('paste full track');
+
+    for (int i = 0; i < song.patterns.length; i++) {
+      final pattern = song.patterns[i];
+      if (trackIndex >= pattern.tracks.length) continue;
+      final cells = pattern.tracks[trackIndex].cells;
+      final source = i < _fullTrackClipboard!.length
+          ? _fullTrackClipboard![i]
+          : const <TrackerCell>[];
+      for (int r = 0; r < cells.length; r++) {
+        cells[r] = r < source.length ? source[r].copy() : TrackerCell.empty();
+      }
+    }
+    _applyFullTrackMixerClipboard(trackIndex);
+    _applyFullTrackInsertClipboard(trackIndex);
+    notifyListeners();
+  }
+
+  /// Delete/clear a track across all patterns. Used by full-track selection.
+  void deleteTrackFullAllPatterns(int trackIndex) {
+    if (trackIndex < 0) return;
+    _pushSongUndo('delete full track');
+    
+    for (final pattern in song.patterns) {
+      if (trackIndex < pattern.tracks.length) {
+        final track = pattern.tracks[trackIndex];
+        for (int r = 0; r < track.cells.length; r++) {
+          track.cells[r] = TrackerCell.empty();
+        }
+      }
+    }
+    notifyListeners();
+  }
+
+  /// Check if a track has any non-empty cells across ALL patterns.
+  bool isTrackEmptyAllPatterns(int trackIndex) {
+    if (trackIndex < 0) return true;
+    for (final pattern in song.patterns) {
+      if (trackIndex >= pattern.tracks.length) continue;
+      if (pattern.tracks[trackIndex].cells.any((c) => !c.isEmpty)) return false;
+    }
+    return true;
+  }
+
+  /// Swap the contents of two full track columns across every pattern.
+  /// Mixer settings (volume/pan/mute/solo/send) and the insert-FX rack both
+  /// swap along with the data — swapping is a full channel-identity swap.
+  void swapFullTracks(int srcTrack, int dstTrack) {
+    if (srcTrack < 0 || dstTrack < 0 || srcTrack == dstTrack) return;
+    _pushSongUndo('swap full tracks');
+    for (final pattern in song.patterns) {
+      if (srcTrack >= pattern.tracks.length || dstTrack >= pattern.tracks.length) continue;
+      final srcT = pattern.tracks[srcTrack];
+      final dstT = pattern.tracks[dstTrack];
+      final srcCells = srcT.cells;
+      final dstCells = dstT.cells;
+      for (int r = 0; r < srcCells.length && r < dstCells.length; r++) {
+        final tmp = srcCells[r];
+        srcCells[r] = dstCells[r];
+        dstCells[r] = tmp;
+      }
+
+      final vol = srcT.mixerVolume;
+      final pan = srcT.mixerPan;
+      final mute = srcT.mixerMute;
+      final solo = srcT.mixerSolo;
+      final send = srcT.sendChannel;
+      srcT.mixerVolume = dstT.mixerVolume;
+      srcT.mixerPan = dstT.mixerPan;
+      srcT.mixerMute = dstT.mixerMute;
+      srcT.mixerSolo = dstT.mixerSolo;
+      srcT.sendChannel = dstT.sendChannel;
+      dstT.mixerVolume = vol;
+      dstT.mixerPan = pan;
+      dstT.mixerMute = mute;
+      dstT.mixerSolo = solo;
+      dstT.sendChannel = send;
+    }
+    _swapTrackInsertChain(srcTrack, dstTrack);
+    unawaited(_applyInsertSnapshotToEngine());
+    _queueCurrentMixerSnapshotToEngine(trackIndex: srcTrack);
+    _queueCurrentMixerSnapshotToEngine(trackIndex: dstTrack);
+    notifyListeners();
+  }
+
+  /// Move a full track column from [srcTrack] to [dstTrack], shifting the
+  /// tracks in between by one position (like reordering a column in a list):
+  /// e.g. moving track 1 → track 3 results in track1<-old track2,
+  /// track2<-old track3, track3<-old track1. Mixer settings and the
+  /// insert-FX rack both shift along with the data.
+  void moveFullTrack(int srcTrack, int dstTrack) {
+    if (srcTrack < 0 || dstTrack < 0 || srcTrack == dstTrack) return;
+    _pushSongUndo('move full track');
+    final movedInsertChain = _insertChainForTrack(srcTrack);
+    final movedInsertOccupied = srcTrack < _trackInsertOccupied.length
+        ? List<bool>.from(_trackInsertOccupied[srcTrack])
+        : List<bool>.filled(6, false);
+    final movedInsertNames = srcTrack < _trackInsertEffectNames.length
+        ? List<String?>.from(_trackInsertEffectNames[srcTrack])
+        : List<String?>.filled(6, null);
+    if (dstTrack > srcTrack) {
+      for (int i = srcTrack; i < dstTrack; i++) {
+        _copyTrackInsertChain(i + 1, i);
+      }
+    } else {
+      for (int i = srcTrack; i > dstTrack; i--) {
+        _copyTrackInsertChain(i - 1, i);
+      }
+    }
+    _ensureInsertTrackCapacity(dstTrack);
+    _setInsertChainForTrack(dstTrack, movedInsertChain);
+    _trackInsertOccupied[dstTrack] = movedInsertOccupied;
+    _trackInsertEffectNames[dstTrack] = movedInsertNames;
+    unawaited(_applyInsertSnapshotToEngine());
+    for (final pattern in song.patterns) {
+      final tracks = pattern.tracks;
+      if (srcTrack >= tracks.length || dstTrack >= tracks.length) continue;
+      final rowCount = tracks[srcTrack].cells.length;
+      final movedCells = List<TrackerCell>.generate(
+        rowCount,
+        (r) => tracks[srcTrack].cells[r].copy(),
+      );
+      final movedVolume = tracks[srcTrack].mixerVolume;
+      final movedPan = tracks[srcTrack].mixerPan;
+      final movedMute = tracks[srcTrack].mixerMute;
+      final movedSolo = tracks[srcTrack].mixerSolo;
+      final movedSend = tracks[srcTrack].sendChannel;
+      if (dstTrack > srcTrack) {
+        for (int i = srcTrack; i < dstTrack; i++) {
+          for (int r = 0; r < rowCount; r++) {
+            tracks[i].cells[r] = tracks[i + 1].cells[r].copy();
+          }
+          tracks[i].mixerVolume = tracks[i + 1].mixerVolume;
+          tracks[i].mixerPan = tracks[i + 1].mixerPan;
+          tracks[i].mixerMute = tracks[i + 1].mixerMute;
+          tracks[i].mixerSolo = tracks[i + 1].mixerSolo;
+          tracks[i].sendChannel = tracks[i + 1].sendChannel;
+        }
+      } else {
+        for (int i = srcTrack; i > dstTrack; i--) {
+          for (int r = 0; r < rowCount; r++) {
+            tracks[i].cells[r] = tracks[i - 1].cells[r].copy();
+          }
+          tracks[i].mixerVolume = tracks[i - 1].mixerVolume;
+          tracks[i].mixerPan = tracks[i - 1].mixerPan;
+          tracks[i].mixerMute = tracks[i - 1].mixerMute;
+          tracks[i].mixerSolo = tracks[i - 1].mixerSolo;
+          tracks[i].sendChannel = tracks[i - 1].sendChannel;
+        }
+      }
+      for (int r = 0; r < rowCount; r++) {
+        tracks[dstTrack].cells[r] = movedCells[r];
+      }
+      tracks[dstTrack].mixerVolume = movedVolume;
+      tracks[dstTrack].mixerPan = movedPan;
+      tracks[dstTrack].mixerMute = movedMute;
+      tracks[dstTrack].mixerSolo = movedSolo;
+      tracks[dstTrack].sendChannel = movedSend;
+    }
+    // Re-sync every track between src and dst (inclusive) to the engine,
+    // since mixer values shifted across that whole range.
+    final lo = srcTrack < dstTrack ? srcTrack : dstTrack;
+    final hi = srcTrack < dstTrack ? dstTrack : srcTrack;
+    for (int t = lo; t <= hi; t++) {
+      _queueCurrentMixerSnapshotToEngine(trackIndex: t);
     }
     notifyListeners();
   }
@@ -3725,9 +4158,16 @@ class AppState extends ChangeNotifier {
   String? get undoSongLabel => _songUndo.undoLabel;
   String? get redoSongLabel => _songUndo.redoLabel;
 
-  /// Serialize the current arrangement (patterns list only) to JSON.
-  String _songArrangementJson() =>
-      jsonEncode(song.patterns.map((p) => p.toJson()).toList());
+  /// Serialize the current arrangement to JSON: the patterns list plus the
+  /// insert-FX rack (params + slot occupancy + effect names). The rack is
+  /// included because full-track paste/swap/move can change it, and an
+  /// undo/redo of those operations needs to restore it along with the data.
+  String _songArrangementJson() => jsonEncode({
+        'patterns': song.patterns.map((p) => p.toJson()).toList(),
+        'inserts': _insertSnapshot,
+        'trackInsertOccupied': _trackInsertOccupied,
+        'trackInsertEffectNames': _trackInsertEffectNames,
+      });
 
   /// Snapshot the arrangement BEFORE a mutation. Pass [label] for the action.
   /// No-op if a compound operation (e.g. doublePattern) is already in progress.
@@ -3736,10 +4176,14 @@ class AppState extends ChangeNotifier {
     _songUndo.pushUndo(_songArrangementJson(), label);
   }
 
-  /// Replace song.patterns with the state encoded in [json] and clamp indices.
+  /// Replace song.patterns and the insert-FX rack with the state encoded in
+  /// [json], clamp indices, and re-sync the native engine's insert slots
+  /// (cleared first, since the restored rack may have fewer/more active
+  /// effects than what's currently loaded).
   void _restoreArrangementFromJson(String json) {
-    final raw = jsonDecode(json) as List<dynamic>;
-    song.patterns = raw
+    final raw = jsonDecode(json) as Map<String, dynamic>;
+    final patternsRaw = raw['patterns'] as List<dynamic>;
+    song.patterns = patternsRaw
         .map((j) => PatternModel.fromJson(j as Map<String, dynamic>))
         .toList();
     if (song.patterns.isEmpty) song.patterns = [PatternModel(name: 'PAT 01')];
@@ -3747,6 +4191,25 @@ class AppState extends ChangeNotifier {
         _currentPatternIndex.clamp(0, song.patterns.length - 1);
     _currentArrangementSlotIndex =
         _currentArrangementSlotIndex.clamp(0, song.patterns.length - 1);
+
+    _insertSnapshot = (raw['inserts'] as Map<String, dynamic>?) ?? {};
+    _trackInsertOccupied
+      ..clear()
+      ..addAll(
+        ((raw['trackInsertOccupied'] as List<dynamic>?) ?? []).map(
+          (row) => (row as List<dynamic>).map((b) => b as bool).toList(),
+        ),
+      );
+    _trackInsertEffectNames
+      ..clear()
+      ..addAll(
+        ((raw['trackInsertEffectNames'] as List<dynamic>?) ?? []).map(
+          (row) => (row as List<dynamic>).map((n) => n as String?).toList(),
+        ),
+      );
+    unawaited(
+      _clearInsertEffectsInEngine().then((_) => _applyInsertSnapshotToEngine()),
+    );
   }
 
   /// Undo the most recent arrangement mutation (add/remove/move/duplicate…).
@@ -3755,6 +4218,10 @@ class AppState extends ChangeNotifier {
     final entry = _songUndo.popUndoSwap(_songArrangementJson());
     if (entry == null) return;
     _restoreArrangementFromJson(entry.json);
+    // Mixer fields (volume/pan/mute/solo/send) may have changed as part of
+    // the restored arrangement (e.g. full-track swap/move) — re-sync the
+    // native audio engine so live playback matches immediately.
+    _queueCurrentMixerSnapshotToEngine();
     notifyListeners();
   }
 
@@ -3764,6 +4231,7 @@ class AppState extends ChangeNotifier {
     final entry = _songUndo.popRedoSwap(_songArrangementJson());
     if (entry == null) return;
     _restoreArrangementFromJson(entry.json);
+    _queueCurrentMixerSnapshotToEngine();
     notifyListeners();
   }
 

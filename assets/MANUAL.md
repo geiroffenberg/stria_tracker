@@ -185,9 +185,17 @@ You can copy, cut, paste, and delete the contents of any single track inside any
 
 3. To paste into a different track, long-press the target track cell — the selection moves to the new cell. Tap PASTE.
 
+**Drag and drop:** instead of long-pressing twice, you can long-press a cell and, without lifting your finger, drag it onto another track cell. Releasing moves the cell's contents to that new position.
+
 The clipboard is **shared** with the pattern-view row clipboard, so you can copy in the Song screen and paste in the Pattern screen (or vice versa).
 
 Long-pressing another cell while one is already selected simply **replaces the selection** — there is no forced paste.
+
+### Moving Whole Tracks (Long-Press + Drag)
+
+Long-press a **track number** in the timeline header, then drag left/right and release over another track to move the entire track there (all patterns).
+
+Moving a track this way moves its **mixer channel with it** — volume, pan, mute/solo, send routing, and its insert FX rack all follow, since the mixer channel is linked to the track, not to a fixed position.
 
 ### Undo / Redo
 
