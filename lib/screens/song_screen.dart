@@ -65,15 +65,25 @@ class _SongScreenState extends State<SongScreen> {
   static const double kSlotSize = 64.0;
   static const double kSlotGap = 6.0;
 
+  /// Clears every edit-selection (pattern row / timeline cell / full track)
+  /// so only one selection — and one action bar — is ever visible at once.
+  /// This does NOT touch the playhead (current-playing-pattern indicator),
+  /// which is a completely separate concept tracked by [AppState].
+  void _clearEditSelections() {
+    _selectedPatternIndex = null;
+    _selectedTimelineCell = null;
+    _selectedFullTrackIndex = null;
+  }
+
   void _handleSlotTap(AppState state, int patternIndex) {
     // All slots behave the same whether or not a real pattern exists yet —
     // tapping an empty (virtual) slot just creates it transparently.
     if (patternIndex >= state.song.patterns.length) {
       state.createPatternAt(patternIndex);
     }
-    if (_selectedPatternIndex != null) {
-      setState(() => _selectedPatternIndex = null);
-    }
+    // A plain tap is playhead-only — it must never leave an edit selection
+    // (and its action bar) open behind it.
+    setState(_clearEditSelections);
     if (state.isPlaying && state.playbackFollowsSong) {
       state.queueSongPatternJump(patternIndex);
       // Local repaint only: avoids whole-app rebuild jitter during playback.
@@ -91,6 +101,7 @@ class _SongScreenState extends State<SongScreen> {
       state.selectSongPattern(patternIndex);
     }
     setState(() {
+      _clearEditSelections();
       _selectedPatternIndex = patternIndex;
       _draggedPatternIndex = patternIndex;
       _dragTargetPatternIndex = null;
@@ -113,32 +124,18 @@ class _SongScreenState extends State<SongScreen> {
   ) {
     if (sourceIndex == targetIndex) return;
 
-    final sourceExists = sourceIndex < state.song.patterns.length;
-    final targetExists = targetIndex < state.song.patterns.length;
-    final sourceEmpty =
-        !sourceExists || state.song.patterns[sourceIndex].isEmpty;
-    final targetEmpty =
-        !targetExists || state.song.patterns[targetIndex].isEmpty;
-
-    // If target is empty, just copy the pattern
-    if (targetEmpty) {
-      if (sourceEmpty) return; // Can't copy empty pattern to empty slot
-      state.duplicatePatternTo(sourceIndex, targetIndex);
-      setState(() => _selectedPatternIndex = targetIndex);
-      return;
-    }
-
-    // Target has data — show dialog with Move or Swap options
+    // Drag-drop always offers the same two choices — Move or Swap — no
+    // matter whether the source/target rows are empty or have data.
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: kBgColor,
         title: Text(
-          'Pattern ${targetIndex + 1} has data',
+          'Move pattern ${sourceIndex + 1}',
           style: kStyleLabel.copyWith(color: kColAccent),
         ),
         content: Text(
-          'Choose how to combine with pattern ${sourceIndex + 1}.',
+          'Move it to slot ${targetIndex + 1}, or swap it with the pattern there.',
           style: kStyleBase.copyWith(color: kColHeader),
         ),
         actions: [
@@ -574,8 +571,7 @@ class _SongScreenState extends State<SongScreen> {
                   _deleteSelectedPattern(state, selectedPatternIndex),
               onClose: () => setState(() => _selectedPatternIndex = null),
             ),
-          ],
-          if (_selectedTimelineCell != null) ...[
+          ] else if (_selectedTimelineCell != null) ...[
             const Divider(height: 1, thickness: 1, color: Color(0xFF226666)),
             _TrackCellActionBar(
               canPaste: state.hasRowClipboard,
@@ -695,7 +691,7 @@ class _SongScreenState extends State<SongScreen> {
                       onLongPressStart: (_) {
                         state.copyTrackFullAllPatterns(t);
                         setState(() {
-                          _selectedTimelineCell = null; // Clear cell selection
+                          _clearEditSelections();
                           _draggingFullTrackIndex = t;
                           _selectedFullTrackIndex = t;
                           _dragTargetFullTrackIndex = t;
@@ -1508,7 +1504,7 @@ class _SongScreenState extends State<SongScreen> {
             // an empty/virtual slot has nothing to copy from.
             if (hit != null && hit.patternIndex < state.song.patterns.length) {
               setState(() {
-                _selectedFullTrackIndex = null; // Clear track selection
+                _clearEditSelections();
                 _selectedTimelineCell = hit;
                 _dragTargetTimelineCell = null; // Start fresh, no drag yet
               });
@@ -1566,6 +1562,9 @@ class _SongScreenState extends State<SongScreen> {
               dragTargetTrackIndex: _dragTargetTimelineCell?.trackIndex,
               selectedFullTrackIndex: _selectedFullTrackIndex,
               dragTargetFullTrackIndex: _dragTargetFullTrackIndex,
+              editSelectedPatternRow: _selectedPatternIndex,
+              dragSourcePatternRow: _draggedPatternIndex,
+              dragTargetPatternRow: _dragTargetPatternIndex,
             ),
             child: SizedBox(width: width, height: totalH),
           ),
@@ -1631,6 +1630,7 @@ class _SongScreenState extends State<SongScreen> {
     if (hit.patternIndex >= state.song.patterns.length) {
       state.createPatternAt(hit.patternIndex);
     }
+    setState(_clearEditSelections);
     state.selectSongPattern(hit.patternIndex);
     state.selectTrack(hit.trackIndex);
     OpenPatternTrackNotification().dispatch(context);
@@ -1685,10 +1685,13 @@ class _PatternSlot extends StatelessWidget {
       decoration: BoxDecoration(
         color: kBgTrackHeader,
         border: Border.all(
-          color: isPending
-              ? (pendingBlinkOn ? kColAccent : kColInactive)
-              : (isMenuSelected
-                    ? kColAccent
+          // Edit selection (long-press) uses kColSelection to stay visually
+          // distinct from the playhead marker (kColAccent), so the two
+          // concepts never look like the same thing.
+          color: isMenuSelected
+              ? kColSelection
+              : (isPending
+                    ? (pendingBlinkOn ? kColAccent : kColInactive)
                     : (isCurrent ? kColAccent : kColInactive)),
           width: (isCurrent || isPending || isMenuSelected) ? 2 : 1,
         ),
@@ -1718,7 +1721,7 @@ class _PatternSlot extends StatelessWidget {
               : (isDragSource
                     ? kColSelection.withAlpha(40)
                     : (isMenuSelected
-                          ? kColAccent.withAlpha(20)
+                          ? kColSelection.withAlpha(30)
                           : Colors.transparent)),
         ),
         child: Opacity(opacity: slotOpacity, child: square),
@@ -1740,6 +1743,9 @@ class _SongTimelinePainter extends CustomPainter {
   final int? dragTargetTrackIndex;
   final int? selectedFullTrackIndex;
   final int? dragTargetFullTrackIndex;
+  final int? editSelectedPatternRow;
+  final int? dragSourcePatternRow;
+  final int? dragTargetPatternRow;
 
   _SongTimelinePainter({
     required this.patterns,
@@ -1752,6 +1758,9 @@ class _SongTimelinePainter extends CustomPainter {
     this.dragTargetTrackIndex,
     this.selectedFullTrackIndex,
     this.dragTargetFullTrackIndex,
+    this.editSelectedPatternRow,
+    this.dragSourcePatternRow,
+    this.dragTargetPatternRow,
   });
 
   static const double _padTop = 4;
@@ -1917,6 +1926,40 @@ class _SongTimelinePainter extends CustomPainter {
           ..strokeWidth = 2.5,
       );
     }
+
+    // Whole-row highlight for the pattern row that's long-press edit-selected
+    // (or being dragged), so the selection/preview spans the full width —
+    // not just the slot-number square in the left column — for a single,
+    // consistent "whole row" selection concept.
+    void drawWholeRowHighlight(int s, Color color, {required bool fill}) {
+      if (s < 0 || s >= kMaxSongPatterns) return;
+      final yTop = s * slotPitch + _padTop;
+      final blockH = slotPitch - _padTop - _padBottom;
+      final rect = Rect.fromLTWH(0, yTop, size.width, blockH);
+      if (fill) {
+        canvas.drawRect(rect, Paint()..color = color.withAlpha(40));
+      }
+      canvas.drawRect(
+        rect,
+        Paint()
+          ..color = color
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 2.5,
+      );
+    }
+
+    if (dragTargetPatternRow != null &&
+        dragTargetPatternRow != dragSourcePatternRow) {
+      drawWholeRowHighlight(dragTargetPatternRow!, kColSelection, fill: true);
+    } else if (dragSourcePatternRow != null) {
+      drawWholeRowHighlight(dragSourcePatternRow!, kColSelection, fill: true);
+    } else if (editSelectedPatternRow != null) {
+      drawWholeRowHighlight(
+        editSelectedPatternRow!,
+        kColSelection,
+        fill: false,
+      );
+    }
   }
 
   /// Helper to draw a dashed rectangle border.
@@ -2010,7 +2053,10 @@ class _SongTimelinePainter extends CustomPainter {
       old.dragTargetPatternIndex != dragTargetPatternIndex ||
       old.dragTargetTrackIndex != dragTargetTrackIndex ||
       old.selectedFullTrackIndex != selectedFullTrackIndex ||
-      old.dragTargetFullTrackIndex != dragTargetFullTrackIndex;
+      old.dragTargetFullTrackIndex != dragTargetFullTrackIndex ||
+      old.editSelectedPatternRow != editSelectedPatternRow ||
+      old.dragSourcePatternRow != dragSourcePatternRow ||
+      old.dragTargetPatternRow != dragTargetPatternRow;
 }
 
 class _TrackCellActionBar extends StatelessWidget {

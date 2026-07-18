@@ -5,12 +5,15 @@ const int kMaxSongPatterns = 99;
 
 class SongModel {
   String name;
+
   /// Ordered list of patterns. This IS the arrangement — pattern[0] plays
   /// first, pattern[1] second, etc. Sequential song playback stops at the
   /// first empty pattern.
   List<PatternModel> patterns;
+
   /// Master output level: 0..1 (default 1.0 = 0 dB).
   double masterVolume;
+
   /// When true the master output is silenced.
   bool masterMute;
 
@@ -91,7 +94,10 @@ class SongModel {
 
     return SongModel(
       name: j['name'] as String,
-      masterVolume: ((j['masterVolume'] as num?)?.toDouble() ?? 1.0).clamp(0.0, 4.0),
+      masterVolume: ((j['masterVolume'] as num?)?.toDouble() ?? 1.0).clamp(
+        0.0,
+        4.0,
+      ),
       masterMute: (j['masterMute'] as bool?) ?? false,
       patterns: orderedPatterns,
     );

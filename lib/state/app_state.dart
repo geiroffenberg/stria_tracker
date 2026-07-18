@@ -3257,36 +3257,11 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Copy pattern [sourceIndex] to [targetIndex], overwriting the target.
-  /// If target slot doesn't exist, creates empty patterns to fill the gap.
-  void duplicatePatternTo(int sourceIndex, int targetIndex) {
-    if (sourceIndex < 0 || sourceIndex >= song.patterns.length) return;
-    if (targetIndex < 0 || targetIndex >= kMaxSongPatterns) return;
-    _pushSongUndo('copy pattern to slot');
-
-    // Ensure target slot exists
-    while (song.patterns.length <= targetIndex) {
-      if (song.patterns.length >= kMaxSongPatterns) return;
-      final pattern = song.createEmptyPattern();
-      _copyProjectMixerStateToPattern(pattern);
-      _copyProjectSendRoutingToPattern(pattern);
-      song.patterns.add(pattern);
-    }
-
-    // Deep copy source pattern to target slot
-    final sourcePat = song.patterns[sourceIndex];
-    final newPatNumber = song.patterns.length;
-    song.patterns[targetIndex] = sourcePat.copyWithName(
-      'PAT ${newPatNumber.toString().padLeft(2, '0')}',
-    );
-
-    _currentPatternIndex = targetIndex;
-    _currentArrangementSlotIndex = targetIndex;
-    notifyListeners();
-  }
-
   /// Move pattern [sourceIndex] to [targetIndex] by reordering other patterns.
-  /// Patterns between source and target shift to fill the gap.
+  /// Patterns between source and target shift to fill the gap. The moved
+  /// pattern (its name and data, whatever it is — even if empty) travels
+  /// with it untouched; only its position changes. This is a plain list
+  /// reorder — no renaming, no new identities, ever.
   void movePatternTo(int sourceIndex, int targetIndex) {
     if (sourceIndex == targetIndex) return;
     if (sourceIndex < 0 || sourceIndex >= song.patterns.length) return;
@@ -3305,29 +3280,36 @@ class AppState extends ChangeNotifier {
     // Remove source pattern
     final pat = song.patterns.removeAt(sourceIndex);
 
-    // Calculate adjusted target index after removal
-    final adjustedTarget = targetIndex > sourceIndex
-        ? targetIndex - 1
-        : targetIndex;
+    // After removal, insert at target index. This works for both directions:
+    // - Moving down: target shifts up to (targetIndex-1), inserting at targetIndex puts source after it
+    // - Moving up: target unchanged at targetIndex, inserting there puts source before it
+    song.patterns.insert(targetIndex, pat);
 
-    // Insert at new position
-    song.patterns.insert(adjustedTarget, pat);
-
-    _currentPatternIndex = adjustedTarget;
-    _currentArrangementSlotIndex = adjustedTarget;
+    _currentPatternIndex = targetIndex;
+    _currentArrangementSlotIndex = targetIndex;
     notifyListeners();
   }
 
-  /// Swap patterns at [index1] and [index2].
+  /// Swap patterns at [index1] and [index2]. Names travel with their data —
+  /// no renaming — since a swap is purely a position exchange, not a
+  /// creation of new pattern identities.
   void swapPatterns(int index1, int index2) {
     if (index1 == index2) return;
     if (index1 < 0 || index1 >= song.patterns.length) return;
     if (index2 < 0 || index2 >= song.patterns.length) return;
     _pushSongUndo('swap patterns');
 
+    print(
+      '🔄 SWAP: index1=$index1 (${song.patterns[index1].name}) ↔ index2=$index2 (${song.patterns[index2].name})',
+    );
+
     final temp = song.patterns[index1];
     song.patterns[index1] = song.patterns[index2];
     song.patterns[index2] = temp;
+
+    print(
+      '✅ AFTER SWAP: index1=$index1 now has ${song.patterns[index1].name}, index2=$index2 now has ${song.patterns[index2].name}',
+    );
 
     _currentPatternIndex = index2;
     _currentArrangementSlotIndex = index2;
