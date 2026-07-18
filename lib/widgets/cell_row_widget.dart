@@ -639,12 +639,23 @@ class _DottedRowBorderPainter extends CustomPainter {
       ..color = color
       ..strokeWidth = 1.0
       ..strokeCap = StrokeCap.round;
-    _drawDashed(canvas, paint, Offset.zero, Offset(size.width, 0));                     // top
-    _drawDashed(canvas, paint, Offset(0, size.height), Offset(size.width, size.height)); // bottom
-    _drawDashed(canvas, paint, Offset.zero, Offset(0, size.height));                     // left
-    _drawDashed(canvas, paint, Offset(size.width, 0), Offset(size.width, size.height));  // right
+    _drawDashed(canvas, paint, Offset.zero, Offset(size.width, 0)); // top
+    _drawDashed(
+      canvas,
+      paint,
+      Offset(0, size.height),
+      Offset(size.width, size.height),
+    ); // bottom
+    _drawDashed(canvas, paint, Offset.zero, Offset(0, size.height)); // left
+    _drawDashed(
+      canvas,
+      paint,
+      Offset(size.width, 0),
+      Offset(size.width, size.height),
+    ); // right
   }
 
   @override
-  bool shouldRepaint(covariant _DottedRowBorderPainter old) => old.color != color;
+  bool shouldRepaint(covariant _DottedRowBorderPainter old) =>
+      old.color != color;
 }

@@ -64,6 +64,11 @@ class _SongScreenState extends State<SongScreen> {
   static const double kSlotGap = 6.0;
 
   void _handleSlotTap(AppState state, int patternIndex) {
+    // All slots behave the same whether or not a real pattern exists yet —
+    // tapping an empty (virtual) slot just creates it transparently.
+    if (patternIndex >= state.song.patterns.length) {
+      state.createPatternAt(patternIndex);
+    }
     if (_selectedPatternIndex != null) {
       setState(() => _selectedPatternIndex = null);
     }
@@ -77,6 +82,9 @@ class _SongScreenState extends State<SongScreen> {
   }
 
   void _handleSlotLongPress(AppState state, int patternIndex) {
+    if (patternIndex >= state.song.patterns.length) {
+      state.createPatternAt(patternIndex);
+    }
     if (!(state.isPlaying && state.playbackFollowsSong)) {
       state.selectSongPattern(patternIndex);
     }
@@ -214,7 +222,11 @@ class _SongScreenState extends State<SongScreen> {
     }
   }
 
-  void _handleFullTrackPaste(BuildContext context, AppState state, int targetTrack) {
+  void _handleFullTrackPaste(
+    BuildContext context,
+    AppState state,
+    int targetTrack,
+  ) {
     if (!state.hasFullTrackClipboard) return;
     final sourceTrack = state.fullTrackClipboardSource;
 
@@ -241,14 +253,20 @@ class _SongScreenState extends State<SongScreen> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: Text('Cancel', style: kStyleBase.copyWith(color: kColInactive)),
+            child: Text(
+              'Cancel',
+              style: kStyleBase.copyWith(color: kColInactive),
+            ),
           ),
           TextButton(
             onPressed: () {
               Navigator.pop(ctx);
               state.pasteTrackFullAllPatterns(targetTrack);
             },
-            child: Text('Overwrite', style: kStyleBase.copyWith(color: kColActive)),
+            child: Text(
+              'Overwrite',
+              style: kStyleBase.copyWith(color: kColActive),
+            ),
           ),
           if (canRelateToSource)
             TextButton(
@@ -256,7 +274,10 @@ class _SongScreenState extends State<SongScreen> {
                 Navigator.pop(ctx);
                 state.swapFullTracks(sourceTrack, targetTrack);
               },
-              child: Text('Swap', style: kStyleBase.copyWith(color: kColSelection)),
+              child: Text(
+                'Swap',
+                style: kStyleBase.copyWith(color: kColSelection),
+              ),
             ),
           if (canRelateToSource)
             TextButton(
@@ -264,13 +285,15 @@ class _SongScreenState extends State<SongScreen> {
                 Navigator.pop(ctx);
                 state.moveFullTrack(sourceTrack, targetTrack);
               },
-              child: Text('Move To', style: kStyleBase.copyWith(color: kColSelection)),
+              child: Text(
+                'Move To',
+                style: kStyleBase.copyWith(color: kColSelection),
+              ),
             ),
         ],
       ),
     );
   }
-
 
   @override
   void initState() {
@@ -344,23 +367,9 @@ class _SongScreenState extends State<SongScreen> {
                           itemExtent: slotPitch,
                           itemCount: kMaxSongPatterns,
                           itemBuilder: (_, i) {
-                            final isReal = i < state.song.patterns.length;
-                            if (!isReal) {
-                              final isFirstVirtual =
-                                  i == state.song.patterns.length;
-                              final canAdd =
-                                  state.song.patterns.length < kMaxSongPatterns;
-                              return _EmptySlot(
-                                slotNumber: i + 1,
-                                active: canAdd,
-                                showPlus: isFirstVirtual && canAdd,
-                                gap: kSlotGap,
-                                onTap: isFirstVirtual && canAdd
-                                    ? state.appendNewPattern
-                                    : null,
-                                onLongPress: null,
-                              );
-                            }
+                            // Every slot renders identically whether or not a
+                            // real pattern exists yet — empty ones are just
+                            // dimmed. No separate "virtual"/plus-sign state.
                             return _PatternSlot(
                               patternIndex: i,
                               isCurrent:
@@ -454,10 +463,17 @@ class _SongScreenState extends State<SongScreen> {
             const Divider(height: 1, thickness: 1, color: Color(0xFF226666)),
             _TrackCellActionBar(
               canPaste: state.hasFullTrackClipboard,
-              onCopy: () => state.copyTrackFullAllPatterns(_selectedFullTrackIndex!),
-              onCut: () => state.cutTrackFullAllPatterns(_selectedFullTrackIndex!),
-              onPaste: () => _handleFullTrackPaste(context, state, _selectedFullTrackIndex!),
-              onDelete: () => state.deleteTrackFullAllPatterns(_selectedFullTrackIndex!),
+              onCopy: () =>
+                  state.copyTrackFullAllPatterns(_selectedFullTrackIndex!),
+              onCut: () =>
+                  state.cutTrackFullAllPatterns(_selectedFullTrackIndex!),
+              onPaste: () => _handleFullTrackPaste(
+                context,
+                state,
+                _selectedFullTrackIndex!,
+              ),
+              onDelete: () =>
+                  state.deleteTrackFullAllPatterns(_selectedFullTrackIndex!),
               onClose: () => setState(() => _selectedFullTrackIndex = null),
             ),
           ],
@@ -493,7 +509,12 @@ class _SongScreenState extends State<SongScreen> {
 
   /// Converts a global drag position to the track index it lands on, using
   /// the track-header's RenderBox to translate global -> local coordinates.
-  int? _trackAtGlobalPosition(Offset globalPosition, double originX, double laneW, double laneGap) {
+  int? _trackAtGlobalPosition(
+    Offset globalPosition,
+    double originX,
+    double laneW,
+    double laneGap,
+  ) {
     final renderObject = _trackHeaderKey.currentContext?.findRenderObject();
     if (renderObject is! RenderBox || !renderObject.attached) return null;
     final local = renderObject.globalToLocal(globalPosition);
@@ -520,9 +541,7 @@ class _SongScreenState extends State<SongScreen> {
                   top: 0,
                   bottom: 0,
                   width: laneGap,
-                  child: Container(
-                    color: kColInactive.withAlpha(80),
-                  ),
+                  child: Container(color: kColInactive.withAlpha(80)),
                 ),
               // Track number buttons
               for (int t = 0; t < kMaxTracks; t++)
@@ -545,7 +564,12 @@ class _SongScreenState extends State<SongScreen> {
                         });
                       },
                       onLongPressMoveUpdate: (details) {
-                        final hit = _trackAtGlobalPosition(details.globalPosition, originX, laneW, laneGap);
+                        final hit = _trackAtGlobalPosition(
+                          details.globalPosition,
+                          originX,
+                          laneW,
+                          laneGap,
+                        );
                         if (hit != _dragTargetFullTrackIndex) {
                           setState(() => _dragTargetFullTrackIndex = hit);
                         }
@@ -557,7 +581,9 @@ class _SongScreenState extends State<SongScreen> {
                           _draggingFullTrackIndex = null;
                           _dragTargetFullTrackIndex = null;
                         });
-                        if (source != null && target != null && source != target) {
+                        if (source != null &&
+                            target != null &&
+                            source != target) {
                           _handleFullTrackPaste(context, state, target);
                           // Select the new location
                           setState(() => _selectedFullTrackIndex = target);
@@ -573,7 +599,8 @@ class _SongScreenState extends State<SongScreen> {
                         alignment: Alignment.center,
                         decoration: BoxDecoration(
                           border: Border.all(
-                            color: t < state.currentPattern.tracks.length &&
+                            color:
+                                t < state.currentPattern.tracks.length &&
                                     state.currentPattern.tracks[t].mixerSolo
                                 ? kColStopBtn
                                 : kColInactive.withAlpha(60),
@@ -591,7 +618,8 @@ class _SongScreenState extends State<SongScreen> {
                           style: kStyleHeader.copyWith(
                             fontSize: 16,
                             fontWeight: FontWeight.w700,
-                            color: t < state.currentPattern.tracks.length &&
+                            color:
+                                t < state.currentPattern.tracks.length &&
                                     state.currentPattern.tracks[t].mixerSolo
                                 ? kColStopBtn
                                 : kColAccent,
@@ -640,7 +668,10 @@ class _SongScreenState extends State<SongScreen> {
                 const SizedBox(width: 4),
                 IconButton(
                   padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                  constraints: const BoxConstraints(
+                    minWidth: 32,
+                    minHeight: 32,
+                  ),
                   icon: Icon(
                     Icons.undo,
                     size: 22,
@@ -649,13 +680,14 @@ class _SongScreenState extends State<SongScreen> {
                   tooltip: state.undoSongLabel != null
                       ? 'Undo: ${state.undoSongLabel}'
                       : 'Nothing to undo',
-                  onPressed: state.canUndoSong
-                      ? () => state.undoSong()
-                      : null,
+                  onPressed: state.canUndoSong ? () => state.undoSong() : null,
                 ),
                 IconButton(
                   padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                  constraints: const BoxConstraints(
+                    minWidth: 32,
+                    minHeight: 32,
+                  ),
                   icon: Icon(
                     Icons.redo,
                     size: 22,
@@ -664,9 +696,7 @@ class _SongScreenState extends State<SongScreen> {
                   tooltip: state.redoSongLabel != null
                       ? 'Redo: ${state.redoSongLabel}'
                       : 'Nothing to redo',
-                  onPressed: state.canRedoSong
-                      ? () => state.redoSong()
-                      : null,
+                  onPressed: state.canRedoSong ? () => state.redoSong() : null,
                 ),
                 const SizedBox(width: 4),
                 PopupMenuButton<_SongMenuAction>(
@@ -785,7 +815,6 @@ class _SongScreenState extends State<SongScreen> {
                 ),
               ],
             ),
-
         ],
       ),
     );
@@ -822,10 +851,7 @@ class _SongScreenState extends State<SongScreen> {
 
   /// Show a dialog to prompt user for a new song name with validation.
   /// Returns the song name on success, or null if cancelled.
-  Future<String?> _showNewSongDialog(
-    BuildContext ctx,
-    AppState state,
-  ) async {
+  Future<String?> _showNewSongDialog(BuildContext ctx, AppState state) async {
     final controller = TextEditingController();
     String? errorText;
     return showDialog<String>(
@@ -864,16 +890,17 @@ class _SongScreenState extends State<SongScreen> {
               onPressed: () async {
                 final name = controller.text.trim();
                 if (name.isEmpty) {
-                  setDialogState(() => errorText = 'Song name cannot be empty.');
+                  setDialogState(
+                    () => errorText = 'Song name cannot be empty.',
+                  );
                   return;
                 }
                 final exists = await state.songNameExists(name);
                 if (!dialogCtx.mounted) return;
                 if (exists) {
                   setDialogState(
-                    () =>
-                        errorText =
-                            'A song with this name already exists. Choose a different name.',
+                    () => errorText =
+                        'A song with this name already exists. Choose a different name.',
                   );
                   return;
                 }
@@ -1085,10 +1112,7 @@ class _SongScreenState extends State<SongScreen> {
                           ),
                           child: Text(
                             names[i],
-                            style: TextStyle(
-                              color: kColHeader,
-                              fontSize: 17,
-                            ),
+                            style: TextStyle(color: kColHeader, fontSize: 17),
                           ),
                         ),
                       ),
@@ -1246,18 +1270,20 @@ class _SongScreenState extends State<SongScreen> {
                                   border: Border.all(
                                     color: selected
                                         ? (ThemeData.estimateBrightnessForColor(
-                                                  p.previewColor,
-                                                ) ==
-                                                Brightness.dark
-                                            ? Colors.white
-                                            : Colors.black)
+                                                    p.previewColor,
+                                                  ) ==
+                                                  Brightness.dark
+                                              ? Colors.white
+                                              : Colors.black)
                                         : Colors.transparent,
                                     width: 3,
                                   ),
                                   boxShadow: selected
                                       ? [
                                           BoxShadow(
-                                            color: p.previewColor.withAlpha(180),
+                                            color: p.previewColor.withAlpha(
+                                              180,
+                                            ),
                                             blurRadius: 12,
                                           ),
                                         ]
@@ -1335,8 +1361,14 @@ class _SongScreenState extends State<SongScreen> {
           },
           onLongPressStart: (details) {
             final hit = _hitTestTimelineCell(
-                state, details.localPosition, width, slotPitch);
-            if (hit != null) {
+              state,
+              details.localPosition,
+              width,
+              slotPitch,
+            );
+            // Drag-copy only makes sense for patterns that already exist —
+            // an empty/virtual slot has nothing to copy from.
+            if (hit != null && hit.patternIndex < state.song.patterns.length) {
               setState(() {
                 _selectedFullTrackIndex = null; // Clear track selection
                 _selectedTimelineCell = hit;
@@ -1348,7 +1380,11 @@ class _SongScreenState extends State<SongScreen> {
           },
           onLongPressMoveUpdate: (details) {
             final hit = _hitTestTimelineCell(
-                state, details.localPosition, width, slotPitch);
+              state,
+              details.localPosition,
+              width,
+              slotPitch,
+            );
             if (hit != null && hit != _dragTargetTimelineCell) {
               setState(() => _dragTargetTimelineCell = hit);
             }
@@ -1357,7 +1393,12 @@ class _SongScreenState extends State<SongScreen> {
             // Only paste if drag target is different from selected source
             if (_dragTargetTimelineCell != null &&
                 _dragTargetTimelineCell != _selectedTimelineCell) {
-              _handleTrackDragDrop(context, state, _selectedTimelineCell!, _dragTargetTimelineCell!);
+              _handleTrackDragDrop(
+                context,
+                state,
+                _selectedTimelineCell!,
+                _dragTargetTimelineCell!,
+              );
               // Select the new location
               setState(() {
                 _selectedTimelineCell = _dragTargetTimelineCell;
@@ -1403,10 +1444,8 @@ class _SongScreenState extends State<SongScreen> {
     double width,
     double slotPitch,
   ) {
-    if (state.song.patterns.isEmpty) return null;
-
     final patternIndex = (localPos.dy / slotPitch).floor();
-    if (patternIndex < 0 || patternIndex >= state.song.patterns.length) {
+    if (patternIndex < 0 || patternIndex >= kMaxSongPatterns) {
       return null;
     }
 
@@ -1430,7 +1469,11 @@ class _SongScreenState extends State<SongScreen> {
     final laneStart = rawTrack * lanePitch;
     if (x - laneStart > laneW) return null;
 
-    final trackCount = state.song.patterns[patternIndex].tracks.length;
+    // Empty/virtual slots beyond the real pattern list don't have a track
+    // list yet, so fall back to the full lane count.
+    final trackCount = patternIndex < state.song.patterns.length
+        ? state.song.patterns[patternIndex].tracks.length
+        : laneCount;
     final trackIndex = rawTrack.clamp(0, trackCount - 1);
     return (patternIndex: patternIndex, trackIndex: trackIndex);
   }
@@ -1445,6 +1488,11 @@ class _SongScreenState extends State<SongScreen> {
     final hit = _hitTestTimelineCell(state, localPos, width, slotPitch);
     if (hit == null) return;
 
+    // Tapping an empty/virtual pattern row's cell creates it transparently,
+    // same as tapping its slot number, so it can be edited right away.
+    if (hit.patternIndex >= state.song.patterns.length) {
+      state.createPatternAt(hit.patternIndex);
+    }
     state.selectSongPattern(hit.patternIndex);
     state.selectTrack(hit.trackIndex);
     OpenPatternTrackNotification().dispatch(context);
@@ -1480,9 +1528,14 @@ class _PatternSlot extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final state = AppStateScope.of(context);
-    final pat = state.song.patterns[patternIndex];
+    final exists = patternIndex < state.song.patterns.length;
+    final pat = exists ? state.song.patterns[patternIndex] : null;
+    final isEmptySlot = pat == null || pat.isEmpty;
+    final slotOpacity = isEmptySlot ? kEmptyRowOpacity : 1.0;
 
-    final numberMatch = RegExp(r'(\d+)$').firstMatch(pat.name.trim());
+    final numberMatch = pat != null
+        ? RegExp(r'(\d+)$').firstMatch(pat.name.trim())
+        : null;
     final displayLabel = numberMatch != null
         ? numberMatch.group(1)!.padLeft(2, '0')
         : (patternIndex + 1).toString().padLeft(2, '0');
@@ -1528,48 +1581,7 @@ class _PatternSlot extends StatelessWidget {
                 ? kColAccent.withAlpha(20)
                 : Colors.transparent,
           ),
-          child: square,
-        ),
-      ),
-    );
-  }
-}
-
-/// An empty virtual slot — shows '+' and accepts drag-copy.
-class _EmptySlot extends StatelessWidget {
-  final int slotNumber; // 1-based display number
-  final bool active; // true = tappable
-  final bool showPlus;
-  final double gap;
-  final VoidCallback? onTap;
-  final VoidCallback? onLongPress;
-
-  const _EmptySlot({
-    required this.slotNumber,
-    required this.active,
-    required this.gap,
-    this.showPlus = false,
-    this.onTap,
-    this.onLongPress,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: EdgeInsets.only(bottom: gap),
-      child: GestureDetector(
-        onTap: onTap,
-        onLongPress: onLongPress,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 120),
-          decoration: BoxDecoration(
-            border: Border.all(color: kColInactive, width: 1),
-            borderRadius: BorderRadius.circular(6),
-            color: Colors.transparent,
-          ),
-          child: showPlus
-              ? Center(child: Icon(Icons.add, size: 32, color: kColInactive))
-              : const SizedBox.shrink(),
+          child: Opacity(opacity: slotOpacity, child: square),
         ),
       ),
     );
@@ -1607,16 +1619,8 @@ class _SongTimelinePainter extends CustomPainter {
   static const double _padBottom = 4;
   static const double _laneGap = 1;
 
-  int? get _firstEmptySlot {
-    for (int i = 0; i < patterns.length; i++) {
-      if (patterns[i].isEmpty) return i;
-    }
-    return null;
-  }
-
   @override
   void paint(Canvas canvas, Size size) {
-    final endOfSongSlot = _firstEmptySlot;
     final laneCount = kMaxTracks;
     final laneAreaW = size.width - 8;
     final laneW = (laneAreaW - (laneCount - 1) * _laneGap) / laneCount;
@@ -1626,13 +1630,16 @@ class _SongTimelinePainter extends CustomPainter {
       ..color = kColInactive.withAlpha(60)
       ..strokeWidth = 0.5;
 
-    for (int s = 0; s < patterns.length; s++) {
-      final pat = patterns[s];
+    for (int s = 0; s < kMaxSongPatterns; s++) {
+      final hasPattern = s < patterns.length;
+      final pat = hasPattern ? patterns[s] : null;
+      final isEmptySlot = pat == null || pat.isEmpty;
+      final rowOpacity = isEmptySlot ? kEmptyRowOpacity : 1.0;
       final yTop = s * slotPitch + _padTop;
       final blockH = slotPitch - _padTop - _padBottom;
 
       final laneBorderPaint = Paint()
-        ..color = kColInactive.withAlpha(180)
+        ..color = kColInactive.withAlpha((180 * rowOpacity).round())
         ..style = PaintingStyle.stroke
         ..strokeWidth = 0.5;
 
@@ -1640,13 +1647,13 @@ class _SongTimelinePainter extends CustomPainter {
         final lx = originX + t * (laneW + _laneGap);
         canvas.drawRect(
           Rect.fromLTWH(lx, yTop, laneW, blockH),
-          Paint()..color = kBgBeat,
+          Paint()..color = kBgBeat.withAlpha((255 * rowOpacity).round()),
         );
         canvas.drawRect(
           Rect.fromLTWH(lx + 0.25, yTop + 0.25, laneW - 0.5, blockH - 0.5),
           laneBorderPaint,
         );
-        if (t < pat.tracks.length) {
+        if (pat != null && t < pat.tracks.length) {
           _drawLaneNotes(
             canvas,
             pat.tracks[t],
@@ -1665,36 +1672,7 @@ class _SongTimelinePainter extends CustomPainter {
         dividerPaint,
       );
 
-      if (s == endOfSongSlot) {
-        final overlayRect = Rect.fromLTWH(4, yTop, size.width - 8, blockH);
-        final tp = TextPainter(
-          text: TextSpan(
-            text: 'END OF SONG',
-            style: kStyleBase.copyWith(
-              fontSize: 11,
-              fontWeight: FontWeight.w700,
-              color: kColAccent,
-              letterSpacing: 1.2,
-              shadows: const [
-                Shadow(
-                  color: Color(0xCC000000),
-                  blurRadius: 3,
-                  offset: Offset(0, 1),
-                ),
-              ],
-            ),
-          ),
-          textDirection: TextDirection.ltr,
-          textAlign: TextAlign.center,
-        )..layout(maxWidth: overlayRect.width - 12);
-        tp.paint(
-          canvas,
-          Offset(
-            overlayRect.left + (overlayRect.width - tp.width) / 2,
-            overlayRect.top + (overlayRect.height - tp.height) / 2,
-          ),
-        );
-      }
+      // END OF SONG marker removed: playback now stops at empty rows naturally
     }
 
     // Playhead line.
@@ -1738,7 +1716,8 @@ class _SongTimelinePainter extends CustomPainter {
       final s = dragTargetPatternIndex!;
       final t = dragTargetTrackIndex!;
       // Show drag target if it's different from the selected source cell
-      final isDifferentFromSource = (s != selectedPatternIndex || t != selectedTrackIndex);
+      final isDifferentFromSource =
+          (s != selectedPatternIndex || t != selectedTrackIndex);
       if (s < patterns.length && isDifferentFromSource) {
         final yTop = s * slotPitch + _padTop;
         final blockH = slotPitch - _padTop - _padBottom;
@@ -1748,7 +1727,13 @@ class _SongTimelinePainter extends CustomPainter {
           ..color = const Color(0xFF88FF88).withAlpha(150)
           ..style = PaintingStyle.stroke
           ..strokeWidth = 1.5;
-        _drawDashedRect(canvas, Rect.fromLTWH(lx, yTop, laneW, blockH), dashPaint, 4.0, 2.0);
+        _drawDashedRect(
+          canvas,
+          Rect.fromLTWH(lx, yTop, laneW, blockH),
+          dashPaint,
+          4.0,
+          2.0,
+        );
       }
     }
 
@@ -1796,7 +1781,13 @@ class _SongTimelinePainter extends CustomPainter {
   }
 
   /// Helper to draw a dashed rectangle border.
-  void _drawDashedRect(Canvas canvas, Rect rect, Paint paint, double dashLength, double gapLength) {
+  void _drawDashedRect(
+    Canvas canvas,
+    Rect rect,
+    Paint paint,
+    double dashLength,
+    double gapLength,
+  ) {
     const segments = [
       (Offset(0, 0), Offset(1, 0)), // top
       (Offset(1, 0), Offset(1, 1)), // right
@@ -1818,7 +1809,14 @@ class _SongTimelinePainter extends CustomPainter {
   }
 
   /// Helper to draw a dashed line between two points.
-  void _drawDashedLine(Canvas canvas, Offset p1, Offset p2, Paint paint, double dashLength, double gapLength) {
+  void _drawDashedLine(
+    Canvas canvas,
+    Offset p1,
+    Offset p2,
+    Paint paint,
+    double dashLength,
+    double gapLength,
+  ) {
     final dx = p2.dx - p1.dx;
     final dy = p2.dy - p1.dy;
     final distance = sqrt(dx * dx + dy * dy);
@@ -1905,11 +1903,7 @@ class _TrackCellActionBar extends StatelessWidget {
           _SongActionBtn(label: 'COPY', onTap: onCopy),
           _SongActionBtn(label: 'PASTE', onTap: onPaste, enabled: canPaste),
           const Spacer(),
-          _SongActionBtn(
-            label: 'DEL',
-            onTap: onDelete,
-            color: kColStopBtn,
-          ),
+          _SongActionBtn(label: 'DEL', onTap: onDelete, color: kColStopBtn),
           _SongActionBtn(label: '✕', onTap: onClose),
         ],
       ),
@@ -2129,44 +2123,48 @@ class _ManualPageState extends State<_ManualPage> {
             data: content,
             styleSheet: MarkdownStyleSheet.fromTheme(Theme.of(context))
                 .copyWith(
-              p: const TextStyle(color: Colors.white70, fontSize: 14),
-              h1: const TextStyle(
-                color: Colors.white,
-                fontSize: 22,
-                fontWeight: FontWeight.bold,
-              ),
-              h2: const TextStyle(
-                color: Colors.white,
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-              ),
-              h3: const TextStyle(
-                color: Colors.white,
-                fontSize: 15,
-                fontWeight: FontWeight.w600,
-              ),
-              code: const TextStyle(
-                color: Color(0xFFFFD700),
-                backgroundColor: Color(0xFF0D1B2A),
-                fontSize: 13,
-                fontFamily: 'monospace',
-              ),
-              codeblockDecoration: BoxDecoration(
-                color: const Color(0xFF0D1B2A),
-                borderRadius: BorderRadius.circular(4),
-              ),
-              blockquoteDecoration: BoxDecoration(
-                border: Border(
-                    left: BorderSide(color: Colors.white38, width: 3)),
-              ),
-              tableBody: const TextStyle(color: Colors.white70, fontSize: 13),
-              tableHead: const TextStyle(
-                color: Colors.white,
-                fontWeight: FontWeight.bold,
-                fontSize: 13,
-              ),
-              tableBorder: TableBorder.all(color: Colors.white24),
-            ),
+                  p: const TextStyle(color: Colors.white70, fontSize: 14),
+                  h1: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 22,
+                    fontWeight: FontWeight.bold,
+                  ),
+                  h2: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                  ),
+                  h3: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                  ),
+                  code: const TextStyle(
+                    color: Color(0xFFFFD700),
+                    backgroundColor: Color(0xFF0D1B2A),
+                    fontSize: 13,
+                    fontFamily: 'monospace',
+                  ),
+                  codeblockDecoration: BoxDecoration(
+                    color: const Color(0xFF0D1B2A),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  blockquoteDecoration: BoxDecoration(
+                    border: Border(
+                      left: BorderSide(color: Colors.white38, width: 3),
+                    ),
+                  ),
+                  tableBody: const TextStyle(
+                    color: Colors.white70,
+                    fontSize: 13,
+                  ),
+                  tableHead: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 13,
+                  ),
+                  tableBorder: TableBorder.all(color: Colors.white24),
+                ),
             selectable: true,
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
           );

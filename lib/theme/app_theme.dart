@@ -588,6 +588,10 @@ TextStyle get kStyleLabel => kStyleBase.copyWith(
   fontWeight: FontWeight.w600,
 );
 
+// ── Empty row opacity ────────────────────────────────────────────────────────
+
+const double kEmptyRowOpacity = 0.28;
+
 // ── Column pixel widths ───────────────────────────────────────────────────────
 
 const double kWRow = 36.0;

@@ -83,8 +83,11 @@ class _CollapsedTracksWidgetState extends State<CollapsedTracksWidget> {
     if (row == _lastFollowedRow) return;
     _lastFollowedRow = row;
     final pos = _vBodyCtrl.position;
-    final target = (row * kRowHeight - pos.viewportDimension / 2 + kRowHeight / 2)
-        .clamp(pos.minScrollExtent, pos.maxScrollExtent);
+    final target =
+        (row * kRowHeight - pos.viewportDimension / 2 + kRowHeight / 2).clamp(
+          pos.minScrollExtent,
+          pos.maxScrollExtent,
+        );
     _vBodyCtrl.jumpTo(target);
   }
 
@@ -410,8 +413,13 @@ class _MiniCellState extends State<_MiniCell> {
         cellIsEmpty(widget.column, widget.cell)) {
       // Drum mode: auto-fill with the track number (1-based)
       if (widget.drumPill) {
-        final trackInstrument = widget.trackIndex + 1; // 1-based track = 1-based instrument
-        state.currentTrack.writeColumnValue(widget.row, widget.column, trackInstrument);
+        final trackInstrument =
+            widget.trackIndex + 1; // 1-based track = 1-based instrument
+        state.currentTrack.writeColumnValue(
+          widget.row,
+          widget.column,
+          trackInstrument,
+        );
         state.updateLastInstrument(trackInstrument);
         // Also auto-fill the note with C-4 if empty
         if (widget.cell.note.isEmpty) {
@@ -427,6 +435,7 @@ class _MiniCellState extends State<_MiniCell> {
     }
     state.selectCell(widget.row, widget.column);
   }
+
   void _handleTap(AppState state) {
     final now = DateTime.now();
     final last = _lastTapTime;
@@ -442,7 +451,9 @@ class _MiniCellState extends State<_MiniCell> {
     // Single tap:
     // Drum mode on non-empty cell: cycle velocity
     // Otherwise: just select
-    if (widget.drumPill && widget.cell.instrument != null && !widget.cell.note.isOff) {
+    if (widget.drumPill &&
+        widget.cell.instrument != null &&
+        !widget.cell.note.isOff) {
       // Non-empty drum cell: cycle velocity
       state.cycleDrumVelocity(widget.row, widget.trackIndex);
     } else {
