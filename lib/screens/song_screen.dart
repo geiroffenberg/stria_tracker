@@ -58,21 +58,17 @@ class _SongScreenState extends State<SongScreen> {
   int? _dragTargetPatternIndex; // Target pattern slot during drag
   ({int patternIndex, int trackIndex})? _selectedTimelineCell;
   ({int patternIndex, int trackIndex})? _dragTargetTimelineCell;
-  int? _selectedFullTrackIndex; // Entire track column selected
-  int? _draggingFullTrackIndex; // Source track during full-track drag
-  int? _dragTargetFullTrackIndex; // Target track during full-track drag
 
   static const double kSlotSize = 64.0;
   static const double kSlotGap = 6.0;
 
-  /// Clears every edit-selection (pattern row / timeline cell / full track)
-  /// so only one selection — and one action bar — is ever visible at once.
+  /// Clears every edit-selection (pattern row / timeline cell) so only one
+  /// selection — and one action bar — is ever visible at once.
   /// This does NOT touch the playhead (current-playing-pattern indicator),
   /// which is a completely separate concept tracked by [AppState].
   void _clearEditSelections() {
     _selectedPatternIndex = null;
     _selectedTimelineCell = null;
-    _selectedFullTrackIndex = null;
   }
 
   void _handleSlotTap(AppState state, int patternIndex) {
@@ -238,8 +234,13 @@ class _SongScreenState extends State<SongScreen> {
   ) {
     // Check if target track is empty
     if (state.isTrackEmpty(target.patternIndex, target.trackIndex)) {
-      // Target is empty, just paste
-      state.pasteTrackFull(target.patternIndex, target.trackIndex);
+      // Target is empty, just move the source's cells directly across.
+      state.moveTrackFullTo(
+        source.patternIndex,
+        source.trackIndex,
+        target.patternIndex,
+        target.trackIndex,
+      );
     } else {
       // Target has data, show dialog with options
       showDialog(
@@ -265,7 +266,12 @@ class _SongScreenState extends State<SongScreen> {
             TextButton(
               onPressed: () {
                 Navigator.pop(ctx);
-                state.pasteTrackFull(target.patternIndex, target.trackIndex);
+                state.moveTrackFullTo(
+                  source.patternIndex,
+                  source.trackIndex,
+                  target.patternIndex,
+                  target.trackIndex,
+                );
               },
               child: Text(
                 'Overwrite',
@@ -291,79 +297,6 @@ class _SongScreenState extends State<SongScreen> {
         ),
       );
     }
-  }
-
-  void _handleFullTrackPaste(
-    BuildContext context,
-    AppState state,
-    int targetTrack,
-  ) {
-    if (!state.hasFullTrackClipboard) return;
-    final sourceTrack = state.fullTrackClipboardSource;
-
-    if (state.isTrackEmptyAllPatterns(targetTrack)) {
-      state.pasteTrackFullAllPatterns(targetTrack);
-      return;
-    }
-
-    // Target has data — offer Overwrite / Swap / Move To (the latter two
-    // require a known source track that differs from the target).
-    final canRelateToSource = sourceTrack != null && sourceTrack != targetTrack;
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: kBgColor,
-        title: Text(
-          'Track ${targetTrack + 1} has data',
-          style: kStyleLabel.copyWith(color: kColAccent),
-        ),
-        content: Text(
-          'Choose how to combine it with the clipboard.',
-          style: kStyleBase.copyWith(color: kColHeader),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: Text(
-              'Cancel',
-              style: kStyleBase.copyWith(color: kColInactive),
-            ),
-          ),
-          TextButton(
-            onPressed: () {
-              Navigator.pop(ctx);
-              state.pasteTrackFullAllPatterns(targetTrack);
-            },
-            child: Text(
-              'Overwrite',
-              style: kStyleBase.copyWith(color: kColActive),
-            ),
-          ),
-          if (canRelateToSource)
-            TextButton(
-              onPressed: () {
-                Navigator.pop(ctx);
-                state.swapFullTracks(sourceTrack, targetTrack);
-              },
-              child: Text(
-                'Swap',
-                style: kStyleBase.copyWith(color: kColSelection),
-              ),
-            ),
-          if (canRelateToSource)
-            TextButton(
-              onPressed: () {
-                Navigator.pop(ctx);
-                state.moveFullTrack(sourceTrack, targetTrack);
-              },
-              child: Text(
-                'Move To',
-                style: kStyleBase.copyWith(color: kColSelection),
-              ),
-            ),
-        ],
-      ),
-    );
   }
 
   @override
@@ -580,23 +513,6 @@ class _SongScreenState extends State<SongScreen> {
               ),
               onClose: () => setState(() => _selectedTimelineCell = null),
             ),
-          ] else if (_selectedFullTrackIndex != null) ...[
-            const Divider(height: 1, thickness: 1, color: Color(0xFF226666)),
-            _TrackCellActionBar(
-              canPaste: state.hasFullTrackClipboard,
-              onCopy: () =>
-                  state.copyTrackFullAllPatterns(_selectedFullTrackIndex!),
-              onCut: () =>
-                  state.cutTrackFullAllPatterns(_selectedFullTrackIndex!),
-              onPaste: () => _handleFullTrackPaste(
-                context,
-                state,
-                _selectedFullTrackIndex!,
-              ),
-              onDelete: () =>
-                  state.deleteTrackFullAllPatterns(_selectedFullTrackIndex!),
-              onClose: () => setState(() => _selectedFullTrackIndex = null),
-            ),
           ],
         ],
       ),
@@ -612,36 +528,6 @@ class _SongScreenState extends State<SongScreen> {
     );
   }
 
-  final GlobalKey _trackHeaderKey = GlobalKey();
-
-  /// Calculate which track index a given local X offset (relative to the
-  /// track-header Stack) maps to. Returns null if outside bounds.
-  int? _trackAtHeaderX(double x, double originX, double laneW, double laneGap) {
-    if (x < originX) return null;
-    final relX = x - originX;
-    final slotW = laneW + laneGap;
-    final t = (relX / slotW).toInt();
-    if (t < 0 || t >= kMaxTracks) return null;
-    // Check if x is actually within the lane (not in a gap)
-    final laneStart = t * slotW;
-    if (relX - laneStart > laneW) return null;
-    return t;
-  }
-
-  /// Converts a global drag position to the track index it lands on, using
-  /// the track-header's RenderBox to translate global -> local coordinates.
-  int? _trackAtGlobalPosition(
-    Offset globalPosition,
-    double originX,
-    double laneW,
-    double laneGap,
-  ) {
-    final renderObject = _trackHeaderKey.currentContext?.findRenderObject();
-    if (renderObject is! RenderBox || !renderObject.attached) return null;
-    final local = renderObject.globalToLocal(globalPosition);
-    return _trackAtHeaderX(local.dx, originX, laneW, laneGap);
-  }
-
   Widget _buildRightHeader(AppState state) {
     const laneGap = 1.0;
     const originX = 4.0;
@@ -653,7 +539,6 @@ class _SongScreenState extends State<SongScreen> {
           final laneAreaW = constraints.maxWidth - originX * 2;
           final laneW = (laneAreaW - (kMaxTracks - 1) * laneGap) / kMaxTracks;
           return Stack(
-            key: _trackHeaderKey,
             children: [
               // Draw divider lines between lanes
               for (int t = 1; t < kMaxTracks; t++)
@@ -675,47 +560,6 @@ class _SongScreenState extends State<SongScreen> {
                     color: Colors.transparent,
                     child: GestureDetector(
                       onTap: () => state.toggleTrackMixerSolo(t),
-                      onLongPressStart: (_) {
-                        state.copyTrackFullAllPatterns(t);
-                        setState(() {
-                          _clearEditSelections();
-                          _draggingFullTrackIndex = t;
-                          _selectedFullTrackIndex = t;
-                          _dragTargetFullTrackIndex = t;
-                        });
-                      },
-                      onLongPressMoveUpdate: (details) {
-                        final hit = _trackAtGlobalPosition(
-                          details.globalPosition,
-                          originX,
-                          laneW,
-                          laneGap,
-                        );
-                        if (hit != _dragTargetFullTrackIndex) {
-                          setState(() => _dragTargetFullTrackIndex = hit);
-                        }
-                      },
-                      onLongPressEnd: (details) {
-                        final source = _draggingFullTrackIndex;
-                        final target = _dragTargetFullTrackIndex;
-                        setState(() {
-                          _draggingFullTrackIndex = null;
-                          _dragTargetFullTrackIndex = null;
-                        });
-                        if (source != null &&
-                            target != null &&
-                            source != target) {
-                          _handleFullTrackPaste(context, state, target);
-                          // Select the new location
-                          setState(() => _selectedFullTrackIndex = target);
-                        }
-                      },
-                      onLongPressCancel: () {
-                        setState(() {
-                          _draggingFullTrackIndex = null;
-                          _dragTargetFullTrackIndex = null;
-                        });
-                      },
                       child: Container(
                         alignment: Alignment.center,
                         decoration: BoxDecoration(
@@ -727,9 +571,6 @@ class _SongScreenState extends State<SongScreen> {
                                 : kColInactive.withAlpha(60),
                             width: 0.5,
                           ),
-                          color: _dragTargetFullTrackIndex == t
-                              ? const Color(0xFF44FF88).withAlpha(100)
-                              : null,
                         ),
                         child: Text(
                           t < state.currentPattern.tracks.length &&
@@ -1495,8 +1336,10 @@ class _SongScreenState extends State<SongScreen> {
                 _selectedTimelineCell = hit;
                 _dragTargetTimelineCell = null; // Start fresh, no drag yet
               });
-              // Copy to clipboard on longpress start
-              state.copyTrackFull(hit.patternIndex, hit.trackIndex);
+              // NOTE: the shared row clipboard is only touched by the
+              // explicit COPY/CUT action-bar buttons. Auto-copying here on
+              // every long-press would clobber whatever the user had
+              // already staged as soon as they long-press a paste target.
             }
           },
           onLongPressMoveUpdate: (details) {
@@ -1547,8 +1390,6 @@ class _SongScreenState extends State<SongScreen> {
               selectedTrackIndex: _selectedTimelineCell?.trackIndex,
               dragTargetPatternIndex: _dragTargetTimelineCell?.patternIndex,
               dragTargetTrackIndex: _dragTargetTimelineCell?.trackIndex,
-              selectedFullTrackIndex: _selectedFullTrackIndex,
-              dragTargetFullTrackIndex: _dragTargetFullTrackIndex,
               editSelectedPatternRow: _selectedPatternIndex,
               dragSourcePatternRow: _draggedPatternIndex,
               dragTargetPatternRow: _dragTargetPatternIndex,
@@ -1728,8 +1569,6 @@ class _SongTimelinePainter extends CustomPainter {
   final int? selectedTrackIndex;
   final int? dragTargetPatternIndex;
   final int? dragTargetTrackIndex;
-  final int? selectedFullTrackIndex;
-  final int? dragTargetFullTrackIndex;
   final int? editSelectedPatternRow;
   final int? dragSourcePatternRow;
   final int? dragTargetPatternRow;
@@ -1743,8 +1582,6 @@ class _SongTimelinePainter extends CustomPainter {
     this.selectedTrackIndex,
     this.dragTargetPatternIndex,
     this.dragTargetTrackIndex,
-    this.selectedFullTrackIndex,
-    this.dragTargetFullTrackIndex,
     this.editSelectedPatternRow,
     this.dragSourcePatternRow,
     this.dragTargetPatternRow,
@@ -1872,48 +1709,6 @@ class _SongTimelinePainter extends CustomPainter {
       }
     }
 
-    // Full-track selection (entire column highlighted).
-    if (selectedFullTrackIndex != null && patterns.isNotEmpty) {
-      final t = selectedFullTrackIndex!;
-      final lx = originX + t * (laneW + _laneGap);
-      final totalHeight = patterns.length * slotPitch;
-      canvas.drawRect(
-        Rect.fromLTWH(lx, 0, laneW, totalHeight),
-        Paint()
-          ..color = const Color(0xFF44FF88).withAlpha(40)
-          ..style = PaintingStyle.fill,
-      );
-      canvas.drawRect(
-        Rect.fromLTWH(lx, 0, laneW, totalHeight),
-        Paint()
-          ..color = const Color(0xFF44FF88)
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = 2.5,
-      );
-    }
-
-    // Full-track drag target (entire column highlighted while dragging over it).
-    if (dragTargetFullTrackIndex != null &&
-        dragTargetFullTrackIndex != selectedFullTrackIndex &&
-        patterns.isNotEmpty) {
-      final t = dragTargetFullTrackIndex!;
-      final lx = originX + t * (laneW + _laneGap);
-      final totalHeight = patterns.length * slotPitch;
-      canvas.drawRect(
-        Rect.fromLTWH(lx, 0, laneW, totalHeight),
-        Paint()
-          ..color = const Color(0xFFFFCC44).withAlpha(50)
-          ..style = PaintingStyle.fill,
-      );
-      canvas.drawRect(
-        Rect.fromLTWH(lx, 0, laneW, totalHeight),
-        Paint()
-          ..color = const Color(0xFFFFCC44)
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = 2.5,
-      );
-    }
-
     // Whole-row highlight for the pattern row that's long-press edit-selected
     // (or being dragged), so the selection/preview spans the full width —
     // not just the slot-number square in the left column — for a single,
@@ -2039,8 +1834,6 @@ class _SongTimelinePainter extends CustomPainter {
       old.selectedTrackIndex != selectedTrackIndex ||
       old.dragTargetPatternIndex != dragTargetPatternIndex ||
       old.dragTargetTrackIndex != dragTargetTrackIndex ||
-      old.selectedFullTrackIndex != selectedFullTrackIndex ||
-      old.dragTargetFullTrackIndex != dragTargetFullTrackIndex ||
       old.editSelectedPatternRow != editSelectedPatternRow ||
       old.dragSourcePatternRow != dragSourcePatternRow ||
       old.dragTargetPatternRow != dragTargetPatternRow;

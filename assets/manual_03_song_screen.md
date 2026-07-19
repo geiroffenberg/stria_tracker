@@ -48,11 +48,7 @@ The clipboard is **shared** with the pattern-view row clipboard, so you can copy
 
 Long-pressing another cell while one is already selected simply **replaces the selection** — there is no forced paste.
 
-## Moving Whole Tracks (Long-Press + Drag)
-
-Long-press a **track number** in the timeline header, then drag left/right and release over another track to move the entire track there (all patterns).
-
-Moving a track this way moves its **mixer channel with it** — volume, pan, mute/solo, send routing, and its insert FX rack all follow, since the mixer channel is linked to the track, not to a fixed position.
+Track numbers (1–16) are fixed and cannot be reordered — tapping a track number toggles solo for that channel instead.
 
 ## Undo / Redo
 
