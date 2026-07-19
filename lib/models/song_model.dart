@@ -42,12 +42,6 @@ class SongModel {
     return PatternModel(name: 'PAT ${num.toString().padLeft(2, '0')}');
   }
 
-  /// Append a new empty pattern. Returns its index.
-  int addPattern() {
-    patterns.add(createEmptyPattern());
-    return patterns.length - 1;
-  }
-
   /// Insert a deep copy of [source] at [destIndex].
   void insertCopyAt(int sourceIndex, int destIndex) {
     if (sourceIndex < 0 || sourceIndex >= patterns.length) return;

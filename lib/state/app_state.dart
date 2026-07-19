@@ -896,8 +896,9 @@ class AppState extends ChangeNotifier {
         startRow: playheadRow,
         endRow: _playbackEndRow,
       );
-      if (isPlaying && !_playbackFollowsSong)
+      if (isPlaying && !_playbackFollowsSong) {
         await AudioEngine.instance.start();
+      }
     } finally {
       _liveRebuildInFlight = false;
     }
@@ -2078,8 +2079,9 @@ class AppState extends ChangeNotifier {
   /// Cycles: default (vol=null) → accent (vol=99) → half (vol=50) → default
   void cycleDrumVelocity(int row, int trackIndex) {
     if (trackIndex < 0 || trackIndex >= currentPattern.tracks.length) return;
-    if (row < 0 || row >= currentPattern.tracks[trackIndex].cells.length)
+    if (row < 0 || row >= currentPattern.tracks[trackIndex].cells.length) {
       return;
+    }
     _pushPatternUndo('drum velocity');
     final cell = currentPattern.tracks[trackIndex].cells[row];
     final nextVelocity = switch (cell.drumVelocity) {
@@ -2716,8 +2718,9 @@ class AppState extends ChangeNotifier {
     _pushSongUndo('swap full tracks');
     for (final pattern in song.patterns) {
       if (srcTrack >= pattern.tracks.length ||
-          dstTrack >= pattern.tracks.length)
+          dstTrack >= pattern.tracks.length) {
         continue;
+      }
       final srcT = pattern.tracks[srcTrack];
       final dstT = pattern.tracks[dstTrack];
       final srcCells = srcT.cells;
@@ -3040,8 +3043,9 @@ class AppState extends ChangeNotifier {
     if (clipboard == null ||
         clipboard.isEmpty ||
         columns == null ||
-        columns.isEmpty)
+        columns.isEmpty) {
       return;
+    }
     if (targetRow < 0 || targetRow >= rowCount) return;
     _pushPatternUndo('paste selection');
     final track = currentTrack;
@@ -3114,45 +3118,6 @@ class AppState extends ChangeNotifier {
   }
 
   // ── Song pattern management ──────────────────────────────────────────────
-
-  /// Append a new empty pattern to the end of the song.
-  void appendNewPattern() {
-    if (song.patterns.length >= kMaxSongPatterns) return;
-    _pushSongUndo('add pattern');
-    final idx = song.addPattern();
-    _copyProjectMixerStateToPattern(song.patterns[idx]);
-    _copyProjectSendRoutingToPattern(song.patterns[idx]);
-    notifyListeners();
-  }
-
-  /// Insert a new empty pattern at [index] (0-based).
-  void insertNewPatternAt(int index) {
-    if (song.patterns.length >= kMaxSongPatterns) return;
-    _pushSongUndo('insert pattern');
-    final clamped = index.clamp(0, song.patterns.length);
-    final pattern = song.createEmptyPattern();
-    _copyProjectMixerStateToPattern(pattern);
-    _copyProjectSendRoutingToPattern(pattern);
-    song.patterns.insert(clamped, pattern);
-    notifyListeners();
-  }
-
-  /// Move a pattern from [from] to [to] (insert-before semantics).
-  void movePattern(int from, int to) {
-    if (from == to) return;
-    if (from < 0 || from >= song.patterns.length) return;
-    _pushSongUndo('move pattern');
-    final dest = to.clamp(0, song.patterns.length - 1);
-    final pat = song.patterns.removeAt(from);
-    // After removing [from], indices above it shift down by one.
-    // To keep "insert before drop target" behavior, adjust when moving down.
-    final insertAt = dest > from ? dest - 1 : dest;
-    song.patterns.insert(insertAt, pat);
-    // Keep editor focused on the moved pattern.
-    _currentPatternIndex = insertAt.clamp(0, song.patterns.length - 1);
-    _currentArrangementSlotIndex = _currentPatternIndex;
-    notifyListeners();
-  }
 
   /// Insert a deep copy of pattern [sourceIndex] at position [destIndex].
   void copyPatternInsertAt(int sourceIndex, int destIndex) {
@@ -3235,23 +3200,41 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Fill the patterns list with empty patterns, if needed, so that a real
+  /// pattern object exists at [index]. Every one of the 99 song slots is
+  /// always "active" (empty or with data) — this just backs that slot with
+  /// a real list entry so it can be read, written, or swapped like any
+  /// other. It never changes selection/playhead state.
+  void _ensurePatternSlot(int index) {
+    while (song.patterns.length <= index) {
+      final pattern = song.createEmptyPattern();
+      _copyProjectMixerStateToPattern(pattern);
+      _copyProjectSendRoutingToPattern(pattern);
+      song.patterns.add(pattern);
+    }
+  }
+
   void movePatternUp(int index) {
-    if (index <= 0 || index >= song.patterns.length) return;
-    _pushSongUndo('move up');
-    final pat = song.patterns.removeAt(index);
+    if (index <= 0 || index >= kMaxSongPatterns) return;
     final newIndex = index - 1;
-    song.patterns.insert(newIndex, pat);
+    _ensurePatternSlot(index);
+    _pushSongUndo('move up');
+    final temp = song.patterns[newIndex];
+    song.patterns[newIndex] = song.patterns[index];
+    song.patterns[index] = temp;
     _currentPatternIndex = newIndex;
     _currentArrangementSlotIndex = newIndex;
     notifyListeners();
   }
 
   void movePatternDown(int index) {
-    if (index < 0 || index >= song.patterns.length - 1) return;
-    _pushSongUndo('move down');
-    final pat = song.patterns.removeAt(index);
+    if (index < 0 || index >= kMaxSongPatterns - 1) return;
     final newIndex = index + 1;
-    song.patterns.insert(newIndex, pat);
+    _ensurePatternSlot(newIndex);
+    _pushSongUndo('move down');
+    final temp = song.patterns[newIndex];
+    song.patterns[newIndex] = song.patterns[index];
+    song.patterns[index] = temp;
     _currentPatternIndex = newIndex;
     _currentArrangementSlotIndex = newIndex;
     notifyListeners();
@@ -3269,13 +3252,7 @@ class AppState extends ChangeNotifier {
     _pushSongUndo('move pattern to slot');
 
     // Ensure target slot exists
-    while (song.patterns.length <= targetIndex) {
-      if (song.patterns.length >= kMaxSongPatterns) return;
-      final pattern = song.createEmptyPattern();
-      _copyProjectMixerStateToPattern(pattern);
-      _copyProjectSendRoutingToPattern(pattern);
-      song.patterns.add(pattern);
-    }
+    _ensurePatternSlot(targetIndex);
 
     // Remove source pattern
     final pat = song.patterns.removeAt(sourceIndex);
@@ -3295,41 +3272,27 @@ class AppState extends ChangeNotifier {
   /// creation of new pattern identities.
   void swapPatterns(int index1, int index2) {
     if (index1 == index2) return;
-    if (index1 < 0 || index1 >= song.patterns.length) return;
-    if (index2 < 0 || index2 >= song.patterns.length) return;
+    if (index1 < 0 || index1 >= kMaxSongPatterns) return;
+    if (index2 < 0 || index2 >= kMaxSongPatterns) return;
+    _ensurePatternSlot(index1 > index2 ? index1 : index2);
     _pushSongUndo('swap patterns');
-
-    print(
-      '🔄 SWAP: index1=$index1 (${song.patterns[index1].name}) ↔ index2=$index2 (${song.patterns[index2].name})',
-    );
 
     final temp = song.patterns[index1];
     song.patterns[index1] = song.patterns[index2];
     song.patterns[index2] = temp;
-
-    print(
-      '✅ AFTER SWAP: index1=$index1 now has ${song.patterns[index1].name}, index2=$index2 now has ${song.patterns[index2].name}',
-    );
 
     _currentPatternIndex = index2;
     _currentArrangementSlotIndex = index2;
     notifyListeners();
   }
 
-  /// Ensure a real pattern exists at [index], filling any gap with empty
-  /// patterns. Used to "park" a new pattern below the song boundary.
+  /// Focus pattern slot [index], backing it with a real (empty) pattern
+  /// object first if it hasn't been touched yet. Every one of the 99 song
+  /// slots is always either empty or has data — there is no separate
+  /// "create" action for the user; this just lazily backs the slot.
   void createPatternAt(int index) {
     if (index < 0 || index >= kMaxSongPatterns) return;
-    // Fill gap with empty patterns up to and including [index].
-    while (song.patterns.length <= index) {
-      if (song.patterns.length >= kMaxSongPatterns) return;
-      final pattern = song.createEmptyPattern();
-      _copyProjectMixerStateToPattern(pattern);
-      _copyProjectSendRoutingToPattern(pattern);
-      song.patterns.add(pattern);
-    }
-    // The slot at [index] is now an existing empty pattern — leave it as the
-    // newly "created" pattern (it's already blank and editable).
+    _ensurePatternSlot(index);
     _currentPatternIndex = index;
     _currentArrangementSlotIndex = index;
     notifyListeners();

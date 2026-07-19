@@ -219,16 +219,6 @@ class _SongScreenState extends State<SongScreen> {
     );
   }
 
-  void _newAfterSelectedPattern(AppState state, int patternIndex) {
-    state.insertNewPatternAt(patternIndex + 1);
-    setState(
-      () => _selectedPatternIndex = (patternIndex + 1).clamp(
-        0,
-        state.song.patterns.length - 1,
-      ),
-    );
-  }
-
   void _deleteSelectedPattern(AppState state, int patternIndex) {
     // Clears the pattern's data in place — the slot stays, just empty.
     state.removePattern(patternIndex);
@@ -552,8 +542,7 @@ class _SongScreenState extends State<SongScreen> {
             const Divider(height: 1, thickness: 1, color: Color(0xFF226666)),
             _SongPatternActionBar(
               canMoveUp: selectedPatternIndex > 0,
-              canMoveDown:
-                  selectedPatternIndex < state.song.patterns.length - 1,
+              canMoveDown: selectedPatternIndex < kMaxSongPatterns - 1,
               canDouble: state.canDoublePattern(selectedPatternIndex),
               canMerge: state.canMergePatternWithNext(selectedPatternIndex),
               canDelete: !state.song.patterns[selectedPatternIndex].isEmpty,
@@ -565,8 +554,6 @@ class _SongScreenState extends State<SongScreen> {
               onDouble: () =>
                   _doubleSelectedPattern(state, selectedPatternIndex),
               onMerge: () => _mergeSelectedPattern(state, selectedPatternIndex),
-              onNewAfter: () =>
-                  _newAfterSelectedPattern(state, selectedPatternIndex),
               onDelete: () =>
                   _deleteSelectedPattern(state, selectedPatternIndex),
               onClose: () => setState(() => _selectedPatternIndex = null),
@@ -2107,7 +2094,6 @@ class _SongPatternActionBar extends StatelessWidget {
   final VoidCallback onCopy;
   final VoidCallback onDouble;
   final VoidCallback onMerge;
-  final VoidCallback onNewAfter;
   final VoidCallback onDelete;
   final VoidCallback onClose;
 
@@ -2122,7 +2108,6 @@ class _SongPatternActionBar extends StatelessWidget {
     required this.onCopy,
     required this.onDouble,
     required this.onMerge,
-    required this.onNewAfter,
     required this.onDelete,
     required this.onClose,
   });
@@ -2141,7 +2126,6 @@ class _SongPatternActionBar extends StatelessWidget {
           _SongActionBtn(label: 'COPY', onTap: onCopy),
           _SongActionBtn(label: '2X', onTap: onDouble, enabled: canDouble),
           _SongActionBtn(label: 'MERGE', onTap: onMerge, enabled: canMerge),
-          _SongActionBtn(label: 'NEW', onTap: onNewAfter),
           const Spacer(),
           _SongActionBtn(
             label: 'DEL',
