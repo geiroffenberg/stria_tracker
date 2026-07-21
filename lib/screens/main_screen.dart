@@ -19,7 +19,7 @@ class MainScreen extends StatefulWidget {
 }
 
 class _MainScreenState extends State<MainScreen> {
-  int _tabIndex = 1; // start on Pattern view
+  int _tabIndex = 0; // start on Song view
 
   static const _tabs = ['SONG', 'PATTERN', 'INST', 'MIXER'];
   static const _kHideBetaWelcome = 'hideBetaWelcome';
@@ -143,37 +143,28 @@ class _MainScreenState extends State<MainScreen> {
       valueListenable: paletteNotifier,
       builder: (_, _, _) => Scaffold(
         backgroundColor: kBgColor,
-        body: NotificationListener<OpenPatternTrackNotification>(
-          onNotification: (notification) {
-            if (_tabIndex != 1) {
-              setState(() => _tabIndex = 1);
-            }
-            AppStateScope.of(context).setActiveTabIndex(1);
-            return true;
-          },
-          child: SafeArea(
-            child: Column(
-              children: [
-                _buildTopNav(),
-                Expanded(
-                  child: IndexedStack(
-                    index: _tabIndex,
-                    children: [
-                      SongScreen(),
-                      PatternScreen(),
-                      InstrumentScreen(),
-                      MixerScreen(),
-                    ],
-                  ),
+        body: SafeArea(
+          child: Column(
+            children: [
+              _buildTopNav(),
+              Expanded(
+                child: IndexedStack(
+                  index: _tabIndex,
+                  children: [
+                    SongScreen(),
+                    PatternScreen(),
+                    InstrumentScreen(),
+                    MixerScreen(),
+                  ],
                 ),
-                const Divider(
-                  height: 1,
-                  thickness: 1,
-                  color: Color(0xFF226666),
-                ),
-                TransportBar(),
-              ],
-            ),
+              ),
+              const Divider(
+                height: 1,
+                thickness: 1,
+                color: Color(0xFF226666),
+              ),
+              TransportBar(),
+            ],
           ),
         ),
       ),
@@ -233,6 +224,17 @@ class _MainScreenState extends State<MainScreen> {
           return Expanded(
             child: GestureDetector(
               onTap: () {
+                // Tapping the PATTERN tab uses the song-view timeline
+                // selection anchor to decide which pattern + track to focus
+                // on. Without an anchor, fall back to whatever pattern/track
+                // are already current — no navigation surprises.
+                if (i == 1) {
+                  final anchor = state.songTimelineSelectionAnchor;
+                  if (anchor != null) {
+                    state.selectSongPattern(anchor.patternIndex);
+                    state.selectTrack(anchor.trackIndex);
+                  }
+                }
                 if (i == 2) _autoSelectInstrument(state);
                 setState(() => _tabIndex = i);
                 state.setActiveTabIndex(i);

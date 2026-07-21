@@ -11,10 +11,6 @@ import '../models/track_model.dart';
 import '../state/app_state.dart';
 import '../theme/app_theme.dart';
 
-class OpenPatternTrackNotification extends Notification {
-  OpenPatternTrackNotification();
-}
-
 enum _SongMenuAction {
   newSong,
   saveSong,
@@ -53,22 +49,60 @@ class _SongScreenState extends State<SongScreen> {
   bool _syncing = false;
   bool _editingName = false;
   bool _saveAfterRename = false;
-  int? _selectedPatternIndex;
-  int? _draggedPatternIndex; // Source pattern during pattern slot drag
-  int? _dragTargetPatternIndex; // Target pattern slot during drag
-  ({int patternIndex, int trackIndex})? _selectedTimelineCell;
+
+  // ── Timeline (track-cell) selection ────────────────────────────────────
+  // The selection is a rectangle from [_selectionAnchor] to [_selectionEnd].
+  // A single-cell selection has anchor == end.
+  //
+  // Gestures:
+  //   • TAP on a cell (no selection or otherwise): collapses to a fresh
+  //     single-cell selection at that cell. Replaces any prior range.
+  //   • Long-press when nothing is selected: sets anchor = end = hit cell.
+  //     A drag within that same long-press acts as the classic single-cell
+  //     "drag-to-move" (with the Overwrite / Swap dialog when the target
+  //     already has data).
+  //   • Long-press while a selection already exists (single or range):
+  //     EXTENDS the selection so it spans the anchor and the newly pressed
+  //     cell. A drag within this second long-press keeps updating the end
+  //     corner. No drag-to-move in this case.
+  //   • Any action button (CUT / COPY / PASTE / DEL / ✕) clears the
+  //     selection so the very next tap/long-press starts fresh.
+  ({int patternIndex, int trackIndex})? _selectionAnchor;
+  ({int patternIndex, int trackIndex})? _selectionEnd;
+  // Drag-to-move destination while a *fresh* long-press is in progress.
+  // Only used when the current gesture is NOT extending an existing range.
   ({int patternIndex, int trackIndex})? _dragTargetTimelineCell;
+  // True for the duration of a long-press that is extending an existing
+  // range (i.e. a second/third/... press while a selection is already up).
+  bool _gestureExtendsRange = false;
 
   static const double kSlotSize = 64.0;
   static const double kSlotGap = 6.0;
 
-  /// Clears every edit-selection (pattern row / timeline cell) so only one
-  /// selection — and one action bar — is ever visible at once.
-  /// This does NOT touch the playhead (current-playing-pattern indicator),
-  /// which is a completely separate concept tracked by [AppState].
-  void _clearEditSelections() {
-    _selectedPatternIndex = null;
-    _selectedTimelineCell = null;
+  bool get _hasTimelineSelection => _selectionAnchor != null;
+
+  /// Normalized top-left / bottom-right of the current selection (or null).
+  ({int pTop, int tLeft, int pBottom, int tRight})? get _selectionRect {
+    final a = _selectionAnchor;
+    final e = _selectionEnd;
+    if (a == null || e == null) return null;
+    final pTop = a.patternIndex < e.patternIndex
+        ? a.patternIndex
+        : e.patternIndex;
+    final pBottom = a.patternIndex < e.patternIndex
+        ? e.patternIndex
+        : a.patternIndex;
+    final tLeft = a.trackIndex < e.trackIndex ? a.trackIndex : e.trackIndex;
+    final tRight = a.trackIndex < e.trackIndex ? e.trackIndex : a.trackIndex;
+    return (pTop: pTop, tLeft: tLeft, pBottom: pBottom, tRight: tRight);
+  }
+
+  void _clearTimelineSelection(AppState state) {
+    _selectionAnchor = null;
+    _selectionEnd = null;
+    _dragTargetTimelineCell = null;
+    _gestureExtendsRange = false;
+    state.clearSongTimelineSelectionAnchor();
   }
 
   void _handleSlotTap(AppState state, int patternIndex) {
@@ -77,9 +111,9 @@ class _SongScreenState extends State<SongScreen> {
     if (patternIndex >= state.song.patterns.length) {
       state.createPatternAt(patternIndex);
     }
-    // A plain tap is playhead-only — it must never leave an edit selection
-    // (and its action bar) open behind it.
-    setState(_clearEditSelections);
+    // A plain slot tap is playhead-only — it must never leave a timeline
+    // selection (and its action bar) open behind it.
+    setState(() => _clearTimelineSelection(state));
     if (state.isPlaying && state.playbackFollowsSong) {
       state.queueSongPatternJump(patternIndex);
       // Local repaint only: avoids whole-app rebuild jitter during playback.
@@ -89,130 +123,12 @@ class _SongScreenState extends State<SongScreen> {
     state.selectSongPattern(patternIndex);
   }
 
-  void _handleSlotLongPress(AppState state, int patternIndex) {
-    if (patternIndex >= state.song.patterns.length) {
-      state.createPatternAt(patternIndex);
-    }
-    if (!(state.isPlaying && state.playbackFollowsSong)) {
-      state.selectSongPattern(patternIndex);
-    }
-    setState(() {
-      _clearEditSelections();
-      _selectedPatternIndex = patternIndex;
-      _draggedPatternIndex = patternIndex;
-      _dragTargetPatternIndex = null;
-    });
-  }
-
   int _hitTestPatternSlot(Offset localPosition, double slotPitch) {
     // Calculate which slot is being hovered
     final scrollOffset = _slotsCtrl.offset;
     final relativeY = localPosition.dy + scrollOffset;
     final slotIndex = (relativeY / slotPitch).floor();
     return slotIndex.clamp(0, kMaxSongPatterns - 1);
-  }
-
-  void _handlePatternSlotDragDrop(
-    BuildContext context,
-    AppState state,
-    int sourceIndex,
-    int targetIndex,
-  ) {
-    if (sourceIndex == targetIndex) return;
-
-    // Drag-drop always offers the same two choices — Move or Swap — no
-    // matter whether the source/target rows are empty or have data.
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: kBgColor,
-        title: Text(
-          'Move pattern ${sourceIndex + 1}',
-          style: kStyleLabel.copyWith(color: kColAccent),
-        ),
-        content: Text(
-          'Move it to slot ${targetIndex + 1}, or swap it with the pattern there.',
-          style: kStyleBase.copyWith(color: kColHeader),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: Text(
-              'Cancel',
-              style: kStyleBase.copyWith(color: kColInactive),
-            ),
-          ),
-          TextButton(
-            onPressed: () {
-              Navigator.pop(ctx);
-              state.swapPatterns(sourceIndex, targetIndex);
-              setState(() => _selectedPatternIndex = targetIndex);
-            },
-            child: Text(
-              'Swap',
-              style: kStyleBase.copyWith(color: kColSelection),
-            ),
-          ),
-          TextButton(
-            onPressed: () {
-              Navigator.pop(ctx);
-              state.movePatternTo(sourceIndex, targetIndex);
-              setState(() => _selectedPatternIndex = targetIndex);
-            },
-            child: Text('Move', style: kStyleBase.copyWith(color: kColActive)),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _moveSelectedPatternUp(AppState state, int patternIndex) {
-    state.movePatternUp(patternIndex);
-    setState(
-      () => _selectedPatternIndex = patternIndex > 0 ? patternIndex - 1 : 0,
-    );
-  }
-
-  void _moveSelectedPatternDown(AppState state, int patternIndex) {
-    state.movePatternDown(patternIndex);
-    setState(
-      () => _selectedPatternIndex = (patternIndex + 1).clamp(
-        0,
-        state.song.patterns.length - 1,
-      ),
-    );
-  }
-
-  void _copySelectedPattern(AppState state, int patternIndex) {
-    state.duplicatePattern(patternIndex);
-    setState(
-      () => _selectedPatternIndex = (patternIndex + 1).clamp(
-        0,
-        state.song.patterns.length - 1,
-      ),
-    );
-  }
-
-  void _mergeSelectedPattern(AppState state, int patternIndex) {
-    if (!state.canMergePatternWithNext(patternIndex)) return;
-    state.mergePatternWithNext(patternIndex);
-    setState(
-      () => _selectedPatternIndex = patternIndex.clamp(
-        0,
-        state.song.patterns.length - 1,
-      ),
-    );
-  }
-
-  void _deleteSelectedPattern(AppState state, int patternIndex) {
-    // Clears the pattern's data in place — the slot stays, just empty.
-    state.removePattern(patternIndex);
-    setState(
-      () => _selectedPatternIndex = patternIndex.clamp(
-        0,
-        state.song.patterns.length - 1,
-      ),
-    );
   }
 
   void _handleTrackDragDrop(
@@ -288,6 +204,101 @@ class _SongScreenState extends State<SongScreen> {
     }
   }
 
+  // ── Range action-bar handlers ─────────────────────────────────────────────
+
+  void _copyTimelineSelection(AppState state) {
+    final r = _selectionRect;
+    if (r == null) return;
+    state.copyTrackRange(r.pTop, r.tLeft, r.pBottom, r.tRight);
+    // Clear selection so the very next tap/long-press starts fresh at the
+    // paste target — no accidental range-extension into the source area.
+    setState(() => _clearTimelineSelection(state));
+  }
+
+  void _cutTimelineSelection(AppState state) {
+    final r = _selectionRect;
+    if (r == null) return;
+    state.cutTrackRange(r.pTop, r.tLeft, r.pBottom, r.tRight);
+    setState(() => _clearTimelineSelection(state));
+  }
+
+  void _deleteTimelineSelection(AppState state) {
+    final r = _selectionRect;
+    if (r == null) return;
+    state.deleteTrackRange(r.pTop, r.tLeft, r.pBottom, r.tRight);
+    setState(() => _clearTimelineSelection(state));
+  }
+
+  void _pasteTimelineSelection(BuildContext context, AppState state) {
+    final r = _selectionRect;
+    if (r == null) return;
+    if (!state.hasTrackRangeClipboard) return;
+
+    final ph = state.trackRangeClipboardPatternCount;
+    final tw = state.trackRangeClipboardTrackCount;
+    // Paste anchor is the top-left of the current selection; the target
+    // rectangle takes the clipboard's own dimensions, so a bigger selection
+    // rectangle acts as a "hint" of where to start rather than sizing the
+    // paste itself.
+    final anchorP = r.pTop;
+    final anchorT = r.tLeft;
+
+    final targetHasData = !state.isTrackRangeEmpty(anchorP, anchorT, ph, tw);
+    if (!targetHasData) {
+      state.pasteTrackRange(anchorP, anchorT);
+      setState(() => _clearTimelineSelection(state));
+      return;
+    }
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: kBgColor,
+        title: Text(
+          'Target range has data',
+          style: kStyleLabel.copyWith(color: kColAccent),
+        ),
+        content: Text(
+          ph == 1 && tw == 1
+              ? 'The target cell already has data.'
+              : 'One or more of the target cells already have data.',
+          style: kStyleBase.copyWith(color: kColHeader),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text(
+              'Cancel',
+              style: kStyleBase.copyWith(color: kColInactive),
+            ),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              state.pasteTrackRange(anchorP, anchorT);
+              setState(() => _clearTimelineSelection(state));
+            },
+            child: Text(
+              'Overwrite',
+              style: kStyleBase.copyWith(color: kColActive),
+            ),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              state.pasteTrackRangeSwap(anchorP, anchorT);
+              setState(() => _clearTimelineSelection(state));
+            },
+            child: Text(
+              'Swap',
+              style: kStyleBase.copyWith(color: kColSelection),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   void initState() {
     super.initState();
@@ -321,11 +332,6 @@ class _SongScreenState extends State<SongScreen> {
   Widget build(BuildContext context) {
     final state = AppStateScope.of(context);
     final slotPitch = kSlotSize + kSlotGap;
-    final selectedPatternIndex =
-        _selectedPatternIndex != null &&
-            _selectedPatternIndex! < state.song.patterns.length
-        ? _selectedPatternIndex
-        : null;
     final pendingSlot = state.queuedArrangementSlot;
     final shouldBlink =
         state.isPlaying &&
@@ -354,54 +360,15 @@ class _SongScreenState extends State<SongScreen> {
                         child: GestureDetector(
                           behavior: HitTestBehavior.opaque,
                           onTapDown: (details) {
-                            // Tap on specific position to hit-test exact slot
+                            // Tap on specific position to hit-test exact slot.
+                            // Row numbers are tap-only — long-press has no
+                            // action here anymore; all track-editing gestures
+                            // happen inside the timeline on the right.
                             final slotIndex = _hitTestPatternSlot(
                               details.localPosition,
                               slotPitch,
                             );
                             _handleSlotTap(state, slotIndex);
-                          },
-                          onLongPressStart: (details) {
-                            final slotIndex = _hitTestPatternSlot(
-                              details.localPosition,
-                              slotPitch,
-                            );
-                            _handleSlotLongPress(state, slotIndex);
-                          },
-                          onLongPressMoveUpdate: (details) {
-                            if (_draggedPatternIndex == null) return;
-                            final slotIndex = _hitTestPatternSlot(
-                              details.localPosition,
-                              slotPitch,
-                            );
-                            if (slotIndex != _dragTargetPatternIndex) {
-                              setState(
-                                () => _dragTargetPatternIndex = slotIndex,
-                              );
-                            }
-                          },
-                          onLongPressEnd: (details) {
-                            if (_draggedPatternIndex != null &&
-                                _dragTargetPatternIndex != null &&
-                                _dragTargetPatternIndex !=
-                                    _draggedPatternIndex) {
-                              _handlePatternSlotDragDrop(
-                                context,
-                                state,
-                                _draggedPatternIndex!,
-                                _dragTargetPatternIndex!,
-                              );
-                            }
-                            setState(() {
-                              _draggedPatternIndex = null;
-                              _dragTargetPatternIndex = null;
-                            });
-                          },
-                          onLongPressCancel: () {
-                            setState(() {
-                              _draggedPatternIndex = null;
-                              _dragTargetPatternIndex = null;
-                            });
                           },
                           child: ListView.builder(
                             controller: _slotsCtrl,
@@ -418,17 +385,12 @@ class _SongScreenState extends State<SongScreen> {
                               return _PatternSlot(
                                 patternIndex: i,
                                 isCurrent:
-                                    selectedPatternIndex == null &&
                                     i ==
-                                        (state.isPlaying
-                                            ? state.playheadArrangementSlot
-                                            : state
-                                                  .currentArrangementSlotIndex),
+                                    (state.isPlaying
+                                        ? state.playheadArrangementSlot
+                                        : state.currentArrangementSlotIndex),
                                 isPending: shouldBlink && i == pendingSlot,
                                 pendingBlinkOn: pendingBlinkOn,
-                                isMenuSelected: selectedPatternIndex == i,
-                                isDragSource: _draggedPatternIndex == i,
-                                isDragTarget: _dragTargetPatternIndex == i,
                                 size: kSlotSize,
                                 gap: kSlotGap,
                               );
@@ -460,44 +422,15 @@ class _SongScreenState extends State<SongScreen> {
               ],
             ),
           ),
-          if (selectedPatternIndex != null) ...[
-            const Divider(height: 1, thickness: 1, color: Color(0xFF226666)),
-            _SongPatternActionBar(
-              canMoveUp: selectedPatternIndex > 0,
-              canMoveDown: selectedPatternIndex < kMaxSongPatterns - 1,
-              canMerge: state.canMergePatternWithNext(selectedPatternIndex),
-              canDelete: !state.song.patterns[selectedPatternIndex].isEmpty,
-              onMoveUp: () =>
-                  _moveSelectedPatternUp(state, selectedPatternIndex),
-              onMoveDown: () =>
-                  _moveSelectedPatternDown(state, selectedPatternIndex),
-              onCopy: () => _copySelectedPattern(state, selectedPatternIndex),
-              onMerge: () => _mergeSelectedPattern(state, selectedPatternIndex),
-              onDelete: () =>
-                  _deleteSelectedPattern(state, selectedPatternIndex),
-              onClose: () => setState(() => _selectedPatternIndex = null),
-            ),
-          ] else if (_selectedTimelineCell != null) ...[
+          if (_hasTimelineSelection) ...[
             const Divider(height: 1, thickness: 1, color: Color(0xFF226666)),
             _TrackCellActionBar(
-              canPaste: state.hasRowClipboard,
-              onCopy: () => state.copyTrackFull(
-                _selectedTimelineCell!.patternIndex,
-                _selectedTimelineCell!.trackIndex,
-              ),
-              onCut: () => state.cutTrackFull(
-                _selectedTimelineCell!.patternIndex,
-                _selectedTimelineCell!.trackIndex,
-              ),
-              onPaste: () => state.pasteTrackFull(
-                _selectedTimelineCell!.patternIndex,
-                _selectedTimelineCell!.trackIndex,
-              ),
-              onDelete: () => state.deleteTrackFull(
-                _selectedTimelineCell!.patternIndex,
-                _selectedTimelineCell!.trackIndex,
-              ),
-              onClose: () => setState(() => _selectedTimelineCell = null),
+              canPaste: state.hasTrackRangeClipboard,
+              onCopy: () => _copyTimelineSelection(state),
+              onCut: () => _cutTimelineSelection(state),
+              onPaste: () => _pasteTimelineSelection(context, state),
+              onDelete: () => _deleteTimelineSelection(state),
+              onClose: () => setState(() => _clearTimelineSelection(state)),
             ),
           ],
         ],
@@ -872,7 +805,7 @@ class _SongScreenState extends State<SongScreen> {
     if (!ctx.mounted) return;
     setState(() {
       _editingName = false;
-      _selectedPatternIndex = null;
+      _clearTimelineSelection(state);
     });
     ScaffoldMessenger.of(ctx).showSnackBar(
       SnackBar(
@@ -1299,8 +1232,7 @@ class _SongScreenState extends State<SongScreen> {
         return GestureDetector(
           behavior: HitTestBehavior.opaque,
           onTapUp: (details) {
-            _openPatternTrackFromTimelineTap(
-              context,
+            _handleTimelineTap(
               state,
               details.localPosition,
               width,
@@ -1314,19 +1246,38 @@ class _SongScreenState extends State<SongScreen> {
               width,
               slotPitch,
             );
-            // Drag-copy only makes sense for patterns that already exist —
-            // an empty/virtual slot has nothing to copy from.
-            if (hit != null && hit.patternIndex < state.song.patterns.length) {
-              setState(() {
-                _clearEditSelections();
-                _selectedTimelineCell = hit;
-                _dragTargetTimelineCell = null; // Start fresh, no drag yet
-              });
-              // NOTE: the shared row clipboard is only touched by the
-              // explicit COPY/CUT action-bar buttons. Auto-copying here on
-              // every long-press would clobber whatever the user had
-              // already staged as soon as they long-press a paste target.
+            if (hit == null) return;
+            // Empty/virtual slots don't have a real pattern yet — create
+            // one transparently first, same as tapping the slot number or
+            // the cell itself does. Without this, rows below the last real
+            // pattern could never be long-press-selected at all.
+            if (hit.patternIndex >= state.song.patterns.length) {
+              state.createPatternAt(hit.patternIndex);
             }
+            setState(() {
+              if (_selectionAnchor == null) {
+                // Fresh selection: single cell, drag-to-move is armed.
+                _selectionAnchor = hit;
+                _selectionEnd = hit;
+                _dragTargetTimelineCell = null;
+                _gestureExtendsRange = false;
+              } else {
+                // A selection already exists → this long-press EXTENDS it.
+                // Anchor stays put; end jumps to the newly-pressed cell so
+                // the rectangle spans both.
+                _selectionEnd = hit;
+                _dragTargetTimelineCell = null;
+                _gestureExtendsRange = true;
+              }
+            });
+            state.setSongTimelineSelectionAnchor(
+              hit.patternIndex,
+              hit.trackIndex,
+            );
+            // NOTE: the range clipboard is only touched by the explicit
+            // COPY / CUT action-bar buttons. Auto-copying here on every
+            // long-press would clobber whatever the user had already
+            // staged as soon as they long-press a paste target.
           },
           onLongPressMoveUpdate: (details) {
             final hit = _hitTestTimelineCell(
@@ -1335,33 +1286,57 @@ class _SongScreenState extends State<SongScreen> {
               width,
               slotPitch,
             );
-            if (hit != null && hit != _dragTargetTimelineCell) {
-              setState(() => _dragTargetTimelineCell = hit);
+            if (hit == null) return;
+            if (_gestureExtendsRange) {
+              // Drag inside an extending gesture keeps updating the range's
+              // end corner — same as the "long-press a second cell" flow.
+              if (hit != _selectionEnd) {
+                setState(() => _selectionEnd = hit);
+              }
+            } else {
+              // Fresh single-cell gesture → this is a drag-to-paste preview.
+              if (hit != _dragTargetTimelineCell) {
+                setState(() => _dragTargetTimelineCell = hit);
+              }
             }
           },
           onLongPressEnd: (details) {
-            // Only paste if drag target is different from selected source
-            if (_dragTargetTimelineCell != null &&
-                _dragTargetTimelineCell != _selectedTimelineCell) {
-              _handleTrackDragDrop(
-                context,
-                state,
-                _selectedTimelineCell!,
-                _dragTargetTimelineCell!,
-              );
-              // Select the new location
+            if (_gestureExtendsRange) {
               setState(() {
-                _selectedTimelineCell = _dragTargetTimelineCell;
+                _gestureExtendsRange = false;
                 _dragTargetTimelineCell = null;
               });
+              return;
+            }
+            // Fresh single-cell gesture: if the finger was dragged to a
+            // different cell, treat it as the classic drag-to-paste. The
+            // Overwrite / Swap dialog only fires when the drag target
+            // differs from the source.
+            if (_dragTargetTimelineCell != null &&
+                _selectionAnchor != null &&
+                _dragTargetTimelineCell != _selectionAnchor) {
+              final source = _selectionAnchor!;
+              final target = _dragTargetTimelineCell!;
+              _handleTrackDragDrop(context, state, source, target);
+              setState(() {
+                _selectionAnchor = target;
+                _selectionEnd = target;
+                _dragTargetTimelineCell = null;
+              });
+              state.setSongTimelineSelectionAnchor(
+                target.patternIndex,
+                target.trackIndex,
+              );
             } else {
-              // No move occurred, just clear drag target
               setState(() => _dragTargetTimelineCell = null);
             }
           },
           onLongPressCancel: () {
             // User released or gesture was cancelled - keep selection
-            setState(() => _dragTargetTimelineCell = null);
+            setState(() {
+              _dragTargetTimelineCell = null;
+              _gestureExtendsRange = false;
+            });
           },
           child: CustomPaint(
             size: Size(width, totalH),
@@ -1372,13 +1347,9 @@ class _SongScreenState extends State<SongScreen> {
                   ? state.playheadArrangementSlot
                   : null,
               playheadRow: state.isPlaying ? state.playheadRow : null,
-              selectedPatternIndex: _selectedTimelineCell?.patternIndex,
-              selectedTrackIndex: _selectedTimelineCell?.trackIndex,
+              selectionRect: _selectionRect,
               dragTargetPatternIndex: _dragTargetTimelineCell?.patternIndex,
               dragTargetTrackIndex: _dragTargetTimelineCell?.trackIndex,
-              editSelectedPatternRow: _selectedPatternIndex,
-              dragSourcePatternRow: _draggedPatternIndex,
-              dragTargetPatternRow: _dragTargetPatternIndex,
             ),
             child: SizedBox(width: width, height: totalH),
           ),
@@ -1429,8 +1400,12 @@ class _SongScreenState extends State<SongScreen> {
     return (patternIndex: patternIndex, trackIndex: trackIndex);
   }
 
-  void _openPatternTrackFromTimelineTap(
-    BuildContext context,
+  /// Tap on a timeline cell → make it the single-cell selection.
+  ///
+  /// Tapping never opens the pattern view anymore. Navigation into the
+  /// pattern view happens only via the PATTERN tab in the top nav, which
+  /// uses this selection as the anchor for what to focus on.
+  void _handleTimelineTap(
     AppState state,
     Offset localPos,
     double width,
@@ -1439,30 +1414,30 @@ class _SongScreenState extends State<SongScreen> {
     final hit = _hitTestTimelineCell(state, localPos, width, slotPitch);
     if (hit == null) return;
 
-    // Tapping an empty/virtual pattern row's cell creates it transparently,
-    // same as tapping its slot number, so it can be edited right away.
+    // Tapping an empty/virtual pattern row's cell creates it transparently
+    // so subsequent range operations work on a real pattern.
     if (hit.patternIndex >= state.song.patterns.length) {
       state.createPatternAt(hit.patternIndex);
     }
-    setState(_clearEditSelections);
-    state.selectSongPattern(hit.patternIndex);
-    state.selectTrack(hit.trackIndex);
-    OpenPatternTrackNotification().dispatch(context);
+    setState(() {
+      _selectionAnchor = hit;
+      _selectionEnd = hit;
+      _dragTargetTimelineCell = null;
+      _gestureExtendsRange = false;
+    });
+    state.setSongTimelineSelectionAnchor(hit.patternIndex, hit.trackIndex);
   }
 }
 
 // ─── Left column widgets ─────────────────────────────────────────────────────
 
-/// A song arrangement slot. Tap focuses/queues it, long-press opens actions.
-/// Display-only; gesture handling is at the outer GestureDetector level.
+/// A song arrangement slot. Tap-only display widget for the pattern-row
+/// number. All track-editing gestures live in the timeline on the right.
 class _PatternSlot extends StatelessWidget {
   final int patternIndex; // index in song.patterns
   final bool isCurrent;
   final bool isPending;
   final bool pendingBlinkOn;
-  final bool isMenuSelected;
-  final bool isDragSource;
-  final bool isDragTarget;
   final double size;
   final double gap;
 
@@ -1471,9 +1446,6 @@ class _PatternSlot extends StatelessWidget {
     required this.isCurrent,
     required this.isPending,
     required this.pendingBlinkOn,
-    required this.isMenuSelected,
-    required this.isDragSource,
-    required this.isDragTarget,
     required this.size,
     required this.gap,
   });
@@ -1499,15 +1471,10 @@ class _PatternSlot extends StatelessWidget {
       decoration: BoxDecoration(
         color: kBgTrackHeader,
         border: Border.all(
-          // Edit selection (long-press) uses kColSelection to stay visually
-          // distinct from the playhead marker (kColAccent), so the two
-          // concepts never look like the same thing.
-          color: isMenuSelected
-              ? kColSelection
-              : (isPending
-                    ? (pendingBlinkOn ? kColAccent : kColInactive)
-                    : (isCurrent ? kColAccent : kColInactive)),
-          width: (isCurrent || isPending || isMenuSelected) ? 2 : 1,
+          color: isPending
+              ? (pendingBlinkOn ? kColAccent : kColInactive)
+              : (isCurrent ? kColAccent : kColInactive),
+          width: (isCurrent || isPending) ? 2 : 1,
         ),
         borderRadius: BorderRadius.circular(6),
       ),
@@ -1526,20 +1493,7 @@ class _PatternSlot extends StatelessWidget {
 
     return Padding(
       padding: EdgeInsets.only(bottom: gap),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 120),
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(6),
-          color: isDragTarget
-              ? kColSelection.withAlpha(60)
-              : (isDragSource
-                    ? kColSelection.withAlpha(40)
-                    : (isMenuSelected
-                          ? kColSelection.withAlpha(30)
-                          : Colors.transparent)),
-        ),
-        child: Opacity(opacity: slotOpacity, child: square),
-      ),
+      child: Opacity(opacity: slotOpacity, child: square),
     );
   }
 }
@@ -1551,26 +1505,18 @@ class _SongTimelinePainter extends CustomPainter {
   final double slotPitch;
   final int? playheadSlot;
   final int? playheadRow;
-  final int? selectedPatternIndex;
-  final int? selectedTrackIndex;
+  final ({int pTop, int tLeft, int pBottom, int tRight})? selectionRect;
   final int? dragTargetPatternIndex;
   final int? dragTargetTrackIndex;
-  final int? editSelectedPatternRow;
-  final int? dragSourcePatternRow;
-  final int? dragTargetPatternRow;
 
   _SongTimelinePainter({
     required this.patterns,
     required this.slotPitch,
     required this.playheadSlot,
     required this.playheadRow,
-    this.selectedPatternIndex,
-    this.selectedTrackIndex,
+    this.selectionRect,
     this.dragTargetPatternIndex,
     this.dragTargetTrackIndex,
-    this.editSelectedPatternRow,
-    this.dragSourcePatternRow,
-    this.dragTargetPatternRow,
   });
 
   static const double _padTop = 4;
@@ -1651,16 +1597,29 @@ class _SongTimelinePainter extends CustomPainter {
       }
     }
 
-    // Selected track-cell border.
-    if (selectedPatternIndex != null && selectedTrackIndex != null) {
-      final s = selectedPatternIndex!;
-      final t = selectedTrackIndex!;
-      if (s < patterns.length) {
-        final yTop = s * slotPitch + _padTop;
-        final blockH = slotPitch - _padTop - _padBottom;
-        final lx = originX + t * (laneW + _laneGap);
+    // Selected track-cell range border. anchor==end draws a single-cell box;
+    // wider selections span multiple patterns and/or tracks.
+    if (selectionRect != null) {
+      final r = selectionRect!;
+      final firstS = r.pTop;
+      final lastS = r.pBottom;
+      final firstT = r.tLeft;
+      final lastT = r.tRight;
+      if (firstS < kMaxSongPatterns) {
+        final yTop = firstS * slotPitch + _padTop;
+        final yBot =
+            lastS * slotPitch + _padTop + (slotPitch - _padTop - _padBottom);
+        final lx = originX + firstT * (laneW + _laneGap);
+        final rx = originX + lastT * (laneW + _laneGap) + laneW;
+        final rect = Rect.fromLTRB(lx, yTop, rx, yBot);
+        // Very light fill so the selected area reads as a group, especially
+        // for multi-cell selections.
         canvas.drawRect(
-          Rect.fromLTWH(lx, yTop, laneW, blockH),
+          rect,
+          Paint()..color = const Color(0xFF44FF88).withAlpha(40),
+        );
+        canvas.drawRect(
+          rect,
           Paint()
             ..color = const Color(0xFF44FF88)
             ..style = PaintingStyle.stroke
@@ -1673,9 +1632,12 @@ class _SongTimelinePainter extends CustomPainter {
     if (dragTargetPatternIndex != null && dragTargetTrackIndex != null) {
       final s = dragTargetPatternIndex!;
       final t = dragTargetTrackIndex!;
-      // Show drag target if it's different from the selected source cell
-      final isDifferentFromSource =
-          (s != selectedPatternIndex || t != selectedTrackIndex);
+      // Show drag target if it's different from the anchor cell of the
+      // current single-cell selection (drag-to-paste is only meaningful for
+      // single-cell selections).
+      final anchorP = selectionRect?.pTop;
+      final anchorT = selectionRect?.tLeft;
+      final isDifferentFromSource = (s != anchorP || t != anchorT);
       if (s < patterns.length && isDifferentFromSource) {
         final yTop = s * slotPitch + _padTop;
         final blockH = slotPitch - _padTop - _padBottom;
@@ -1699,35 +1661,6 @@ class _SongTimelinePainter extends CustomPainter {
     // (or being dragged), so the selection/preview spans the full width —
     // not just the slot-number square in the left column — for a single,
     // consistent "whole row" selection concept.
-    void drawWholeRowHighlight(int s, Color color, {required bool fill}) {
-      if (s < 0 || s >= kMaxSongPatterns) return;
-      final yTop = s * slotPitch + _padTop;
-      final blockH = slotPitch - _padTop - _padBottom;
-      final rect = Rect.fromLTWH(0, yTop, size.width, blockH);
-      if (fill) {
-        canvas.drawRect(rect, Paint()..color = color.withAlpha(40));
-      }
-      canvas.drawRect(
-        rect,
-        Paint()
-          ..color = color
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = 2.5,
-      );
-    }
-
-    if (dragTargetPatternRow != null &&
-        dragTargetPatternRow != dragSourcePatternRow) {
-      drawWholeRowHighlight(dragTargetPatternRow!, kColSelection, fill: true);
-    } else if (dragSourcePatternRow != null) {
-      drawWholeRowHighlight(dragSourcePatternRow!, kColSelection, fill: true);
-    } else if (editSelectedPatternRow != null) {
-      drawWholeRowHighlight(
-        editSelectedPatternRow!,
-        kColSelection,
-        fill: false,
-      );
-    }
   }
 
   /// Helper to draw a dashed rectangle border.
@@ -1816,13 +1749,9 @@ class _SongTimelinePainter extends CustomPainter {
       old.patterns != patterns ||
       old.playheadSlot != playheadSlot ||
       old.playheadRow != playheadRow ||
-      old.selectedPatternIndex != selectedPatternIndex ||
-      old.selectedTrackIndex != selectedTrackIndex ||
+      old.selectionRect != selectionRect ||
       old.dragTargetPatternIndex != dragTargetPatternIndex ||
-      old.dragTargetTrackIndex != dragTargetTrackIndex ||
-      old.editSelectedPatternRow != editSelectedPatternRow ||
-      old.dragSourcePatternRow != dragSourcePatternRow ||
-      old.dragTargetPatternRow != dragTargetPatternRow;
+      old.dragTargetTrackIndex != dragTargetTrackIndex;
 }
 
 class _TrackCellActionBar extends StatelessWidget {
@@ -1855,58 +1784,6 @@ class _TrackCellActionBar extends StatelessWidget {
           _SongActionBtn(label: 'PASTE', onTap: onPaste, enabled: canPaste),
           const Spacer(),
           _SongActionBtn(label: 'DEL', onTap: onDelete, color: kColStopBtn),
-          _SongActionBtn(label: '✕', onTap: onClose),
-        ],
-      ),
-    );
-  }
-}
-
-class _SongPatternActionBar extends StatelessWidget {
-  final bool canMoveUp;
-  final bool canMoveDown;
-  final bool canMerge;
-  final bool canDelete;
-  final VoidCallback onMoveUp;
-  final VoidCallback onMoveDown;
-  final VoidCallback onCopy;
-  final VoidCallback onMerge;
-  final VoidCallback onDelete;
-  final VoidCallback onClose;
-
-  const _SongPatternActionBar({
-    required this.canMoveUp,
-    required this.canMoveDown,
-    required this.canMerge,
-    required this.canDelete,
-    required this.onMoveUp,
-    required this.onMoveDown,
-    required this.onCopy,
-    required this.onMerge,
-    required this.onDelete,
-    required this.onClose,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      height: 56,
-      color: kBgTrackHeader,
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
-      child: Row(
-        children: [
-          _SongActionBtn(label: '↑', onTap: onMoveUp, enabled: canMoveUp),
-          _SongActionBtn(label: '↓', onTap: onMoveDown, enabled: canMoveDown),
-          const SizedBox(width: 4),
-          _SongActionBtn(label: 'DUP', onTap: onCopy),
-          _SongActionBtn(label: 'MERGE', onTap: onMerge, enabled: canMerge),
-          const Spacer(),
-          _SongActionBtn(
-            label: 'DEL',
-            onTap: onDelete,
-            enabled: canDelete,
-            color: kColStopBtn,
-          ),
           _SongActionBtn(label: '✕', onTap: onClose),
         ],
       ),

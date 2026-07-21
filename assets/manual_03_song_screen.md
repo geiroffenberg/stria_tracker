@@ -6,20 +6,12 @@ The Song screen is where you build the arrangement of your track.
 
 ## Layout
 
-- **Left column** — numbered pattern slots. Tap a slot to select it as the active pattern for editing. Long-press to open the action bar (move up/down, duplicate, delete).
-- **Right column** — read-only mini-timeline showing all 16 tracks for every pattern slot. A horizontal line marks the current playback position.
+- **Left column** — numbered pattern slots. These are **tap-only playhead markers**: tapping a slot jumps playback (or the edit focus) to that pattern. They have no long-press action.
+- **Right column** — interactive mini-timeline showing all 16 tracks for every pattern slot. All track-editing gestures (select, move, copy, cut, paste) happen here. A horizontal line marks the current playback position.
 
 ## Pattern Slots
 
-Each slot represents one pattern. The song plays slots from top to bottom in sequence.
-
-## Actions (long-press on a slot)
-
-| Action | Description |
-|---|---|
-| Move Up / Down | Reorder the slot in the arrangement |
-| Duplicate | Insert a copy of the pattern directly below |
-| Delete | Remove the slot from the arrangement |
+Each slot represents one pattern. The song plays slots from top to bottom in sequence. Tap a slot number to focus that pattern for the playhead; no other actions are attached to the row numbers.
 
 ## Timeline Track Numbers — Solo
 
@@ -27,26 +19,60 @@ The numbers (1–16) shown above each lane in the right-hand timeline are **tapp
 
 ## Track Cell Editing from the Song View
 
-You can copy, cut, paste, and delete the contents of any single track inside any pattern without leaving the Song screen.
+You can select, copy, cut, paste, and delete the contents of any track — or any
+**rectangular block of tracks** across several patterns — without leaving the
+Song screen.
 
-1. **Long-press** a track cell in the timeline. The cell gets a green border, and an action bar appears at the bottom of the screen.
-2. Use the action bar buttons:
+### Single-cell selection
+
+1. **Tap** a track cell in the timeline. The cell gets a green border, and an
+   action bar appears at the bottom of the screen. Tapping never opens the
+   Pattern view — it only selects.
+2. To open the Pattern view at the currently-selected cell, tap the
+   **PATTERN** tab at the top of the screen. The Pattern view opens focused on
+   the selected pattern and track. With no selection, PATTERN opens on
+   whatever pattern/track are already current.
+3. Use the action bar buttons:
 
 | Button | Action |
 |---|---|
-| CUT | Copy all rows in that track to the clipboard, then clear them |
-| COPY | Copy all rows in that track to the clipboard (track unchanged) |
-| PASTE | Paste clipboard contents into the selected track from row 0 |
-| DEL | Clear all rows in that track to empty |
+| CUT | Copy the selection to the clipboard, then clear it |
+| COPY | Copy the selection to the clipboard (source unchanged) |
+| PASTE | Paste the clipboard, top-left aligned to the current selection |
+| DEL | Clear the selection to empty |
 | ✕ | Dismiss the selection |
 
-3. To paste into a different track, long-press the target track cell — the selection moves to the new cell. Tap PASTE.
+### Multi-cell selection
 
-**Drag and drop:** instead of long-pressing twice, you can long-press a cell and, without lifting your finger, drag it onto another track cell. Releasing moves the cell's contents to that new position.
+Once a cell is selected, **long-press another cell** — the selection expands
+to cover the full rectangle spanning both cells, in either direction (vertically
+across pattern rows, horizontally across tracks, or both). You can keep
+long-pressing further cells to move the far corner of the range around.
 
-The clipboard is **shared** with the pattern-view row clipboard, so you can copy in the Song screen and paste in the Pattern screen (or vice versa).
+The action bar operates on the whole selection:
 
-Long-pressing another cell while one is already selected simply **replaces the selection** — there is no forced paste.
+- **CUT / COPY** save the entire rectangular block to a dedicated Song
+  clipboard.
+- **PASTE** writes the clipboard so its top-left aligns with the top-left of
+  the current selection. The pasted area always uses the clipboard's own
+  dimensions (a larger selection at the target just marks the start point).
+- **DEL** clears every cell in the selection.
+
+If any of the target cells already contain data, PASTE opens a dialog with
+**Overwrite** or **Swap** — the choice applies to the whole block (Swap
+carries the previous target contents into the clipboard so you can move them
+elsewhere with another paste).
+
+After CUT, COPY, PASTE, or DEL the selection is cleared automatically, so the
+very next tap starts a fresh selection at the paste target.
+
+### Drag and drop (single cell)
+
+You can also **long-press** a single cell and — without lifting your finger —
+drag it onto another track cell. Releasing offers Overwrite / Swap when the
+target already has data (same as the multi-cell paste dialog). This shortcut
+is only available for single-cell drags; extend a range with a second
+long-press to work on multiple cells.
 
 Track numbers (1–16) are fixed and cannot be reordered — tapping a track number toggles solo for that channel instead.
 

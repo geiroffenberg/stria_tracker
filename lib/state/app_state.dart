@@ -173,6 +173,22 @@ class _PatternUndoStack {
 ///  • drum      — all tracks side-by-side showing INST only (pill style).
 enum PatternViewMode { normal, collapsed, drum }
 
+/// Rectangular clipboard for the Song view. Each entry [data[dp][dt]] is a
+/// full list of [TrackerCell]s (one per pattern row) copied from the source
+/// track. Cells are always deep-copied on both copy and paste, so mutating
+/// one side never bleeds into the other.
+class _TrackRangeClipboard {
+  final int patternCount; // vertical extent (# of pattern rows)
+  final int trackCount; // horizontal extent (# of tracks)
+  final List<List<List<TrackerCell>>> data;
+
+  _TrackRangeClipboard({
+    required this.patternCount,
+    required this.trackCount,
+    required this.data,
+  });
+}
+
 class AppState extends ChangeNotifier {
   static const int _audioVoiceCount = kMaxTracks;
   static const int _audioRowStride = 49;
@@ -333,6 +349,44 @@ class AppState extends ChangeNotifier {
   List<TrackerCell>? _rowClipboard;
   bool get hasRowClipboard =>
       _rowClipboard != null && _rowClipboard!.isNotEmpty;
+
+  // Song-view rectangular range clipboard: a 2D grid of whole tracks
+  // (each entry is that track's cell list). data[dp][dt] holds the cells
+  // copied from the source pattern (anchorPatternRow + dp) and source
+  // track (anchorTrack + dt). See copyTrackRange / pasteTrackRange.
+  _TrackRangeClipboard? _trackRangeClipboard;
+  bool get hasTrackRangeClipboard =>
+      _trackRangeClipboard != null &&
+      _trackRangeClipboard!.patternCount > 0 &&
+      _trackRangeClipboard!.trackCount > 0;
+  int get trackRangeClipboardPatternCount =>
+      _trackRangeClipboard?.patternCount ?? 0;
+  int get trackRangeClipboardTrackCount =>
+      _trackRangeClipboard?.trackCount ?? 0;
+
+  // Anchor cell of the current Song-view timeline selection, if any.
+  // The Song screen mirrors its local selection into this field so other
+  // screens (in particular the top nav's PATTERN tab) can open Pattern
+  // view on the exact cell the user last selected. Only the *anchor* is
+  // stored: if the user extends the selection into a range via a second
+  // long-press, this stays pointing at the first-selected cell.
+  ({int patternIndex, int trackIndex})? _songTimelineSelectionAnchor;
+  ({int patternIndex, int trackIndex})? get songTimelineSelectionAnchor =>
+      _songTimelineSelectionAnchor;
+
+  void setSongTimelineSelectionAnchor(int patternIndex, int trackIndex) {
+    _songTimelineSelectionAnchor = (
+      patternIndex: patternIndex,
+      trackIndex: trackIndex,
+    );
+    notifyListeners();
+  }
+
+  void clearSongTimelineSelectionAnchor() {
+    if (_songTimelineSelectionAnchor == null) return;
+    _songTimelineSelectionAnchor = null;
+    notifyListeners();
+  }
 
   // Box-selection clipboard (column-aware — only the selected columns are pasted).
   List<TrackerCell>? _boxClipboard;
@@ -960,6 +1014,14 @@ class AppState extends ChangeNotifier {
     _queuedArrangementSlot = null;
     _rowSegments = [];
     _resetInstrumentCarry();
+    // Clear undo/redo/clipboard for fresh song — don't carry over from the
+    // previous song or an old load state.
+    // NOTE: _patternUndo Expando is final and holds stale pattern references,
+    // but those old patterns are no longer in the song, so it's harmless.
+    _songUndo._undo.clear();
+    _songUndo._redo.clear();
+    _trackRangeClipboard = null;
+    clearSongTimelineSelectionAnchor();
   }
 
   Future<void> _clearInsertEffectsInEngine() async {
@@ -2486,6 +2548,198 @@ class AppState extends ChangeNotifier {
     }
 
     notifyListeners();
+  }
+
+  // ── Song-view rectangular range operations ────────────────────────────────
+
+  /// Normalize [p0,p1] × [t0,t1] into a top-left / bottom-right rectangle and
+  /// clamp it to the currently existing pattern/track counts. Returns null if
+  /// the resulting rectangle is empty (no real cells to touch).
+  ({int pTop, int tLeft, int patternCount, int trackCount})? _normalizeRange(
+    int p0,
+    int t0,
+    int p1,
+    int t1,
+  ) {
+    final pMin = p0 < p1 ? p0 : p1;
+    final pMax = p0 < p1 ? p1 : p0;
+    final tMin = t0 < t1 ? t0 : t1;
+    final tMax = t0 < t1 ? t1 : t0;
+    if (pMin >= song.patterns.length) return null;
+    final pLast = pMax.clamp(0, song.patterns.length - 1);
+    // Track count is the same across every pattern (kMaxTracks), but be safe.
+    final laneCount = song.patterns[pMin].tracks.length;
+    if (laneCount == 0 || tMin >= laneCount) return null;
+    final tLast = tMax.clamp(0, laneCount - 1);
+    final ph = pLast - pMin + 1;
+    final tw = tLast - tMin + 1;
+    if (ph <= 0 || tw <= 0) return null;
+    return (
+      pTop: pMin,
+      tLeft: tMin,
+      patternCount: ph,
+      trackCount: tw,
+    );
+  }
+
+  /// Copy a rectangular range of tracks into the song range clipboard.
+  /// Does NOT touch the single-track [_rowClipboard]; the two clipboards are
+  /// completely independent so nothing the user staged in pattern-view gets
+  /// clobbered here.
+  void copyTrackRange(int p0, int t0, int p1, int t1) {
+    final r = _normalizeRange(p0, t0, p1, t1);
+    if (r == null) return;
+    final data = <List<List<TrackerCell>>>[];
+    for (int dp = 0; dp < r.patternCount; dp++) {
+      final rowCols = <List<TrackerCell>>[];
+      final pat = song.patterns[r.pTop + dp];
+      for (int dt = 0; dt < r.trackCount; dt++) {
+        final trackIdx = r.tLeft + dt;
+        if (trackIdx < pat.tracks.length) {
+          rowCols.add(pat.tracks[trackIdx].cells.map((c) => c.copy()).toList());
+        } else {
+          rowCols.add(const []);
+        }
+      }
+      data.add(rowCols);
+    }
+    _trackRangeClipboard = _TrackRangeClipboard(
+      patternCount: r.patternCount,
+      trackCount: r.trackCount,
+      data: data,
+    );
+    notifyListeners();
+  }
+
+  /// Cut a rectangular range = copy + clear the source cells.
+  void cutTrackRange(int p0, int t0, int p1, int t1) {
+    final r = _normalizeRange(p0, t0, p1, t1);
+    if (r == null) return;
+    _pushSongUndo('cut range');
+    // Copy first (doesn't push undo — silent).
+    copyTrackRange(p0, t0, p1, t1);
+    _clearRange(r.pTop, r.tLeft, r.patternCount, r.trackCount);
+    notifyListeners();
+  }
+
+  /// Clear (empty out) every cell in a rectangular range.
+  void deleteTrackRange(int p0, int t0, int p1, int t1) {
+    final r = _normalizeRange(p0, t0, p1, t1);
+    if (r == null) return;
+    _pushSongUndo('delete range');
+    _clearRange(r.pTop, r.tLeft, r.patternCount, r.trackCount);
+    notifyListeners();
+  }
+
+  void _clearRange(int pTop, int tLeft, int patternCount, int trackCount) {
+    for (int dp = 0; dp < patternCount; dp++) {
+      final p = pTop + dp;
+      if (p >= song.patterns.length) break;
+      final pat = song.patterns[p];
+      for (int dt = 0; dt < trackCount; dt++) {
+        final t = tLeft + dt;
+        if (t >= pat.tracks.length) break;
+        final cells = pat.tracks[t].cells;
+        for (int i = 0; i < cells.length; i++) {
+          cells[i] = TrackerCell.empty();
+        }
+      }
+    }
+  }
+
+  /// Returns true if every cell in the given rectangular range (sized by the
+  /// range clipboard) is empty. If a range slot references a pattern that
+  /// doesn't exist yet, it counts as empty (it'll be created on paste).
+  bool isTrackRangeEmpty(
+    int pTop,
+    int tLeft,
+    int patternCount,
+    int trackCount,
+  ) {
+    for (int dp = 0; dp < patternCount; dp++) {
+      final p = pTop + dp;
+      if (p >= song.patterns.length) continue;
+      final pat = song.patterns[p];
+      for (int dt = 0; dt < trackCount; dt++) {
+        final t = tLeft + dt;
+        if (t < 0 || t >= pat.tracks.length) continue;
+        for (final cell in pat.tracks[t].cells) {
+          if (!cell.isEmpty) return false;
+        }
+      }
+    }
+    return true;
+  }
+
+  /// Paste the range clipboard so its top-left lands at (pTop, tLeft).
+  /// Target rows/tracks outside the arrangement are silently truncated.
+  /// Any target pattern that doesn't exist yet is created on demand so the
+  /// user can paste into an empty song slot the same way single-track paste
+  /// already does.
+  void pasteTrackRange(int pTop, int tLeft) {
+    final clip = _trackRangeClipboard;
+    if (clip == null) return;
+    _pushSongUndo('paste range');
+    _writeRangeFromClipboard(clip, pTop, tLeft, swap: false);
+    notifyListeners();
+  }
+
+  /// Swap-paste: writes clipboard data into the target range AND captures
+  /// what was there into the clipboard, letting the user "carry" the
+  /// previous contents to another spot with another paste.
+  void pasteTrackRangeSwap(int pTop, int tLeft) {
+    final clip = _trackRangeClipboard;
+    if (clip == null) return;
+    _pushSongUndo('swap range');
+    _writeRangeFromClipboard(clip, pTop, tLeft, swap: true);
+    notifyListeners();
+  }
+
+  void _writeRangeFromClipboard(
+    _TrackRangeClipboard clip,
+    int pTop,
+    int tLeft, {
+    required bool swap,
+  }) {
+    // For swap: capture the pre-existing target cells into a fresh clipboard.
+    final swapped = <List<List<TrackerCell>>>[];
+    for (int dp = 0; dp < clip.patternCount; dp++) {
+      final targetP = pTop + dp;
+      // Auto-create empty slot patterns so paste into an unused song slot
+      // "just works", matching pasteTrackFull's contract.
+      if (targetP >= song.patterns.length) {
+        if (targetP >= kMaxSongPatterns) break;
+        createPatternAt(targetP);
+      }
+      final pat = song.patterns[targetP];
+      final rowCols = <List<TrackerCell>>[];
+      for (int dt = 0; dt < clip.trackCount; dt++) {
+        final targetT = tLeft + dt;
+        if (targetT < 0 || targetT >= pat.tracks.length) {
+          rowCols.add(const []);
+          continue;
+        }
+        final dstCells = pat.tracks[targetT].cells;
+        if (swap) {
+          rowCols.add(dstCells.map((c) => c.copy()).toList());
+        }
+        final srcCells = clip.data[dp][dt];
+        final n = srcCells.length < dstCells.length
+            ? srcCells.length
+            : dstCells.length;
+        for (int i = 0; i < n; i++) {
+          dstCells[i] = srcCells[i].copy();
+        }
+      }
+      if (swap) swapped.add(rowCols);
+    }
+    if (swap) {
+      _trackRangeClipboard = _TrackRangeClipboard(
+        patternCount: clip.patternCount,
+        trackCount: clip.trackCount,
+        data: swapped,
+      );
+    }
   }
 
   // ── Row randomisers ───────────────────────────────────────────────────────
