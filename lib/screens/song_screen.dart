@@ -76,7 +76,8 @@ class _SongScreenState extends State<SongScreen> {
   // range (i.e. a second/third/... press while a selection is already up).
   bool _gestureExtendsRange = false;
 
-  static const double kSlotSize = 64.0;
+  static const double kSlotSize = 22.0; // small square around the pattern number
+  static const double kRowHeight = 64.0; // timeline row height (per pattern)
   static const double kSlotGap = 6.0;
 
   bool get _hasTimelineSelection => _selectionAnchor != null;
@@ -331,7 +332,7 @@ class _SongScreenState extends State<SongScreen> {
   @override
   Widget build(BuildContext context) {
     final state = AppStateScope.of(context);
-    final slotPitch = kSlotSize + kSlotGap;
+    final slotPitch = kRowHeight + kSlotGap;
     final pendingSlot = state.queuedArrangementSlot;
     final shouldBlink =
         state.isPlaying &&
@@ -351,7 +352,7 @@ class _SongScreenState extends State<SongScreen> {
               children: [
                 // ── Left column: pattern slots ────────────────────────────────
                 SizedBox(
-                  width: kSlotSize + 16,
+                  width: kSlotSize + 8,
                   child: Column(
                     children: [
                       _buildLeftHeader(),
@@ -372,10 +373,7 @@ class _SongScreenState extends State<SongScreen> {
                           },
                           child: ListView.builder(
                             controller: _slotsCtrl,
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 8,
-                              vertical: 4,
-                            ),
+                            padding: EdgeInsets.zero,
                             itemExtent: slotPitch,
                             itemCount: kMaxSongPatterns,
                             itemBuilder: (_, i) {
@@ -391,8 +389,7 @@ class _SongScreenState extends State<SongScreen> {
                                         : state.currentArrangementSlotIndex),
                                 isPending: shouldBlink && i == pendingSlot,
                                 pendingBlinkOn: pendingBlinkOn,
-                                size: kSlotSize,
-                                gap: kSlotGap,
+                                rowHeight: slotPitch,
                               );
                             },
                           ),
@@ -429,6 +426,7 @@ class _SongScreenState extends State<SongScreen> {
               onCopy: () => _copyTimelineSelection(state),
               onCut: () => _cutTimelineSelection(state),
               onPaste: () => _pasteTimelineSelection(context, state),
+              onIn: () {},
               onDelete: () => _deleteTimelineSelection(state),
               onClose: () => setState(() => _clearTimelineSelection(state)),
             ),
@@ -440,16 +438,16 @@ class _SongScreenState extends State<SongScreen> {
 
   Widget _buildLeftHeader() {
     return Container(
-      height: 28,
+      height: 40,
       alignment: Alignment.center,
       color: kBgHeader,
-      child: Text('PATTERNS', style: kStyleHeader.copyWith(color: kColAccent)),
+      child: Text('PN', style: kStyleHeader.copyWith(color: kColAccent)),
     );
   }
 
   Widget _buildRightHeader(AppState state) {
-    const laneGap = 1.0;
-    const originX = 4.0;
+    const laneGap = 0.0;
+    const originX = 0.0;
     return Container(
       height: 40,
       color: kBgHeader,
@@ -462,10 +460,10 @@ class _SongScreenState extends State<SongScreen> {
               // Draw divider lines between lanes
               for (int t = 1; t < kMaxTracks; t++)
                 Positioned(
-                  left: originX + t * (laneW + laneGap) - laneGap / 2,
+                  left: originX + t * (laneW + laneGap) - 0.5,
                   top: 0,
                   bottom: 0,
-                  width: laneGap,
+                  width: 1,
                   child: Container(color: kColInactive.withAlpha(80)),
                 ),
               // Track number buttons
@@ -1371,10 +1369,10 @@ class _SongScreenState extends State<SongScreen> {
       return null;
     }
 
-    const laneGap = 1.0;
-    const originX = 4.0;
+    const laneGap = 0.0;
+    const originX = 0.0;
     const laneCount = kMaxTracks;
-    final laneAreaW = width - 8;
+    final laneAreaW = width;
     if (laneAreaW <= 0) return null;
 
     final x = localPos.dx - originX;
@@ -1438,16 +1436,14 @@ class _PatternSlot extends StatelessWidget {
   final bool isCurrent;
   final bool isPending;
   final bool pendingBlinkOn;
-  final double size;
-  final double gap;
+  final double rowHeight;
 
   const _PatternSlot({
     required this.patternIndex,
     required this.isCurrent,
     required this.isPending,
     required this.pendingBlinkOn,
-    required this.size,
-    required this.gap,
+    required this.rowHeight,
   });
 
   @override
@@ -1466,8 +1462,8 @@ class _PatternSlot extends StatelessWidget {
         : (patternIndex + 1).toString().padLeft(2, '0');
 
     final square = Container(
-      width: size,
-      height: size,
+      width: double.infinity,
+      height: rowHeight,
       decoration: BoxDecoration(
         color: kBgTrackHeader,
         border: Border.all(
@@ -1476,24 +1472,26 @@ class _PatternSlot extends StatelessWidget {
               : (isCurrent ? kColAccent : kColInactive),
           width: (isCurrent || isPending) ? 2 : 1,
         ),
-        borderRadius: BorderRadius.circular(6),
       ),
       child: Center(
         child: Text(
           displayLabel,
           style: kStyleBase.copyWith(
-            fontSize: 26,
-            fontWeight: FontWeight.w800,
+            fontSize: 13,
+            fontWeight: FontWeight.w700,
             color: kColHeader,
-            letterSpacing: 1,
+            letterSpacing: 0,
           ),
         ),
       ),
     );
 
-    return Padding(
-      padding: EdgeInsets.only(bottom: gap),
-      child: Opacity(opacity: slotOpacity, child: square),
+    // Minimal left margin just enough to keep the left border visible; the
+    // right edge butts right up against the divider that separates this
+    // column from the timeline grid.
+    return Opacity(
+      opacity: slotOpacity,
+      child: Padding(padding: const EdgeInsets.only(left: 2), child: square),
     );
   }
 }
@@ -1519,16 +1517,16 @@ class _SongTimelinePainter extends CustomPainter {
     this.dragTargetTrackIndex,
   });
 
-  static const double _padTop = 4;
-  static const double _padBottom = 4;
-  static const double _laneGap = 1;
+  static const double _padTop = 0;
+  static const double _padBottom = 0;
+  static const double _laneGap = 0;
 
   @override
   void paint(Canvas canvas, Size size) {
     final laneCount = kMaxTracks;
-    final laneAreaW = size.width - 8;
+    final laneAreaW = size.width;
     final laneW = (laneAreaW - (laneCount - 1) * _laneGap) / laneCount;
-    const originX = 4.0;
+    const originX = 0.0;
 
     final dividerPaint = Paint()
       ..color = kColInactive.withAlpha(60)
@@ -1554,7 +1552,7 @@ class _SongTimelinePainter extends CustomPainter {
           Paint()..color = kBgBeat.withAlpha((255 * rowOpacity).round()),
         );
         canvas.drawRect(
-          Rect.fromLTWH(lx + 0.25, yTop + 0.25, laneW - 0.5, blockH - 0.5),
+          Rect.fromLTWH(lx, yTop, laneW, blockH),
           laneBorderPaint,
         );
         if (pat != null && t < pat.tracks.length) {
@@ -1759,6 +1757,7 @@ class _TrackCellActionBar extends StatelessWidget {
   final VoidCallback onCopy;
   final VoidCallback onCut;
   final VoidCallback onPaste;
+  final VoidCallback onIn;
   final VoidCallback onDelete;
   final VoidCallback onClose;
 
@@ -1767,6 +1766,7 @@ class _TrackCellActionBar extends StatelessWidget {
     required this.onCopy,
     required this.onCut,
     required this.onPaste,
+    required this.onIn,
     required this.onDelete,
     required this.onClose,
   });
@@ -1782,6 +1782,7 @@ class _TrackCellActionBar extends StatelessWidget {
           _SongActionBtn(label: 'CUT', onTap: onCut),
           _SongActionBtn(label: 'COPY', onTap: onCopy),
           _SongActionBtn(label: 'PASTE', onTap: onPaste, enabled: canPaste),
+          _SongActionBtn(label: 'INS', onTap: onIn),
           const Spacer(),
           _SongActionBtn(label: 'DEL', onTap: onDelete, color: kColStopBtn),
           _SongActionBtn(label: '✕', onTap: onClose),
