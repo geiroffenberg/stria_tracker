@@ -192,9 +192,9 @@ class AppState extends ChangeNotifier {
 
   // ── Song arrangement undo / redo ──────────────────────────────────────────
   // Snapshots the full patterns list before each arrangement mutation
-  // (add, remove, move, duplicate, merge, double).
+  // (add, remove, move, duplicate, merge).
   final _PatternUndoStack _songUndo = _PatternUndoStack();
-  // Prevents sub-operations (e.g. duplicatePattern inside doublePattern) from
+  // Prevents sub-operations (e.g. duplicatePattern inside compound operations) from
   // pushing a second snapshot for the same gesture.
   bool _songMutationInProgress = false;
 
@@ -780,6 +780,31 @@ class AppState extends ChangeNotifier {
   void selectPattern(int index) {
     _currentPatternIndex = index.clamp(0, song.patterns.length - 1);
     _currentTrackIndex = 0;
+    selectedCell = null;
+    _selectedRowStart = null;
+    _selectedRowEnd = null;
+    _clampSelectionToPattern();
+    _restartPlayheadTimerIfNeeded();
+    notifyListeners();
+  }
+
+  /// Move focus to the pattern immediately before/after the current one
+  /// (delta -1 or +1). Used by Pattern view to let the user scroll past the
+  /// top/bottom row edge into the neighbouring pattern, the same way
+  /// side-scrolling moves between tracks. Stays within
+  /// [0, kMaxSongPatterns - 1] and lazily creates the target slot if it
+  /// hasn't been touched yet. Keeps the current track selected (unlike
+  /// [selectPattern], which resets to track 0) so the scroll feels
+  /// continuous.
+  void goToAdjacentPattern(int delta) {
+    final newIndex = (_currentPatternIndex + delta).clamp(
+      0,
+      kMaxSongPatterns - 1,
+    );
+    if (newIndex == _currentPatternIndex) return;
+    _ensurePatternSlot(newIndex);
+    _currentPatternIndex = newIndex;
+    _currentArrangementSlotIndex = newIndex;
     selectedCell = null;
     _selectedRowStart = null;
     _selectedRowEnd = null;
@@ -2771,14 +2796,6 @@ class AppState extends ChangeNotifier {
     return true;
   }
 
-  bool canDoublePattern(int index) {
-    if (index < 0 || index >= song.patterns.length) return false;
-    if (song.patterns.length >= kMaxSongPatterns) return false;
-    final pattern = song.patterns[index];
-    if (pattern.beatCount * 2 > 99) return false;
-    return true;
-  }
-
   void mergePatternWithNext(int index) {
     if (!canMergePatternWithNext(index)) return;
     _pushSongUndo('merge patterns');
@@ -2805,23 +2822,6 @@ class AppState extends ChangeNotifier {
       0,
       song.patterns.length - 1,
     );
-    notifyListeners();
-  }
-
-  void doublePattern(int index) {
-    if (!canDoublePattern(index)) return;
-    _pushSongUndo('double pattern');
-    _songMutationInProgress = true;
-    duplicatePattern(index);
-    mergePatternWithNext(index);
-    _songMutationInProgress = false;
-    _currentPatternIndex = index.clamp(0, song.patterns.length - 1);
-    _currentArrangementSlotIndex = _currentPatternIndex;
-    if (_playbackFollowsSong) {
-      _playheadArrangementSlot = _currentArrangementSlotIndex;
-      _syncCurrentPatternToSongPlayhead();
-      playheadRow = 0;
-    }
     notifyListeners();
   }
 
@@ -3900,7 +3900,7 @@ class AppState extends ChangeNotifier {
   });
 
   /// Snapshot the arrangement BEFORE a mutation. Pass [label] for the action.
-  /// No-op if a compound operation (e.g. doublePattern) is already in progress.
+  /// No-op if a compound operation is already in progress.
   void _pushSongUndo(String label) {
     if (_songMutationInProgress) return;
     _songUndo.pushUndo(_songArrangementJson(), label);

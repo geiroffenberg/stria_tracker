@@ -52,8 +52,7 @@ class CellActionBar extends StatelessWidget {
     } else if (selRow != null) {
       body = _RowActions(state: state, row: selRow);
       final selRange = state.selectedRowRange;
-      final hasMulti =
-          selRange != null && (selRange.$2 - selRange.$1) > 0;
+      final hasMulti = selRange != null && (selRange.$2 - selRange.$1) > 0;
       height = hasMulti ? 112 : 56;
     } else if (selCell != null) {
       body = _buildForColumn(state, selCell.row, selCell.column);
@@ -69,7 +68,7 @@ class CellActionBar extends StatelessWidget {
       }
     } else {
       body = const _IdleBar();
-      height = 56;
+      height = 0;
     }
 
     return AnimatedContainer(
@@ -105,16 +104,15 @@ class _IdleBar extends StatelessWidget {
   Widget build(BuildContext context) {
     final state = AppStateScope.of(context);
     final hasBoxClip = !state.collapsedView && state.hasBoxClipboard;
-    return Center(
-      child: Text(
-        hasBoxClip
-            ? 'Box clipboard ready · tap a row number to paste'
-            : 'Tap a cell to edit · long-press drag to box-select',
-        style: kStyleHeader.copyWith(
-          color: hasBoxClip ? kColAccent : kColInactive,
+    if (hasBoxClip) {
+      return Center(
+        child: Text(
+          'Box clipboard ready · tap a row number to paste',
+          style: kStyleHeader.copyWith(color: kColAccent),
         ),
-      ),
-    );
+      );
+    }
+    return const SizedBox.shrink();
   }
 }
 
@@ -132,11 +130,7 @@ class _BoxSelectionActions extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
       child: Row(
         children: [
-          _ActionLabel(
-            text: '$count SEL',
-            color: kColAccent,
-            width: 88,
-          ),
+          _ActionLabel(text: '$count SEL', color: kColAccent, width: 88),
           const SizedBox(width: 4),
           if (hasBoxClip && sel != null)
             _ActionBtn(
@@ -144,24 +138,15 @@ class _BoxSelectionActions extends StatelessWidget {
               color: kColAccent,
               onTap: () => state.pasteBoxSelection(sel.minRow),
             ),
-          _ActionBtn(
-            label: 'CUT',
-            onTap: () => state.cutBoxSelection(),
-          ),
-          _ActionBtn(
-            label: 'COPY',
-            onTap: () => state.copyBoxSelection(),
-          ),
+          _ActionBtn(label: 'CUT', onTap: () => state.cutBoxSelection()),
+          _ActionBtn(label: 'COPY', onTap: () => state.copyBoxSelection()),
           _ActionBtn(
             label: 'DEL',
             color: kColStopBtn,
             onTap: () => state.deleteBoxSelection(),
           ),
           const Spacer(),
-          _ActionBtn(
-            label: '✕',
-            onTap: () => state.clearBoxSelection(),
-          ),
+          _ActionBtn(label: '✕', onTap: () => state.clearBoxSelection()),
         ],
       ),
     );
@@ -187,18 +172,9 @@ class _RowActions extends StatelessWidget {
       child: Row(
         children: [
           // Move buttons work with ranges
-          _ActionBtn(
-            label: '↑',
-            onTap: () => state.moveSelectedRowBy(-1),
-          ),
-          _ActionBtn(
-            label: '↓',
-            onTap: () => state.moveSelectedRowBy(1),
-          ),
-          _ActionBtn(
-            label: '2X',
-            onTap: () => state.duplicateSelectedRows(),
-          ),
+          _ActionBtn(label: '↑', onTap: () => state.moveSelectedRowBy(-1)),
+          _ActionBtn(label: '↓', onTap: () => state.moveSelectedRowBy(1)),
+          _ActionBtn(label: '2X', onTap: () => state.duplicateSelectedRows()),
           const SizedBox(width: 4),
           // Copy/cut on range if multi-line selected, else single row
           _ActionBtn(
@@ -234,7 +210,7 @@ class _RowActions extends StatelessWidget {
             ),
           const Spacer(),
           _ActionBtn(
-            label: 'CLR',
+            label: 'DEL',
             color: kColStopBtn,
             onTap: () {
               if (hasMultiLineSelection) {
@@ -256,14 +232,8 @@ class _RowActions extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(6, 0, 6, 6),
       child: Row(
         children: [
-          _ActionBtn(
-            label: 'SHUF',
-            onTap: () => state.shuffleSelectedRows(),
-          ),
-          _ActionBtn(
-            label: 'SCAT',
-            onTap: () => state.scatterSelectedRows(),
-          ),
+          _ActionBtn(label: 'SHUF', onTap: () => state.shuffleSelectedRows()),
+          _ActionBtn(label: 'SCAT', onTap: () => state.scatterSelectedRows()),
           const SizedBox(width: 4),
           _ActionBtn(
             label: '+OCT',
@@ -307,8 +277,6 @@ class _NoteActions extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
       child: Row(
         children: [
-          _ActionLabel(text: note.display, color: kColNote, width: 56),
-          const SizedBox(width: 4),
           _ActionBtn(
             label: 'OFF',
             onTap: () => state.setNote(row, NoteValue.off),
@@ -349,7 +317,7 @@ class _NoteActions extends StatelessWidget {
           ),
           const Spacer(),
           _ActionBtn(
-            label: 'CLR',
+            label: 'DEL',
             color: kColStopBtn,
             onTap: () => state.clearColumnValue(row, CellColumn.note),
           ),
@@ -395,23 +363,25 @@ class _NumericActions extends StatelessWidget {
     final minV = track.minValue(column);
     final clamped = v.clamp(minV, maxV);
     track.writeColumnValue(row, column, clamped);
-    
+
     // Auto-fill note with C-4 if instrument is entered and note is empty
     if (column == CellColumn.instrument && clamped > 0) {
       if (track.cells[row].note.isEmpty) {
         track.setNote(row, NoteValue.fromScrollIndex(49)); // C-4
       }
     }
-    
+
     // Remember the last value set based on column type
     if (column == CellColumn.instrument) {
       state.updateLastInstrument(clamped);
     } else if (column == CellColumn.volume) {
       state.updateLastVolume(clamped);
-    } else if (column == CellColumn.fx0val || column == CellColumn.fx1val || column == CellColumn.fx2val) {
+    } else if (column == CellColumn.fx0val ||
+        column == CellColumn.fx1val ||
+        column == CellColumn.fx2val) {
       state.updateLastFxValue(clamped);
     }
-    
+
     state.instrumentParamsChanged();
   }
 
@@ -453,6 +423,7 @@ class _NumericActions extends StatelessWidget {
       final s = raw.trim();
       return isHex ? int.tryParse(s, radix: 16) : int.tryParse(s);
     }
+
     final entered = await showDialog<int>(
       context: context,
       builder: (context) {
@@ -507,10 +478,7 @@ class _NumericActions extends StatelessWidget {
                   context,
                 ).pop((parsed ?? current).clamp(minV, maxV));
               },
-              child: Text(
-                'Set',
-                style: kStyleBase.copyWith(color: kColAccent),
-              ),
+              child: Text('Set', style: kStyleBase.copyWith(color: kColAccent)),
             ),
           ],
         );
@@ -550,11 +518,15 @@ class _NumericActions extends StatelessWidget {
     if (isInsertFxCommand(fxCmd)) {
       final fn = fxInsertFunctionFromCommand(fxCmd!);
       final slot = fxInsertSlotFromCommand(fxCmd);
-      final effectName = state.trackInsertEffectName(state.currentTrackIndex, slot - 1);
+      final effectName = state.trackInsertEffectName(
+        state.currentTrackIndex,
+        slot - 1,
+      );
       fxHint = 'Slot $slot - ${fxInsertFunctionHintForEffect(effectName, fn)}';
     } else {
       fxHint = switch (fxCmd) {
-        kFxARP => 'XY (hex): X=1st interval, Y=2nd interval (0-F semitones above root)',
+        kFxARP =>
+          'XY (hex): X=1st interval, Y=2nd interval (0-F semitones above root)',
         // e.g. 47 = +4 and +7 semitones, A9 = +10 and +9 semitones
         kFxCHA => '00=never, 99=always, 50=50% chance to play',
         kFxDEL => '00=line start, 99=line end (delayed note-on)',
@@ -592,16 +564,6 @@ class _NumericActions extends StatelessWidget {
           ],
           Row(
             children: [
-              GestureDetector(
-                onTap: () => _showManualValueDialog(
-                  context,
-                  value.clamp(minV, maxV),
-                  minV,
-                  maxV,
-                ),
-                child: _ActionLabel(text: display, color: color, width: 56),
-              ),
-              const SizedBox(width: 6),
               _ActionBtn(
                 label: '−',
                 onTap: () => state.nudgeCell(row, column, -1),
@@ -650,16 +612,13 @@ class _NumericActions extends StatelessWidget {
                     onTap: () => state.interpolateColumn(row, column),
                   ),
                 _ActionBtn(
-                  label: 'CLR',
+                  label: 'DEL',
                   color: kColStopBtn,
                   onTap: () => state.clearColumnValue(row, column),
                 ),
               ],
               const SizedBox(width: 4),
-              _ActionBtn(
-                label: '✕',
-                onTap: state.clearSelection,
-              ),
+              _ActionBtn(label: '✕', onTap: state.clearSelection),
             ],
           ),
           _EnvelopeSection(state: state, row: row, column: column),
@@ -675,9 +634,22 @@ class _FxCmdActions extends StatelessWidget {
   // Explicit list of classic FX command IDs shown in the picker.
   // To add a new chip: append its kFxXxx constant here.
   static const List<int> _classicCommands = [
-    kFxARP, kFxCHA, kFxDEL, kFxKIL, kFxPAN,
-    kFxRAN, kFxRET, kFxREV, kFxVIB, kFxVOL,
-    kFxSLU, kFxSLD, kFxARC, kFxSLC, kFxTRE, kFxGAT,
+    kFxARP,
+    kFxCHA,
+    kFxDEL,
+    kFxKIL,
+    kFxPAN,
+    kFxRAN,
+    kFxRET,
+    kFxREV,
+    kFxVIB,
+    kFxVOL,
+    kFxSLU,
+    kFxSLD,
+    kFxARC,
+    kFxSLC,
+    kFxTRE,
+    kFxGAT,
   ];
 
   final AppState state;
@@ -776,33 +748,39 @@ class _FxCmdActions extends StatelessWidget {
           },
           child: IntrinsicWidth(
             child: Container(
-            height: 28,
-            padding: const EdgeInsets.symmetric(horizontal: 10),
-            alignment: Alignment.center,
-            decoration: BoxDecoration(
-              color: selected ? kColFxCmd.withAlpha(60) : Colors.transparent,
-              border: Border.all(
-                color: selected ? kColFxCmd : kColInactive,
-                width: 1,
+              height: 28,
+              padding: const EdgeInsets.symmetric(horizontal: 10),
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: selected ? kColFxCmd.withAlpha(60) : Colors.transparent,
+                border: Border.all(
+                  color: selected ? kColFxCmd : kColInactive,
+                  width: 1,
+                ),
+                borderRadius: BorderRadius.circular(4),
               ),
-              borderRadius: BorderRadius.circular(4),
-            ),
-            child: Text(
-              fxCommandName(cmd),
-              style: kStyleBase.copyWith(
-                color: selected ? kColFxCmd : kColHeader,
-                fontSize: 12,
-                fontWeight: FontWeight.w700,
-                letterSpacing: 0.5,
+              child: Text(
+                fxCommandName(cmd),
+                style: kStyleBase.copyWith(
+                  color: selected ? kColFxCmd : kColHeader,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 0.5,
+                ),
               ),
             ),
-          ),          ),        );
+          ),
+        );
       }).toList(),
     );
   }
 
   /// Insert FX strip: Fxy command on top + effect short name as subtext.
-  Widget _commandStripInsert(List<int> indices, int? current, String? effectName) {
+  Widget _commandStripInsert(
+    List<int> indices,
+    int? current,
+    String? effectName,
+  ) {
     return Wrap(
       spacing: 4,
       runSpacing: 4,
@@ -818,39 +796,41 @@ class _FxCmdActions extends StatelessWidget {
           },
           child: IntrinsicWidth(
             child: Container(
-            height: 42,
-            padding: const EdgeInsets.symmetric(horizontal: 8),
-            alignment: Alignment.center,
-            decoration: BoxDecoration(
-              color: selected ? kColFxCmd.withAlpha(60) : Colors.transparent,
-              border: Border.all(
-                color: selected ? kColFxCmd : kColInactive,
-                width: 1,
+              height: 42,
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: selected ? kColFxCmd.withAlpha(60) : Colors.transparent,
+                border: Border.all(
+                  color: selected ? kColFxCmd : kColInactive,
+                  width: 1,
+                ),
+                borderRadius: BorderRadius.circular(4),
               ),
-              borderRadius: BorderRadius.circular(4),
-            ),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Text(
-                  fxCommandName(cmd),
-                  style: kStyleBase.copyWith(
-                    color: selected ? kColFxCmd : kColHeader,
-                    fontSize: 10,
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: 0.5,
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text(
+                    fxCommandName(cmd),
+                    style: kStyleBase.copyWith(
+                      color: selected ? kColFxCmd : kColHeader,
+                      fontSize: 10,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 0.5,
+                    ),
                   ),
-                ),
-                Text(
-                  sub,
-                  style: kStyleBase.copyWith(
-                    color: selected ? kColFxCmd : kColHeader.withAlpha(160),
-                    fontSize: 9,
+                  Text(
+                    sub,
+                    style: kStyleBase.copyWith(
+                      color: selected ? kColFxCmd : kColHeader.withAlpha(160),
+                      fontSize: 9,
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
-          ),          ),        );
+          ),
+        );
       }).toList(),
     );
   }
@@ -870,39 +850,41 @@ class _FxCmdActions extends StatelessWidget {
           },
           child: IntrinsicWidth(
             child: Container(
-            height: 42,
-            padding: const EdgeInsets.symmetric(horizontal: 8),
-            alignment: Alignment.center,
-            decoration: BoxDecoration(
-              color: selected ? kColFxCmd.withAlpha(60) : Colors.transparent,
-              border: Border.all(
-                color: selected ? kColFxCmd : kColInactive,
-                width: 1,
+              height: 42,
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: selected ? kColFxCmd.withAlpha(60) : Colors.transparent,
+                border: Border.all(
+                  color: selected ? kColFxCmd : kColInactive,
+                  width: 1,
+                ),
+                borderRadius: BorderRadius.circular(4),
               ),
-              borderRadius: BorderRadius.circular(4),
-            ),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Text(
-                  mixerValueName(cmd),
-                  style: kStyleBase.copyWith(
-                    color: selected ? kColFxCmd : kColHeader,
-                    fontSize: 10,
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: 0.5,
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text(
+                    mixerValueName(cmd),
+                    style: kStyleBase.copyWith(
+                      color: selected ? kColFxCmd : kColHeader,
+                      fontSize: 10,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 0.5,
+                    ),
                   ),
-                ),
-                Text(
-                  sub,
-                  style: kStyleBase.copyWith(
-                    color: selected ? kColFxCmd : kColHeader.withAlpha(160),
-                    fontSize: 9,
+                  Text(
+                    sub,
+                    style: kStyleBase.copyWith(
+                      color: selected ? kColFxCmd : kColHeader.withAlpha(160),
+                      fontSize: 9,
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
-          ),          ),        );
+          ),
+        );
       }).toList(),
     );
   }
@@ -930,7 +912,8 @@ class _FxCmdActions extends StatelessWidget {
 
   String _pParamDesc(int cmd, InstrumentType type) {
     final idx = pParamIndex(cmd);
-    if (type == InstrumentType.sampler) return SamplerParams.paramDescription(idx);
+    if (type == InstrumentType.sampler)
+      return SamplerParams.paramDescription(idx);
     if (type == InstrumentType.karplusStrong) {
       return KarplusStrongParams.paramDescription(idx);
     }
@@ -938,7 +921,10 @@ class _FxCmdActions extends StatelessWidget {
   }
 
   Widget _commandStripPParam(
-      List<int> indices, int? current, InstrumentType type) {
+    List<int> indices,
+    int? current,
+    InstrumentType type,
+  ) {
     return Wrap(
       spacing: 4,
       runSpacing: 4,
@@ -951,39 +937,39 @@ class _FxCmdActions extends StatelessWidget {
           },
           child: IntrinsicWidth(
             child: Container(
-            height: 42,
-            padding: const EdgeInsets.symmetric(horizontal: 8),
-            alignment: Alignment.center,
-            decoration: BoxDecoration(
-              color: selected ? kColFxCmd.withAlpha(60) : Colors.transparent,
-              border: Border.all(
-                color: selected ? kColFxCmd : kColInactive,
-                width: 1,
+              height: 42,
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: selected ? kColFxCmd.withAlpha(60) : Colors.transparent,
+                border: Border.all(
+                  color: selected ? kColFxCmd : kColInactive,
+                  width: 1,
+                ),
+                borderRadius: BorderRadius.circular(4),
               ),
-              borderRadius: BorderRadius.circular(4),
-            ),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Text(
-                  fxCommandName(cmd),
-                  style: kStyleBase.copyWith(
-                    color: selected ? kColFxCmd : kColHeader,
-                    fontSize: 10,
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: 0.5,
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text(
+                    fxCommandName(cmd),
+                    style: kStyleBase.copyWith(
+                      color: selected ? kColFxCmd : kColHeader,
+                      fontSize: 10,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 0.5,
+                    ),
                   ),
-                ),
-                Text(
-                  _pParamName(cmd, type),
-                  style: kStyleBase.copyWith(
-                    color: selected ? kColFxCmd : kColHeader.withAlpha(160),
-                    fontSize: 9,
+                  Text(
+                    _pParamName(cmd, type),
+                    style: kStyleBase.copyWith(
+                      color: selected ? kColFxCmd : kColHeader.withAlpha(160),
+                      fontSize: 9,
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
-          ),
           ),
         );
       }).toList(),
@@ -997,22 +983,24 @@ class _FxCmdActions extends StatelessWidget {
     final current = fx.command;
     // Resolve instrument type: use the cell's IN value if set, otherwise scan
     // backwards to the last used instrument on this track (same logic as playback).
-    final instrNum = state.effectiveInstrumentAtRow(row).clamp(1, state.instruments.length);
+    final instrNum = state
+        .effectiveInstrumentAtRow(row)
+        .clamp(1, state.instruments.length);
     final instrType = state.instruments[instrNum - 1].type;
     // Override descriptions for command families that are context-sensitive.
     final currentInsertEffect = (current != null && isInsertFxCommand(current))
         ? _insertEffectNameForSlot(fxInsertSlotFromCommand(current) - 1)
         : null;
     final desc = (current != null && isPParamCommand(current))
-      ? _pParamDesc(current, instrType)
-      : (current != null && isMixerValueCommand(current))
+        ? _pParamDesc(current, instrType)
+        : (current != null && isMixerValueCommand(current))
         ? mixerValueDescription(current)
         : (current != null && isInsertFxCommand(current))
-          ? fxInsertFunctionHintForEffect(
-              currentInsertEffect,
-              fxInsertFunctionFromCommand(current),
-            )
-          : fxCommandDescription(current);
+        ? fxInsertFunctionHintForEffect(
+            currentInsertEffect,
+            fxInsertFunctionFromCommand(current),
+          )
+        : fxCommandDescription(current);
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
@@ -1043,15 +1031,12 @@ class _FxCmdActions extends StatelessWidget {
                 )
               else
                 _ActionBtn(
-                  label: 'CLR',
+                  label: 'DEL',
                   color: kColStopBtn,
                   onTap: () => state.clearColumnValue(row, column),
                 ),
               const SizedBox(width: 4),
-              _ActionBtn(
-                label: '✕',
-                onTap: () => state.clearSelection(),
-              ),
+              _ActionBtn(label: '✕', onTap: () => state.clearSelection()),
             ],
           ),
           const SizedBox(height: 4),
@@ -1071,7 +1056,9 @@ class _FxCmdActions extends StatelessWidget {
                     for (final slot in slots) {
                       final fxName = _insertEffectNameForSlot(slot) ?? 'FX';
                       widgets.add(const SizedBox(height: 5));
-                      widgets.add(_sectionLabel(_insertSectionLabel(slot, fxName)));
+                      widgets.add(
+                        _sectionLabel(_insertSectionLabel(slot, fxName)),
+                      );
                       widgets.add(const SizedBox(height: 3));
                       widgets.add(
                         _commandStripInsert(
@@ -1267,10 +1254,12 @@ class _EnvelopeSection extends StatelessWidget {
                   inactiveTrackColor: envelopeFaint,
                   thumbColor: envelopeColor,
                   overlayColor: const Color(0x22FF8800),
-                  thumbShape:
-                      const RoundSliderThumbShape(enabledThumbRadius: 9),
-                  overlayShape:
-                      const RoundSliderOverlayShape(overlayRadius: 18),
+                  thumbShape: const RoundSliderThumbShape(
+                    enabledThumbRadius: 9,
+                  ),
+                  overlayShape: const RoundSliderOverlayShape(
+                    overlayRadius: 18,
+                  ),
                 ),
                 child: Slider(
                   value: run.gamma.clamp(0.1, 4.0),

@@ -39,12 +39,31 @@ class CollapsedTracksWidget extends StatefulWidget {
   State<CollapsedTracksWidget> createState() => _CollapsedTracksWidgetState();
 }
 
-class _CollapsedTracksWidgetState extends State<CollapsedTracksWidget> {
+class _CollapsedTracksWidgetState extends State<CollapsedTracksWidget>
+    with TickerProviderStateMixin {
   late final ScrollController _hHeader;
   late final ScrollController _hBody;
   bool _syncing = false;
   int _lastFollowedRow = -1;
   AppState? _observedState;
+
+  // Plays a brief directional slide when a scroll gesture switches to an
+  // adjacent pattern — the vertical equivalent of the obvious "push" motion
+  // seen when side-scrolling between tracks. Purely cosmetic: it animates
+  // the already-updated grid content sliding in from the direction implied
+  // by the switch, rather than showing a text popup.
+  late final AnimationController _patternSlideCtrl;
+  Offset _slideBegin = Offset.zero;
+
+  // Dragging past the top/bottom row edge accumulates raw drag distance;
+  // once it crosses the threshold, jump to the previous/next pattern — the
+  // vertical equivalent of side-scrolling between tracks. This tracks raw
+  // pointer movement directly (rather than relying on ListView overscroll
+  // notifications) so it works reliably even when the pattern is shorter
+  // than the viewport.
+  double _topDragAccum = 0;
+  double _bottomDragAccum = 0;
+  static const double _patternSwitchThreshold = 60.0;
 
   @override
   void initState() {
@@ -53,6 +72,11 @@ class _CollapsedTracksWidgetState extends State<CollapsedTracksWidget> {
     _hBody = ScrollController();
     _hHeader.addListener(() => _sync(_hHeader, _hBody));
     _hBody.addListener(() => _sync(_hBody, _hHeader));
+    _patternSlideCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 280),
+      value: 1.0, // starts "settled" so the gap indicator is hidden at rest
+    );
   }
 
   @override
@@ -73,6 +97,80 @@ class _CollapsedTracksWidgetState extends State<CollapsedTracksWidget> {
     _syncing = true;
     dst.jumpTo(src.offset);
     _syncing = false;
+  }
+
+  void _handleRowNumberPointerMove(PointerMoveEvent event, AppState state) {
+    if (!_rowNumCtrl.hasClients) return;
+    final position = _rowNumCtrl.position;
+    const epsilon = 0.5;
+    final atTop = position.pixels <= position.minScrollExtent + epsilon;
+    final atBottom = position.pixels >= position.maxScrollExtent - epsilon;
+    final dy = event.delta.dy;
+
+    if (dy > 0 && atTop) {
+      // Dragging further down while already at the first row — go to the
+      // previous pattern.
+      _topDragAccum += dy;
+      _bottomDragAccum = 0;
+      if (_topDragAccum >= _patternSwitchThreshold) {
+        _topDragAccum = 0;
+        _switchPattern(state, -1);
+      }
+    } else if (dy < 0 && atBottom) {
+      // Dragging further up while already at the last row — go to the next
+      // pattern.
+      _bottomDragAccum -= dy;
+      _topDragAccum = 0;
+      if (_bottomDragAccum >= _patternSwitchThreshold) {
+        _bottomDragAccum = 0;
+        _switchPattern(state, 1);
+      }
+    } else {
+      _topDragAccum = 0;
+      _bottomDragAccum = 0;
+    }
+  }
+
+  void _handleRowNumberPointerEnd(PointerEvent event) {
+    _topDragAccum = 0;
+    _bottomDragAccum = 0;
+  }
+
+  // Switches to the adjacent pattern (direction -1 = previous, +1 = next),
+  // then: (a) lands the scroll at the edge that keeps the transition
+  // feeling continuous — the next pattern's rows continue on directly
+  // below the current bottom, so we land at its top; the previous
+  // pattern's rows sit directly above the current top, so we land at its
+  // bottom (the row-number and body controllers are kept in step by the
+  // existing _syncVertical listeners, so jumping the row-number column is
+  // enough); and (b) plays a brief directional slide of the grid content —
+  // the vertical equivalent of the obvious "push" motion seen when
+  // side-scrolling between tracks.
+  //
+  // The scroll-landing jump and animation start are deferred to a
+  // post-frame callback so that the ListView for the *new* pattern has
+  // already been laid out (with its true maxScrollExtent) by the time we
+  // jump; jumping against the old pattern's dimensions was silently
+  // clamped and made "land at bottom" land somewhere else.
+  void _switchPattern(AppState state, int direction) {
+    final before = state.currentPatternIndex;
+    state.goToAdjacentPattern(direction);
+    if (state.currentPatternIndex == before) return;
+
+    setState(() {
+      _slideBegin = Offset(0, direction > 0 ? 0.5 : -0.5);
+    });
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      if (_rowNumCtrl.hasClients) {
+        final pos = _rowNumCtrl.position;
+        _rowNumCtrl.jumpTo(
+          direction < 0 ? pos.maxScrollExtent : pos.minScrollExtent,
+        );
+      }
+      _patternSlideCtrl.forward(from: 0);
+    });
   }
 
   void _onStateChanged() {
@@ -98,6 +196,7 @@ class _CollapsedTracksWidgetState extends State<CollapsedTracksWidget> {
     _hBody.dispose();
     _vBodyCtrl.dispose();
     _rowNumCtrl.dispose();
+    _patternSlideCtrl.dispose();
     super.dispose();
   }
 
@@ -142,14 +241,36 @@ class _CollapsedTracksWidgetState extends State<CollapsedTracksWidget> {
           child: Row(
             children: [
               // Fixed left column — row numbers (vertically scrollable
-              // and synced with the body)
+              // and synced with the body). Dragging past the top/
+              // bottom edge here (and only here) switches pattern.
               SizedBox(
                 width: leftColWidth,
-                child: ListView.builder(
-                  itemCount: rowCount,
-                  itemExtent: kRowHeight,
-                  controller: _rowNumCtrl,
-                  itemBuilder: (_, row) => _buildRowNumber(state, row),
+                child: Listener(
+                  // Opaque so drag-to-switch-pattern gestures are caught
+                  // across the full column even when the pattern has
+                  // fewer rows than fit the viewport.
+                  behavior: HitTestBehavior.opaque,
+                  onPointerMove: (e) => _handleRowNumberPointerMove(e, state),
+                  onPointerUp: _handleRowNumberPointerEnd,
+                  onPointerCancel: _handleRowNumberPointerEnd,
+                  child: SlideTransition(
+                    position:
+                        Tween<Offset>(
+                          begin: _slideBegin,
+                          end: Offset.zero,
+                        ).animate(
+                          CurvedAnimation(
+                            parent: _patternSlideCtrl,
+                            curve: Curves.easeOutCubic,
+                          ),
+                        ),
+                    child: ListView.builder(
+                      itemCount: rowCount,
+                      itemExtent: kRowHeight,
+                      controller: _rowNumCtrl,
+                      itemBuilder: (_, row) => _buildRowNumber(state, row),
+                    ),
+                  ),
                 ),
               ),
               // Horizontally + vertically scrollable cell area
@@ -159,12 +280,24 @@ class _CollapsedTracksWidgetState extends State<CollapsedTracksWidget> {
                   scrollDirection: Axis.horizontal,
                   child: SizedBox(
                     width: tracksWidth,
-                    child: ListView.builder(
-                      itemCount: rowCount,
-                      itemExtent: kRowHeight,
-                      controller: _vBodyCtrl,
-                      itemBuilder: (_, row) =>
-                          _buildCellRow(state, tracks, row),
+                    child: SlideTransition(
+                      position:
+                          Tween<Offset>(
+                            begin: _slideBegin,
+                            end: Offset.zero,
+                          ).animate(
+                            CurvedAnimation(
+                              parent: _patternSlideCtrl,
+                              curve: Curves.easeOutCubic,
+                            ),
+                          ),
+                      child: ListView.builder(
+                        itemCount: rowCount,
+                        itemExtent: kRowHeight,
+                        controller: _vBodyCtrl,
+                        itemBuilder: (_, row) =>
+                            _buildCellRow(state, tracks, row),
+                      ),
                     ),
                   ),
                 ),

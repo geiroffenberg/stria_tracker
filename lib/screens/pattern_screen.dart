@@ -55,7 +55,8 @@ class _PatternScreenState extends State<PatternScreen> {
     // (for example from Song timeline lane taps).
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted || state.collapsedView || !_pageCtrl.hasClients) return;
-      final currentPage = (_pageCtrl.page ?? _pageCtrl.initialPage.toDouble()).round();
+      final currentPage = (_pageCtrl.page ?? _pageCtrl.initialPage.toDouble())
+          .round();
       if (currentPage != state.currentTrackIndex) {
         _pageCtrl.jumpToPage(state.currentTrackIndex);
       }
@@ -70,12 +71,19 @@ class _PatternScreenState extends State<PatternScreen> {
             child: state.collapsedView
                 ? CollapsedTracksWidget()
                 : PageView.builder(
-                    key: ValueKey<int>(state.currentPatternIndex),
+                    // NOTE: no ValueKey on currentPatternIndex here — that
+                    // would tear down and re-create the PageView (and every
+                    // TrackPageWidget State inside it) on each pattern
+                    // switch, discarding the pattern-switch slide animation
+                    // and scroll-landing logic living in that State. The
+                    // post-frame callback below keeps the visible page in
+                    // sync with state.currentTrackIndex without needing to
+                    // remount the widget subtree.
                     controller: _pageCtrl,
                     itemCount: state.trackCount,
                     physics: state.isBoxSelecting || state.hasBoxSelection
-                      ? const NeverScrollableScrollPhysics()
-                      : const PageScrollPhysics(),
+                        ? const NeverScrollableScrollPhysics()
+                        : const PageScrollPhysics(),
                     onPageChanged: (i) => state.selectTrack(i),
                     itemBuilder: (_, i) {
                       final track = state.currentPattern.tracks[i];
@@ -83,10 +91,7 @@ class _PatternScreenState extends State<PatternScreen> {
                     },
                   ),
           ),
-          Container(
-            height: 1,
-            color: const Color(0xFF226666),
-          ),
+          Container(height: 1, color: const Color(0xFF226666)),
           const CellActionBar(),
         ],
       ),
@@ -100,93 +105,96 @@ class _PatternScreenState extends State<PatternScreen> {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-      Container(
-      height: 28,
-      color: kBgTrackHeader,
-      padding: const EdgeInsets.symmetric(horizontal: 8),
-      child: Row(
-        children: [
-          _PatternMenuButton(state: state, patternName: pat.name),
-          const SizedBox(width: 8),
-          Text('│', style: TextStyle(color: kColInactive)),
-          const SizedBox(width: 8),
-          if (!state.collapsedView) ...[
-            _NavBtn(
-              icon: Icons.chevron_left,
-              onTap: () => _goToTrack(state, trackIdx - 1),
-              enabled: trackIdx > 0,
-            ),
-            SizedBox(
-              width: 110,
-              child: Center(
-                child: Text(
-                  'TRACK ${(trackIdx + 1).toString().padLeft(2, '0')}',
-                  style: kStyleLabel.copyWith(fontSize: 13),
+        Container(
+          height: 28,
+          color: kBgTrackHeader,
+          padding: const EdgeInsets.symmetric(horizontal: 8),
+          child: Row(
+            children: [
+              _PatternMenuButton(state: state, patternName: pat.name),
+              const SizedBox(width: 8),
+              Text('│', style: TextStyle(color: kColInactive)),
+              const SizedBox(width: 8),
+              if (!state.collapsedView) ...[
+                _NavBtn(
+                  icon: Icons.chevron_left,
+                  onTap: () => _goToTrack(state, trackIdx - 1),
+                  enabled: trackIdx > 0,
                 ),
-              ),
-            ),
-            _NavBtn(
-              icon: Icons.chevron_right,
-              onTap: () => _goToTrack(state, trackIdx + 1),
-              enabled: trackIdx < state.trackCount - 1,
-            ),
-            const SizedBox(width: 8),
-            _SoloBtn(
-              soloed: state.currentPattern.tracks[trackIdx].mixerSolo,
-              onTap: () => state.toggleTrackMixerSolo(trackIdx),
-            ),
-          ] else ...[
-            Expanded(
-              child: Text(
-                'ALL TRACKS',
-                style: kStyleLabel.copyWith(fontSize: 13),
-                textAlign: TextAlign.center,
-              ),
-            ),
-          ],
-          const Spacer(),
-          // Global view-mode toggle: NORMAL → COLLAPSE → DRUM → NORMAL
-          GestureDetector(
-            onTap: () {
-              state.cyclePatternViewMode();
-              // When returning to expanded view, sync the PageView.
-              if (!state.collapsedView) {
-                WidgetsBinding.instance.addPostFrameCallback((_) {
-                  if (_pageCtrl.hasClients) {
-                    _pageCtrl.jumpToPage(state.currentTrackIndex);
+                SizedBox(
+                  width: 110,
+                  child: Center(
+                    child: Text(
+                      'TRACK ${(trackIdx + 1).toString().padLeft(2, '0')}',
+                      style: kStyleLabel.copyWith(fontSize: 13),
+                    ),
+                  ),
+                ),
+                _NavBtn(
+                  icon: Icons.chevron_right,
+                  onTap: () => _goToTrack(state, trackIdx + 1),
+                  enabled: trackIdx < state.trackCount - 1,
+                ),
+                const SizedBox(width: 8),
+                _SoloBtn(
+                  soloed: state.currentPattern.tracks[trackIdx].mixerSolo,
+                  onTap: () => state.toggleTrackMixerSolo(trackIdx),
+                ),
+              ] else ...[
+                Expanded(
+                  child: Text(
+                    'ALL TRACKS',
+                    style: kStyleLabel.copyWith(fontSize: 13),
+                    textAlign: TextAlign.center,
+                  ),
+                ),
+              ],
+              const Spacer(),
+              // Global view-mode toggle: NORMAL → COLLAPSE → DRUM → NORMAL
+              GestureDetector(
+                onTap: () {
+                  state.cyclePatternViewMode();
+                  // When returning to expanded view, sync the PageView.
+                  if (!state.collapsedView) {
+                    WidgetsBinding.instance.addPostFrameCallback((_) {
+                      if (_pageCtrl.hasClients) {
+                        _pageCtrl.jumpToPage(state.currentTrackIndex);
+                      }
+                    });
                   }
-                });
-              }
-            },
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-              decoration: BoxDecoration(
-                color: state.collapsedView
-                    ? kColActive.withAlpha(50)
-                    : Colors.transparent,
-                border: Border.all(
-                  color: state.collapsedView ? kColActive : kColInactive,
-                ),
-                borderRadius: BorderRadius.circular(3),
-              ),
-              child: Text(
-                switch (state.viewMode) {
-                  PatternViewMode.normal => 'COLLAPSE',
-                  PatternViewMode.collapsed => 'DRUM',
-                  PatternViewMode.drum => 'EXPAND',
                 },
-                style: kStyleBase.copyWith(
-                  fontSize: 11,
-                  color: state.collapsedView ? kColActive : kColHeader,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 6,
+                  ),
+                  decoration: BoxDecoration(
+                    color: state.collapsedView
+                        ? kColActive.withAlpha(50)
+                        : Colors.transparent,
+                    border: Border.all(
+                      color: state.collapsedView ? kColActive : kColInactive,
+                    ),
+                    borderRadius: BorderRadius.circular(3),
+                  ),
+                  child: Text(
+                    switch (state.viewMode) {
+                      PatternViewMode.normal => 'COLLAPSE',
+                      PatternViewMode.collapsed => 'DRUM',
+                      PatternViewMode.drum => 'EXPAND',
+                    },
+                    style: kStyleBase.copyWith(
+                      fontSize: 11,
+                      color: state.collapsedView ? kColActive : kColHeader,
+                    ),
+                  ),
                 ),
               ),
-            ),
+            ],
           ),
-        ],
-      ),
-    ),
-      Container(height: 1, color: kColActive.withAlpha(160)),
-    ],
+        ),
+        Container(height: 1, color: kColActive.withAlpha(160)),
+      ],
     );
   }
 }
@@ -259,8 +267,10 @@ class _PatternMenuButton extends StatelessWidget {
     final overlay =
         Overlay.of(context).context.findRenderObject() as RenderBox?;
     if (box == null || overlay == null) return;
-    final origin = box.localToGlobal(Offset(0, box.size.height),
-        ancestor: overlay);
+    final origin = box.localToGlobal(
+      Offset(0, box.size.height),
+      ancestor: overlay,
+    );
     final position = RelativeRect.fromLTRB(
       origin.dx,
       origin.dy,
@@ -276,97 +286,128 @@ class _PatternMenuButton extends StatelessWidget {
         PopupMenuItem<String>(
           value: 'undo',
           enabled: state.canUndoPattern,
-          child: Row(children: [
-            Icon(Icons.undo, size: 18,
-                color: state.canUndoPattern ? kColAccent : kColInactive),
-            const SizedBox(width: 10),
-            Text('Undo',
+          child: Row(
+            children: [
+              Icon(
+                Icons.undo,
+                size: 18,
+                color: state.canUndoPattern ? kColAccent : kColInactive,
+              ),
+              const SizedBox(width: 10),
+              Text(
+                'Undo',
                 style: kStyleBase.copyWith(
                   fontSize: 14,
                   color: state.canUndoPattern ? kColHeader : kColInactive,
-                )),
-          ]),
+                ),
+              ),
+            ],
+          ),
         ),
         PopupMenuItem<String>(
           value: 'redo',
           enabled: state.canRedoPattern,
-          child: Row(children: [
-            Icon(Icons.redo, size: 18,
-                color: state.canRedoPattern ? kColAccent : kColInactive),
-            const SizedBox(width: 10),
-            Text('Redo',
+          child: Row(
+            children: [
+              Icon(
+                Icons.redo,
+                size: 18,
+                color: state.canRedoPattern ? kColAccent : kColInactive,
+              ),
+              const SizedBox(width: 10),
+              Text(
+                'Redo',
                 style: kStyleBase.copyWith(
                   fontSize: 14,
                   color: state.canRedoPattern ? kColHeader : kColInactive,
-                )),
-          ]),
+                ),
+              ),
+            ],
+          ),
         ),
         const PopupMenuDivider(),
         PopupMenuItem<String>(
           value: 'clear',
-          child: Row(children: [
-            Icon(Icons.cleaning_services_outlined,
-                size: 18, color: kColHeader),
-            const SizedBox(width: 10),
-            Text('Clear pattern',
-                style: kStyleBase.copyWith(
-                    fontSize: 14, color: kColHeader)),
-          ]),
+          child: Row(
+            children: [
+              Icon(
+                Icons.cleaning_services_outlined,
+                size: 18,
+                color: kColHeader,
+              ),
+              const SizedBox(width: 10),
+              Text(
+                'Clear pattern',
+                style: kStyleBase.copyWith(fontSize: 14, color: kColHeader),
+              ),
+            ],
+          ),
         ),
         PopupMenuItem<String>(
           value: 'reset',
-          child: Row(children: [
-            Icon(Icons.restart_alt, size: 18, color: kColHeader),
-            const SizedBox(width: 10),
-            Text('Reset to defaults',
-                style: kStyleBase.copyWith(
-                    fontSize: 14, color: kColHeader)),
-          ]),
+          child: Row(
+            children: [
+              Icon(Icons.restart_alt, size: 18, color: kColHeader),
+              const SizedBox(width: 10),
+              Text(
+                'Reset to defaults',
+                style: kStyleBase.copyWith(fontSize: 14, color: kColHeader),
+              ),
+            ],
+          ),
         ),
         const PopupMenuDivider(),
         PopupMenuItem<String>(
           value: 'swing',
-          child: Row(children: [
-            Icon(Icons.swap_horiz, size: 18, color: kColHeader),
-            const SizedBox(width: 10),
-            Text(
-              state.currentPatternSwing == 0.0
-                  ? 'Swing: off'
-                  : 'Swing: ${state.currentPatternSwing.round()}%',
-              style: kStyleBase.copyWith(fontSize: 14, color: kColHeader),
-            ),
-          ]),
+          child: Row(
+            children: [
+              Icon(Icons.swap_horiz, size: 18, color: kColHeader),
+              const SizedBox(width: 10),
+              Text(
+                state.currentPatternSwing == 0.0
+                    ? 'Swing: off'
+                    : 'Swing: ${state.currentPatternSwing.round()}%',
+                style: kStyleBase.copyWith(fontSize: 14, color: kColHeader),
+              ),
+            ],
+          ),
         ),
         const PopupMenuDivider(),
         PopupMenuItem<String>(
           value: 'follow',
-          child: Row(children: [
-            Icon(
-              state.followPlayhead
-                  ? Icons.location_on
-                  : Icons.location_searching,
-              size: 18,
-              color: state.followPlayhead ? kColAccent : kColHeader,
-            ),
-            const SizedBox(width: 10),
-            Text(
-              'Follow playhead',
-              style: kStyleBase.copyWith(
-                fontSize: 14,
+          child: Row(
+            children: [
+              Icon(
+                state.followPlayhead
+                    ? Icons.location_on
+                    : Icons.location_searching,
+                size: 18,
                 color: state.followPlayhead ? kColAccent : kColHeader,
               ),
-            ),
-          ]),
+              const SizedBox(width: 10),
+              Text(
+                'Follow playhead',
+                style: kStyleBase.copyWith(
+                  fontSize: 14,
+                  color: state.followPlayhead ? kColAccent : kColHeader,
+                ),
+              ),
+            ],
+          ),
         ),
         const PopupMenuDivider(),
         PopupMenuItem<String>(
           value: 'freeze',
-          child: Row(children: [
-            Icon(Icons.merge_type, size: 18, color: kColHeader),
-            const SizedBox(width: 10),
-            Text('Copy to Sampler',
-                style: kStyleBase.copyWith(fontSize: 14, color: kColHeader)),
-          ]),
+          child: Row(
+            children: [
+              Icon(Icons.merge_type, size: 18, color: kColHeader),
+              const SizedBox(width: 10),
+              Text(
+                'Copy to Sampler',
+                style: kStyleBase.copyWith(fontSize: 14, color: kColHeader),
+              ),
+            ],
+          ),
         ),
       ],
     );
@@ -383,7 +424,8 @@ class _PatternMenuButton extends StatelessWidget {
         final confirm = await _confirm(
           context,
           title: 'Clear pattern?',
-          body: 'Erase every cell on every track in this pattern.\n'
+          body:
+              'Erase every cell on every track in this pattern.\n'
               'Beats, lines-per-beat and mixer settings stay as they are.\n'
               'You can undo this.',
           confirmLabel: 'CLEAR',
@@ -394,7 +436,8 @@ class _PatternMenuButton extends StatelessWidget {
         final confirm = await _confirm(
           context,
           title: 'Reset to defaults?',
-          body: 'Erase every cell AND reset BPM, beats and lines-per-beat '
+          body:
+              'Erase every cell AND reset BPM, beats and lines-per-beat '
               'back to their defaults. Mixer settings on the tracks are '
               'kept. You can undo this.',
           confirmLabel: 'RESET',
@@ -415,26 +458,32 @@ class _PatternMenuButton extends StatelessWidget {
           barrierDismissible: false,
           builder: (_) => AlertDialog(
             backgroundColor: kBgTrackHeader,
-            content: Row(children: [
-              CircularProgressIndicator(color: kColAccent),
-              const SizedBox(width: 20),
-              Text('Rendering…',
-                  style: kStyleBase.copyWith(color: kColHeader)),
-            ]),
+            content: Row(
+              children: [
+                CircularProgressIndicator(color: kColAccent),
+                const SizedBox(width: 20),
+                Text(
+                  'Rendering…',
+                  style: kStyleBase.copyWith(color: kColHeader),
+                ),
+              ],
+            ),
           ),
         );
         final err = await state.freezePatternToSampler();
         if (context.mounted) Navigator.of(context, rootNavigator: true).pop();
         if (context.mounted) {
           final slotNum = state.currentInstrumentIndex + 1;
-          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-            content: Text(
-              err == null
-                  ? 'Loaded into instrument slot $slotNum'
-                  : 'Failed: $err',
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                err == null
+                    ? 'Loaded into instrument slot $slotNum'
+                    : 'Failed: $err',
+              ),
+              duration: const Duration(seconds: 4),
             ),
-            duration: const Duration(seconds: 4),
-          ));
+          );
         }
         break;
     }
@@ -447,17 +496,18 @@ class _PatternMenuButton extends StatelessWidget {
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setState) => AlertDialog(
           backgroundColor: kBgTrackHeader,
-          title: Text('Swing',
-              style: kStyleBase.copyWith(color: kColHeader, fontSize: 16)),
+          title: Text(
+            'Swing',
+            style: kStyleBase.copyWith(color: kColHeader, fontSize: 16),
+          ),
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
               Text(
-                tempSwing == 0.0
-                    ? 'Off (straight)'
-                    : '${tempSwing.round()}%',
+                tempSwing == 0.0 ? 'Off (straight)' : '${tempSwing.round()}%',
                 style: kStyleBase.copyWith(
-                  color: kColAccent, fontSize: 22,
+                  color: kColAccent,
+                  fontSize: 22,
                   fontWeight: FontWeight.bold,
                 ),
               ),
@@ -475,24 +525,24 @@ class _PatternMenuButton extends StatelessWidget {
                 'Delays even-numbered lines within each beat.\n'
                 '0 = straight, 99% = near-maximum shuffle.',
                 textAlign: TextAlign.center,
-                style: kStyleBase.copyWith(
-                    color: kColInactive, fontSize: 11),
+                style: kStyleBase.copyWith(color: kColInactive, fontSize: 11),
               ),
             ],
           ),
           actions: [
             TextButton(
               onPressed: () => Navigator.of(ctx).pop(),
-              child: Text('CANCEL',
-                  style: kStyleBase.copyWith(color: kColInactive)),
+              child: Text(
+                'CANCEL',
+                style: kStyleBase.copyWith(color: kColInactive),
+              ),
             ),
             TextButton(
               onPressed: () {
                 state.setPatternSwing(tempSwing);
                 Navigator.of(ctx).pop();
               },
-              child: Text('OK',
-                  style: kStyleBase.copyWith(color: kColAccent)),
+              child: Text('OK', style: kStyleBase.copyWith(color: kColAccent)),
             ),
           ],
         ),
@@ -510,20 +560,28 @@ class _PatternMenuButton extends StatelessWidget {
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: kBgTrackHeader,
-        title: Text(title,
-            style: kStyleBase.copyWith(color: kColHeader, fontSize: 16)),
-        content: Text(body,
-            style: kStyleBase.copyWith(color: kColHeader, fontSize: 13)),
+        title: Text(
+          title,
+          style: kStyleBase.copyWith(color: kColHeader, fontSize: 16),
+        ),
+        content: Text(
+          body,
+          style: kStyleBase.copyWith(color: kColHeader, fontSize: 13),
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(false),
-            child: Text('CANCEL',
-                style: kStyleBase.copyWith(color: kColInactive)),
+            child: Text(
+              'CANCEL',
+              style: kStyleBase.copyWith(color: kColInactive),
+            ),
           ),
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(true),
-            child: Text(confirmLabel,
-                style: kStyleBase.copyWith(color: kColAccent)),
+            child: Text(
+              confirmLabel,
+              style: kStyleBase.copyWith(color: kColAccent),
+            ),
           ),
         ],
       ),
