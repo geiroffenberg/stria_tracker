@@ -212,7 +212,7 @@ class AppState extends ChangeNotifier {
   final _PatternUndoStack _songUndo = _PatternUndoStack();
   // Prevents sub-operations (e.g. duplicatePattern inside compound operations) from
   // pushing a second snapshot for the same gesture.
-  bool _songMutationInProgress = false;
+  final bool _songMutationInProgress = false;
 
   AppState() {
     _loadAppSettings();
@@ -299,7 +299,7 @@ class AppState extends ChangeNotifier {
   bool _liveRebuildInFlight = false;
   // Tracks the active navigation tab (0=SONG, 1=PATTERN, 2=INST, 3=MIXER).
   // Used by play() to determine song-follow vs pattern-loop mode.
-  int _activeTabIndex = 1; // default matches MainScreen's initial _tabIndex
+  int _activeTabIndex = 0; // default matches MainScreen's initial _tabIndex
 
   static const String kDefaultProjectsFolderName = 'STRIA_PROJECTS';
   static const MethodChannel _projectStorageChannel = MethodChannel(
@@ -3197,6 +3197,93 @@ class AppState extends ChangeNotifier {
       song.patterns.length - 1,
     );
     notifyListeners();
+  }
+
+  /// Insert a brand-new empty pattern at slot [index]+1, shifting the DATA
+  /// held by [index]+1 through slot 98 down by one position each.
+  ///
+  /// Slot numbers (1–99) are permanent — they are positions in the fixed
+  /// arrangement grid and never move, get renamed, or get renumbered. Only
+  /// the pattern data each slot holds moves. This is why the shift below
+  /// assigns into existing slots in place rather than calling
+  /// `List.insert`/`removeAt`, which would grow/shrink the list itself —
+  /// the arrangement is always exactly [kMaxSongPatterns] slots.
+  ///
+  /// After shifting, all affected patterns are renamed so their internal
+  /// names (PAT 01, PAT 02, etc.) always match their slot positions.
+  ///
+  /// Returns false (no mutation) if [index] is out of range, or if slot 99
+  /// already holds real (non-empty) data — shifting would push it off the
+  /// end of the arrangement and destroy it, so this refuses rather than
+  /// silently losing a pattern.
+  bool insertEmptyPatternAfter(int index) {
+    if (index < 0 || index >= song.patterns.length) return false;
+    // Back every slot through the last one with a real object so the shift
+    // loop below can move data through all of them — this only lazily
+    // fills already-existing (but not yet touched) slots; it never adds
+    // slots beyond the fixed 99-slot arrangement.
+    _ensurePatternSlot(kMaxSongPatterns - 1);
+    if (!song.patterns[kMaxSongPatterns - 1].isEmpty) return false;
+    _pushSongUndo('insert pattern');
+    // Shift data from index+1..98 down to index+2..99.
+    for (int i = kMaxSongPatterns - 1; i > index + 1; i--) {
+      song.patterns[i] = song.patterns[i - 1];
+    }
+    // Create empty pattern at the insertion point.
+    final pattern = song.createEmptyPattern();
+    _copyProjectMixerStateToPattern(pattern);
+    _copyProjectSendRoutingToPattern(pattern);
+    song.patterns[index + 1] = pattern;
+    // Rename all shifted patterns (index+1..99) to match their new slot positions.
+    // This ensures pattern internal names (PAT 01, PAT 02, ...) always equal
+    // their slot numbers, never drift out of sync with where the data actually lives.
+    for (int i = index + 1; i < kMaxSongPatterns; i++) {
+      final newName = 'PAT ${(i + 1).toString().padLeft(2, '0')}';
+      song.patterns[i] = song.patterns[i].copyWithName(newName);
+    }
+    _currentPatternIndex = (index + 1).clamp(0, song.patterns.length - 1);
+    _currentArrangementSlotIndex = _currentPatternIndex;
+    notifyListeners();
+    return true;
+  }
+
+  /// Duplicate the pattern at [index], inserting the copy immediately after
+  /// it — same slot-shifting mechanics as [insertEmptyPatternAfter] (data
+  /// shifts in place within the fixed 99-slot arrangement, slot numbers
+  /// never move).
+  ///
+  /// The only difference from manually inserting an empty row and then
+  /// copy/pasting the source row's cells onto it: this also carries over
+  /// the pattern-level settings (BPM, beats, swing, lines-per-beat, beat
+  /// overrides, FX envelopes) from the source pattern, since those live on
+  /// the pattern object rather than in individual cells.
+  ///
+  /// Returns false (no mutation) under the same conditions as
+  /// [insertEmptyPatternAfter]: out-of-range [index], or slot 99 already
+  /// holding real data (shifting would destroy it).
+  bool duplicatePatternAfter(int index) {
+    if (index < 0 || index >= song.patterns.length) return false;
+    _ensurePatternSlot(kMaxSongPatterns - 1);
+    if (!song.patterns[kMaxSongPatterns - 1].isEmpty) return false;
+    final source = song.patterns[index];
+    _pushSongUndo('duplicate pattern');
+    // Shift data from index+1..98 down to index+2..99.
+    for (int i = kMaxSongPatterns - 1; i > index + 1; i--) {
+      song.patterns[i] = song.patterns[i - 1];
+    }
+    // Deep-copy the source pattern (cells + BPM/beats/swing/lpb/overrides/
+    // fx envelopes) into the newly opened slot, named to match its position.
+    final destName = 'PAT ${(index + 2).toString().padLeft(2, '0')}';
+    song.patterns[index + 1] = source.copyWithName(destName);
+    // Rename all shifted patterns (index+2..99) to match their new slot positions.
+    for (int i = index + 2; i < kMaxSongPatterns; i++) {
+      final newName = 'PAT ${(i + 1).toString().padLeft(2, '0')}';
+      song.patterns[i] = song.patterns[i].copyWithName(newName);
+    }
+    _currentPatternIndex = (index + 1).clamp(0, song.patterns.length - 1);
+    _currentArrangementSlotIndex = _currentPatternIndex;
+    notifyListeners();
+    return true;
   }
 
   double get masterVolume => song.masterVolume;

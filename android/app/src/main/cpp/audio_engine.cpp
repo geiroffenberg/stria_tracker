@@ -478,7 +478,19 @@ void AudioEngine::start() {
     if (mStream) {
         {
             std::lock_guard<std::mutex> lock(mVoiceMutex);
-            if (!mQueuedPlaybackRows.empty()) {
+            // Only prime a row on the fresh idle→running transition.
+            //
+            // Dart also calls start() after re-loading the queue mid-playback
+            // (queued pattern jumps in _rebuildNativeSongQueueFromSlot and
+            // song-loop restart in _restartSongFromBeginningForLoop). In
+            // those cases the audio callback is still running its own row
+            // pump — priming row 0 here would fire the new queue's first
+            // row a second time on top of the natural boundary advance,
+            // producing the double-trigger of the first sample. Leaving
+            // mQueuedPlaybackRowIndex at 0 (as set by the caller's
+            // clearQueuedPlaybackRows()) lets the callback pick up the new
+            // queue seamlessly at the next row boundary.
+            if (!mPlayheadRunning.load() && !mQueuedPlaybackRows.empty()) {
                 mQueuedPlaybackRowIndex = 0;
                 mPlayheadSampleCounter = 0;
                 primeNextQueuedPlaybackRowLocked();

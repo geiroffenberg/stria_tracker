@@ -230,6 +230,40 @@ class _SongScreenState extends State<SongScreen> {
     setState(() => _clearTimelineSelection(state));
   }
 
+  void _insertPatternAfterSelection(BuildContext context, AppState state) {
+    final r = _selectionRect;
+    if (r == null) return;
+    // For a multi-row selection, insert after the bottom-most selected row.
+    final ok = state.insertEmptyPatternAfter(r.pBottom);
+    if (!ok) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Song is full (99 patterns max).'),
+          duration: Duration(seconds: 2),
+        ),
+      );
+      return;
+    }
+    setState(() => _clearTimelineSelection(state));
+  }
+
+  void _duplicatePatternAtSelection(BuildContext context, AppState state) {
+    final r = _selectionRect;
+    if (r == null) return;
+    // Duplicate the row that holds the selected cell (top of selection).
+    final ok = state.duplicatePatternAfter(r.pTop);
+    if (!ok) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Song is full (99 patterns max).'),
+          duration: Duration(seconds: 2),
+        ),
+      );
+      return;
+    }
+    setState(() => _clearTimelineSelection(state));
+  }
+
   void _pasteTimelineSelection(BuildContext context, AppState state) {
     final r = _selectionRect;
     if (r == null) return;
@@ -426,7 +460,8 @@ class _SongScreenState extends State<SongScreen> {
               onCopy: () => _copyTimelineSelection(state),
               onCut: () => _cutTimelineSelection(state),
               onPaste: () => _pasteTimelineSelection(context, state),
-              onIn: () {},
+              onIn: () => _insertPatternAfterSelection(context, state),
+              onDup: () => _duplicatePatternAtSelection(context, state),
               onDelete: () => _deleteTimelineSelection(state),
               onClose: () => setState(() => _clearTimelineSelection(state)),
             ),
@@ -1454,12 +1489,11 @@ class _PatternSlot extends StatelessWidget {
     final isEmptySlot = pat == null || pat.isEmpty;
     final slotOpacity = isEmptySlot ? kEmptyRowOpacity : 1.0;
 
-    final numberMatch = pat != null
-        ? RegExp(r'(\d+)$').firstMatch(pat.name.trim())
-        : null;
-    final displayLabel = numberMatch != null
-        ? numberMatch.group(1)!.padLeft(2, '0')
-        : (patternIndex + 1).toString().padLeft(2, '0');
+    // Slot numbers are permanent — they always equal the fixed position in
+    // the 99-row arrangement grid, never derived from the pattern's own
+    // name. Pattern data (and its name) can move between slots, but the
+    // slot label itself must never move with it.
+    final displayLabel = (patternIndex + 1).toString().padLeft(2, '0');
 
     final square = Container(
       width: double.infinity,
@@ -1758,6 +1792,7 @@ class _TrackCellActionBar extends StatelessWidget {
   final VoidCallback onCut;
   final VoidCallback onPaste;
   final VoidCallback onIn;
+  final VoidCallback onDup;
   final VoidCallback onDelete;
   final VoidCallback onClose;
 
@@ -1767,6 +1802,7 @@ class _TrackCellActionBar extends StatelessWidget {
     required this.onCut,
     required this.onPaste,
     required this.onIn,
+    required this.onDup,
     required this.onDelete,
     required this.onClose,
   });
@@ -1783,6 +1819,7 @@ class _TrackCellActionBar extends StatelessWidget {
           _SongActionBtn(label: 'COPY', onTap: onCopy),
           _SongActionBtn(label: 'PASTE', onTap: onPaste, enabled: canPaste),
           _SongActionBtn(label: 'INS', onTap: onIn),
+          _SongActionBtn(label: 'DUP', onTap: onDup),
           const Spacer(),
           _SongActionBtn(label: 'DEL', onTap: onDelete, color: kColStopBtn),
           _SongActionBtn(label: '✕', onTap: onClose),

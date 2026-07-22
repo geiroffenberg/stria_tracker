@@ -912,8 +912,9 @@ class _FxCmdActions extends StatelessWidget {
 
   String _pParamDesc(int cmd, InstrumentType type) {
     final idx = pParamIndex(cmd);
-    if (type == InstrumentType.sampler)
+    if (type == InstrumentType.sampler) {
       return SamplerParams.paramDescription(idx);
+    }
     if (type == InstrumentType.karplusStrong) {
       return KarplusStrongParams.paramDescription(idx);
     }
