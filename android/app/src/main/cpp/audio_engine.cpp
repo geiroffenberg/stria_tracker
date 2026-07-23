@@ -506,16 +506,7 @@ void AudioEngine::start() {
 }
 
 void AudioEngine::stop() {
-    mPlayheadRunning.store(false);
-    mPendingRowAdvances.store(0);
-    resetPlayheadPhase();
-    {
-        std::lock_guard<std::mutex> meterLock(mMeterMutex);
-        mTrackMeterPeakL.fill(0.0f);
-        mTrackMeterPeakR.fill(0.0f);
-        mMasterMeterPeakL = 0.0f;
-        mMasterMeterPeakR = 0.0f;
-    }
+    haltTransport();
     if (mStream) {
         {
             std::lock_guard<std::mutex> lock(mVoiceMutex);
@@ -550,6 +541,27 @@ void AudioEngine::stop() {
         }
         LOGI("Transport stopped (voices muted, stream kept running)");
     }
+}
+
+void AudioEngine::stopTransportSoft() {
+    // Halts the sequencer only — deliberately does NOT touch mVoices, so
+    // any currently-sounding notes/samples keep ringing (holding sustain,
+    // finishing their release, etc.) exactly as if playback had not
+    // stopped. This avoids the click of an instant kill when a non-looped
+    // pattern/song simply reaches its natural end.
+    haltTransport();
+    LOGI("Transport stopped softly (voices left ringing, stream kept running)");
+}
+
+void AudioEngine::haltTransport() {
+    mPlayheadRunning.store(false);
+    mPendingRowAdvances.store(0);
+    resetPlayheadPhase();
+    std::lock_guard<std::mutex> meterLock(mMeterMutex);
+    mTrackMeterPeakL.fill(0.0f);
+    mTrackMeterPeakR.fill(0.0f);
+    mMasterMeterPeakL = 0.0f;
+    mMasterMeterPeakR = 0.0f;
 }
 
 void AudioEngine::close() {
@@ -1153,13 +1165,11 @@ void AudioEngine::triggerRowLocked(const std::vector<int>& rowData) {
                     v.sampleStep = std::pow(2.0f, semis / 12.0f);
                 }
             } else if (n == -2) {
-                // Note-off: for looping samples, trigger release envelope.
-                // For non-looping, stop immediately.
-                if (v.loopMode > 0 && v.sampleActive) {
+                // Note-off: always fade out over the release setting instead of
+                // stopping instantly — an instant stop produces an audible click.
+                if (v.sampleActive) {
                     v.samplerReleaseActive = true;
                     v.samplerReleaseStartFrames = v.sampleElapsedFrames;
-                } else {
-                    v.sampleActive = false;
                 }
                 v.midiNote = -1;
             }
@@ -2854,15 +2864,14 @@ oboe::DataCallbackResult AudioEngine::onAudioReady(
                 if (elapsed < atkFrames) {
                     envGain = elapsed / atkFrames;
                 }
-                // Release fade: for non-looping based on distance to end,
-                // for looping with release active, apply envelope and stop.
-                if (v.loopMode == 0) {
-                    const double framesLeft = regionEnd - v.samplePos;
-                    if (framesLeft < static_cast<double>(relFrames)) {
-                        envGain *= static_cast<float>(std::max(0.0, framesLeft)) / relFrames;
-                    }
-                } else if (v.samplerReleaseActive) {
-                    // Looping sample in release: measure from when note-off was received.
+                // Release fade: if note-off was received (samplerReleaseActive,
+                // set for BOTH looping and non-looping samples), fade out over
+                // releaseSec measured from note-off and then stop — this is what
+                // makes the OFF command respect the release setting instead of
+                // clicking. Otherwise, for non-looping samples reaching the
+                // natural end of the region, fade based on distance to end so
+                // playing off the end of the sample never clicks either.
+                if (v.samplerReleaseActive) {
                     const float releaseElapsed = static_cast<float>(v.sampleElapsedFrames - v.samplerReleaseStartFrames);
                     if (releaseElapsed >= relFrames) {
                         envGain = 0.0f; // silence this frame before stopping to avoid click
@@ -2870,13 +2879,16 @@ oboe::DataCallbackResult AudioEngine::onAudioReady(
                         v.samplerReleaseActive = false;
                         // Write zeroed sample then break — do NOT let next iteration
                         // render with envGain=1 (that would produce a click).
-                        const float pan01 = std::clamp(v.pan, 0.0f, 1.0f);
-                        const float angle = pan01 * 1.57079632679f;
                         mTrackBusL[trackIdx][i] += 0.0f;
                         mTrackBusR[trackIdx][i] += 0.0f;
                         break;
                     } else {
                         envGain *= std::max(0.0f, 1.0f - (releaseElapsed / relFrames));
+                    }
+                } else if (v.loopMode == 0) {
+                    const double framesLeft = regionEnd - v.samplePos;
+                    if (framesLeft < static_cast<double>(relFrames)) {
+                        envGain *= static_cast<float>(std::max(0.0, framesLeft)) / relFrames;
                     }
                 }
 

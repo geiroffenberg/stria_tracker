@@ -376,6 +376,12 @@ public:
     bool open();
     void start();
     void stop();
+    /// Halts the playhead/sequencer (no more rows advance) WITHOUT killing
+    /// any currently-sounding voices. Used when playback reaches the natural
+    /// end of a pattern/song (no loop) so notes keep ringing across the
+    /// boundary — mirrors letting a note ring until an explicit OFF or the
+    /// user pressing Stop (which still uses the hard stop() above).
+    void stopTransportSoft();
     void close();
     void restartStream();           // rebuild Oboe stream after device disconnect
     void pauseOutputStream();       // stop stream output without resetting transport
@@ -613,6 +619,11 @@ public:
     std::array<float, kMaxVoices * 2 + 2> getMeterValues() const;
 
 private:
+    // Shared by stop() / stopTransportSoft(): halts the sequencer/playhead
+    // and resets meters. Does NOT touch mVoices — callers decide separately
+    // whether to silence voices (hard stop) or leave them ringing (soft stop).
+    void haltTransport();
+
     // Oboe callback shim for the recording (input) stream.
     // Oboe requires a stable pointer so we heap-allocate it.
     class RecordingCallback : public oboe::AudioStreamDataCallback {

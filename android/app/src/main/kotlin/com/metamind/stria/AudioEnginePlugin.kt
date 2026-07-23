@@ -55,6 +55,10 @@ class AudioEnginePlugin : FlutterPlugin, MethodCallHandler {
                 if (enginePtr != 0L) nativeStop(enginePtr)
                 result.success(null)
             }
+            "stopTransportSoft" -> {
+                if (enginePtr != 0L) nativeStopTransportSoft(enginePtr)
+                result.success(null)
+            }
             "setTempo" -> {
                 val bpm = call.argument<Double>("bpm") ?: 120.0
                 if (enginePtr != 0L) nativeSetTempo(enginePtr, bpm)
@@ -636,6 +640,7 @@ class AudioEnginePlugin : FlutterPlugin, MethodCallHandler {
     private external fun nativeOpen(ptr: Long): Boolean
     private external fun nativeStart(ptr: Long)
     private external fun nativeStop(ptr: Long)
+    private external fun nativeStopTransportSoft(ptr: Long)
     private external fun nativePauseStream(ptr: Long)
     private external fun nativeResumeStream(ptr: Long)
     private external fun nativeSetTempo(ptr: Long, bpm: Double)

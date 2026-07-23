@@ -33,6 +33,16 @@ class AudioEngine {
     await _channel.invokeMethod('stop');
   }
 
+  /// Halts the sequencer (no more rows advance) WITHOUT killing any
+  /// currently-sounding voices. Use this when playback reaches the natural
+  /// end of a pattern/song (no loop) so notes keep ringing instead of being
+  /// cut off abruptly. The user can still end a note explicitly with an OFF
+  /// command, or fully silence everything with stop().
+  Future<void> stopTransportSoft() async {
+    if (!_initialised) return;
+    await _channel.invokeMethod('stopTransportSoft');
+  }
+
   Future<void> setTempo(double bpm) async {
     if (!_initialised) return;
     await _channel.invokeMethod('setTempo', {'bpm': bpm});

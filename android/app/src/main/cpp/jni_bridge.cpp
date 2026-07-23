@@ -26,6 +26,11 @@ Java_com_metamind_stria_AudioEnginePlugin_nativeStop(JNIEnv*, jobject, jlong ptr
 }
 
 JNIEXPORT void JNICALL
+Java_com_metamind_stria_AudioEnginePlugin_nativeStopTransportSoft(JNIEnv*, jobject, jlong ptr) {
+    reinterpret_cast<AudioEngine*>(ptr)->stopTransportSoft();
+}
+
+JNIEXPORT void JNICALL
 Java_com_metamind_stria_AudioEnginePlugin_nativePauseStream(JNIEnv*, jobject, jlong ptr) {
     reinterpret_cast<AudioEngine*>(ptr)->pauseOutputStream();
 }

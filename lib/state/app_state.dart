@@ -3884,7 +3884,13 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
-  void stop() {
+  /// Stops the transport (sequencer). By default this fully silences all
+  /// voices immediately (explicit user Stop). Pass [keepVoicesRinging] when
+  /// stopping because playback simply reached its natural end (non-looped
+  /// pattern or song) so that any notes still sounding keep ringing across
+  /// the boundary instead of being cut off with a click — the user can end
+  /// them with an explicit OFF command if desired.
+  void stop({bool keepVoicesRinging = false}) {
     _playheadTimer?.cancel();
     _playheadTimer = null;
     _playheadPollInFlight = false;
@@ -3904,7 +3910,11 @@ class AppState extends ChangeNotifier {
     }
     // Restore mixer snapshot (UI state is source of truth) before stopping.
     _queueCurrentMixerSnapshotToEngine();
-    AudioEngine.instance.stop();
+    if (keepVoicesRinging) {
+      AudioEngine.instance.stopTransportSoft();
+    } else {
+      AudioEngine.instance.stop();
+    }
     // Signal any in-progress WAV export that song playback has ended.
     final completer = _exportCompleter;
     _exportCompleter = null;
@@ -4472,7 +4482,10 @@ class AppState extends ChangeNotifier {
       playheadRow = _playbackStartRow + (newRelRaw % selLen);
       if (didLoop) {
         if (!_loopPlaybackEnabled) {
-          stop();
+          // Pattern reached its natural end with looping off — halt the
+          // sequencer but let any currently-sounding notes ring out rather
+          // than cutting them off abruptly.
+          stop(keepVoicesRinging: true);
           return;
         }
         // Loop happened: the C++ engine already swapped in the pending pass
@@ -4630,7 +4643,10 @@ class AppState extends ChangeNotifier {
           );
           return;
         }
-        stop();
+        // Song/cluster reached its natural end with looping off — halt the
+        // sequencer but let any currently-sounding notes ring out rather
+        // than cutting them off abruptly.
+        stop(keepVoicesRinging: true);
         return;
       }
 
