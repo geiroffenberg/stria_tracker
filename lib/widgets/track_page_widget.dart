@@ -206,7 +206,7 @@ class _TrackPageWidgetState extends State<TrackPageWidget>
 
     return Column(
       children: [
-        _buildColumnHeader(false),
+        _buildColumnHeader(state, false),
         Expanded(
           child: LayoutBuilder(
             builder: (context, constraints) {
@@ -286,7 +286,15 @@ class _TrackPageWidgetState extends State<TrackPageWidget>
     );
   }
 
-  Widget _buildColumnHeader(bool collapsed) {
+  // Columns whose header can be tapped to select the entire column (normal
+  // view only). FX columns are intentionally excluded.
+  static const Set<CellColumn> _selectableHeaderColumns = {
+    CellColumn.note,
+    CellColumn.instrument,
+    CellColumn.volume,
+  };
+
+  Widget _buildColumnHeader(AppState state, bool collapsed) {
     final cols = collapsed
         ? [CellColumn.note, CellColumn.instrument]
         : CellColumn.values;
@@ -297,12 +305,25 @@ class _TrackPageWidgetState extends State<TrackPageWidget>
     ];
 
     for (final col in cols) {
-      children.add(
-        SizedBox(
-          width: _colWidth(col),
-          child: Text(col.header, style: kStyleHeader),
+      final isSelectable = !collapsed && _selectableHeaderColumns.contains(col);
+      final isSelected = isSelectable && state.selectedColumn == col;
+      Widget headerCell = SizedBox(
+        width: _colWidth(col),
+        child: Text(
+          col.header,
+          style: isSelected
+              ? kStyleHeader.copyWith(color: kColAccent)
+              : kStyleHeader,
         ),
       );
+      if (isSelectable) {
+        headerCell = GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: () => state.selectColumn(col),
+          child: headerCell,
+        );
+      }
+      children.add(headerCell);
       children.add(SizedBox(width: _gapAfter(col)));
     }
 

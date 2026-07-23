@@ -333,6 +333,29 @@ class AppState extends ChangeNotifier {
     return min <= max ? (min, max) : (max, min);
   }
 
+  // Whole-column selection (tap a NOTE/IN/VL header in the normal pattern
+  // view to select every row of that column in the current track).
+  CellColumn? _selectedColumn;
+  CellColumn? get selectedColumn => _selectedColumn;
+
+  /// Selects (or, if already selected, deselects) an entire column of the
+  /// current track. Mutually exclusive with cell/row/box selection.
+  void selectColumn(CellColumn column) {
+    selectedCell = null;
+    _selectedRowStart = null;
+    _selectedRowEnd = null;
+    _boxSelection = null;
+    _isBoxSelecting = false;
+    _selectedColumn = (_selectedColumn == column) ? null : column;
+    notifyListeners();
+  }
+
+  void clearColumnSelection() {
+    if (_selectedColumn == null) return;
+    _selectedColumn = null;
+    notifyListeners();
+  }
+
   CellBoxSelection? _boxSelection;
   bool _isBoxSelecting = false;
   CellBoxSelection? get boxSelection => _boxSelection;
@@ -843,6 +866,7 @@ class AppState extends ChangeNotifier {
     selectedCell = null;
     _selectedRowStart = null;
     _selectedRowEnd = null;
+    _selectedColumn = null;
     _clampSelectionToPattern();
     _restartPlayheadTimerIfNeeded();
     notifyListeners();
@@ -868,6 +892,7 @@ class AppState extends ChangeNotifier {
     selectedCell = null;
     _selectedRowStart = null;
     _selectedRowEnd = null;
+    _selectedColumn = null;
     _clampSelectionToPattern();
     _restartPlayheadTimerIfNeeded();
     notifyListeners();
@@ -967,6 +992,7 @@ class AppState extends ChangeNotifier {
     _selectedRowEnd = null;
     _boxSelection = null;
     _isBoxSelecting = false;
+    _selectedColumn = null;
     notifyListeners();
   }
 
@@ -1715,6 +1741,7 @@ class AppState extends ChangeNotifier {
     _selectedRowEnd = null;
     _boxSelection = null;
     _isBoxSelecting = false;
+    _selectedColumn = null;
     notifyListeners();
   }
 
@@ -1724,6 +1751,7 @@ class AppState extends ChangeNotifier {
     _selectedRowEnd = null;
     _boxSelection = null;
     _isBoxSelecting = false;
+    _selectedColumn = null;
     notifyListeners();
   }
 
@@ -1741,6 +1769,7 @@ class AppState extends ChangeNotifier {
     selectedCell = null;
     _boxSelection = null;
     _isBoxSelecting = false;
+    _selectedColumn = null;
 
     final start = _selectedRowStart;
     final end = _selectedRowEnd;
@@ -1789,6 +1818,7 @@ class AppState extends ChangeNotifier {
     selectedCell = null;
     _selectedRowStart = null;
     _selectedRowEnd = null;
+    _selectedColumn = null;
     _isBoxSelecting = true;
     _boxSelection = CellBoxSelection(
       trackIndex: _currentTrackIndex,
@@ -2862,15 +2892,60 @@ class AppState extends ChangeNotifier {
   /// Transpose every note row in the selection by [delta] semitones.
   /// Notes at the edge of the range are clamped (not wrapped).
   /// Empty, hold, and note-off rows are left unchanged.
+  /// Shared row-range transpose logic used by both the multi-row-selection
+  /// transpose buttons and the whole-column transpose buttons.
+  void _transposeRows(int startRow, int endRow, int delta) {
+    final cells = currentTrack.cells;
+    for (int r = startRow; r <= endRow; r++) {
+      if (!cells[r].note.isNote) continue;
+      final newScroll = (cells[r].note.scrollIndex + delta).clamp(1, 120);
+      cells[r].note = NoteValue.fromScrollIndex(newScroll);
+    }
+  }
+
   void transposeSelectionBySemitones(int delta) {
     final range = selectedRowRange;
     if (range == null) return;
     _pushPatternUndo('transpose');
-    final cells = currentTrack.cells;
-    for (int r = range.$1; r <= range.$2; r++) {
-      if (!cells[r].note.isNote) continue;
-      final newScroll = (cells[r].note.scrollIndex + delta).clamp(1, 120);
-      cells[r].note = NoteValue.fromScrollIndex(newScroll);
+    _transposeRows(range.$1, range.$2, delta);
+    notifyListeners();
+  }
+
+  /// Transposes every note in the current track's NOTE column by [delta]
+  /// semitones. Used by the whole-column NOTE menu (header tap selects the
+  /// entire column). Reuses the same skip-non-note/clamp logic as
+  /// [transposeSelectionBySemitones], just applied to every row.
+  void transposeColumnBySemitones(int delta) {
+    _pushPatternUndo('transpose column');
+    _transposeRows(0, currentTrack.cells.length - 1, delta);
+    notifyListeners();
+  }
+
+  /// Nudges every non-empty value in [column] across the whole current
+  /// track by [delta], clamped to the column's normal range. Empty cells
+  /// are left untouched — mirrors [nudgeCell], which only ever operates on
+  /// a value that's already present. Used by the whole-column IN/VOL menus.
+  ///
+  /// VOL is a special case: any row with a real note shows an implied
+  /// default of 80 even when the cell itself is still null (see
+  /// [cellDisplay]'s volume fallback) — nudge that implied value into a
+  /// real one instead of skipping the row.
+  void nudgeColumn(CellColumn column, int delta) {
+    _pushPatternUndo('nudge column');
+    final track = currentTrack;
+    final minV = track.minValue(column);
+    final maxV = track.maxValue(column);
+    for (int r = 0; r < track.cells.length; r++) {
+      var current = track.readColumnValue(r, column);
+      if (current == null) {
+        if (column == CellColumn.volume && track.cells[r].note.isNote) {
+          current = 80;
+        } else {
+          continue;
+        }
+      }
+      final clamped = (current + delta).clamp(minV, maxV);
+      track.writeColumnValue(r, column, clamped);
     }
     notifyListeners();
   }

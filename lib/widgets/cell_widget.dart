@@ -16,6 +16,11 @@ String cellDisplay(CellColumn column, TrackerCell cell) {
     case CellColumn.instrument:
       return _dec2Display(cell.instrument);
     case CellColumn.volume:
+      // Any row with a real note has an audible volume even if none was
+      // explicitly set — show the implied default (80) instead of "--".
+      // Display-only: does not write to the cell, so it applies equally to
+      // notes entered just now and notes loaded from an existing song.
+      if (cell.volume == null && cell.note.isNote) return '80';
       return _dec2Display(cell.volume);
     case CellColumn.fx0cmd:
       return fxCommandName(cell.fxSlots[0].command);
@@ -119,9 +124,12 @@ class _CellWidgetState extends State<CellWidget> {
       widget.row,
       widget.column,
     );
+    final isColumnSelected =
+        widget.trackIndex == state.currentTrackIndex &&
+        state.selectedColumn == widget.column;
     final interactionsEnabled = !state.isBoxSelecting;
 
-    return GestureDetector(
+    final cell = GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: interactionsEnabled ? () => _handleTap(state) : null,
       onVerticalDragStart: interactionsEnabled ? (_) {
@@ -158,5 +166,63 @@ class _CellWidgetState extends State<CellWidget> {
         child: Text(text, style: style, maxLines: 1),
       ),
     );
+
+    if (isColumnSelected) {
+      return CustomPaint(
+        foregroundPainter: DottedSelectionBorderPainter(kColSelection),
+        child: cell,
+      );
+    }
+    return cell;
   }
+}
+
+/// Draws a fine dotted border around a selected row or column.
+class DottedSelectionBorderPainter extends CustomPainter {
+  final Color color;
+  const DottedSelectionBorderPainter(this.color);
+
+  static const double _dot = 2.0;
+  static const double _gap = 3.0;
+
+  void _drawDashed(Canvas canvas, Paint paint, Offset start, Offset end) {
+    final total = (end - start).distance;
+    if (total == 0) return;
+    final dir = (end - start) / total;
+    double d = 0;
+    while (d < total) {
+      canvas.drawLine(
+        start + dir * d,
+        start + dir * (d + _dot).clamp(0.0, total),
+        paint,
+      );
+      d += _dot + _gap;
+    }
+  }
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = color
+      ..strokeWidth = 1.0
+      ..strokeCap = StrokeCap.round;
+    _drawDashed(canvas, paint, Offset.zero, Offset(size.width, 0)); // top
+    _drawDashed(
+      canvas,
+      paint,
+      Offset(0, size.height),
+      Offset(size.width, size.height),
+    ); // bottom
+    _drawDashed(canvas, paint, Offset.zero, Offset(0, size.height)); // left
+    _drawDashed(
+      canvas,
+      paint,
+      Offset(size.width, 0),
+      Offset(size.width, size.height),
+    ); // right
+  }
+
+  @override
+  bool shouldRepaint(covariant DottedSelectionBorderPainter old) =>
+      old.color != color;
 }

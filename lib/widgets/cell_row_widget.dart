@@ -101,7 +101,7 @@ class CellRowWidget extends StatelessWidget {
     );
     if (isRowSelected) {
       return CustomPaint(
-        foregroundPainter: _DottedRowBorderPainter(kColSelection),
+        foregroundPainter: DottedSelectionBorderPainter(kColSelection),
         child: rowContainer,
       );
     }
@@ -608,54 +608,4 @@ class _EnvelopeCurvePainter extends CustomPainter {
       old.color != color ||
       old.t0 != t0 ||
       old.t1 != t1;
-}
-
-/// Draws a fine dotted border around a row-selected line.
-class _DottedRowBorderPainter extends CustomPainter {
-  final Color color;
-  const _DottedRowBorderPainter(this.color);
-
-  static const double _dot = 2.0;
-  static const double _gap = 3.0;
-
-  void _drawDashed(Canvas canvas, Paint paint, Offset start, Offset end) {
-    final total = (end - start).distance;
-    if (total == 0) return;
-    final dir = (end - start) / total;
-    double d = 0;
-    while (d < total) {
-      canvas.drawLine(
-        start + dir * d,
-        start + dir * (d + _dot).clamp(0.0, total),
-        paint,
-      );
-      d += _dot + _gap;
-    }
-  }
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = color
-      ..strokeWidth = 1.0
-      ..strokeCap = StrokeCap.round;
-    _drawDashed(canvas, paint, Offset.zero, Offset(size.width, 0)); // top
-    _drawDashed(
-      canvas,
-      paint,
-      Offset(0, size.height),
-      Offset(size.width, size.height),
-    ); // bottom
-    _drawDashed(canvas, paint, Offset.zero, Offset(0, size.height)); // left
-    _drawDashed(
-      canvas,
-      paint,
-      Offset(size.width, 0),
-      Offset(size.width, size.height),
-    ); // right
-  }
-
-  @override
-  bool shouldRepaint(covariant _DottedRowBorderPainter old) =>
-      old.color != color;
 }

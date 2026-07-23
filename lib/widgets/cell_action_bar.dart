@@ -22,6 +22,7 @@ class CellActionBar extends StatelessWidget {
     final boxSel = state.boxSelection;
     final selRow = state.selectedRow;
     final selCell = state.selectedCell;
+    final selCol = state.selectedColumn;
 
     Widget body;
     double height;
@@ -48,6 +49,9 @@ class CellActionBar extends StatelessWidget {
 
     if (boxSel != null) {
       body = _BoxSelectionActions(state: state);
+      height = 56;
+    } else if (selCol != null) {
+      body = _ColumnActions(state: state, column: selCol);
       height = 56;
     } else if (selRow != null) {
       body = _RowActions(state: state, row: selRow);
@@ -147,6 +151,83 @@ class _BoxSelectionActions extends StatelessWidget {
           ),
           const Spacer(),
           _ActionBtn(label: '✕', onTap: () => state.clearBoxSelection()),
+        ],
+      ),
+    );
+  }
+}
+
+// ─── COLUMN MODE (whole-column selection via header tap) ──────────────────
+
+/// Shown when a whole NOTE/IN/VL column is selected (via header tap in the
+/// normal pattern view). Applies its edits to every row of the current
+/// track's column at once (empty cells are skipped, same as single-cell
+/// nudging requires a value to already be present).
+class _ColumnActions extends StatelessWidget {
+  final AppState state;
+  final CellColumn column;
+
+  const _ColumnActions({required this.state, required this.column});
+
+  String get _label {
+    switch (column) {
+      case CellColumn.note:
+        return 'NOTE COL';
+      case CellColumn.instrument:
+        return 'IN COL';
+      case CellColumn.volume:
+        return 'VOL COL';
+      default:
+        return 'COL';
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final buttons = column == CellColumn.note
+        ? [
+            _ActionBtn(
+              label: '+ST',
+              onTap: () => state.transposeColumnBySemitones(1),
+            ),
+            _ActionBtn(
+              label: '-ST',
+              onTap: () => state.transposeColumnBySemitones(-1),
+            ),
+            _ActionBtn(
+              label: '+OCT',
+              onTap: () => state.transposeColumnBySemitones(12),
+            ),
+            _ActionBtn(
+              label: '-OCT',
+              onTap: () => state.transposeColumnBySemitones(-12),
+            ),
+          ]
+        : [
+            _ActionBtn(label: '+1', onTap: () => state.nudgeColumn(column, 1)),
+            _ActionBtn(
+              label: '-1',
+              onTap: () => state.nudgeColumn(column, -1),
+            ),
+            _ActionBtn(
+              label: '+10',
+              onTap: () => state.nudgeColumn(column, 10),
+            ),
+            _ActionBtn(
+              label: '-10',
+              onTap: () => state.nudgeColumn(column, -10),
+            ),
+          ];
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
+      child: Row(
+        children: [
+          _ActionLabel(text: _label, color: kColAccent, width: 88),
+          const SizedBox(width: 4),
+          ...buttons,
+          const Spacer(),
+          _ActionBtn(label: '✕', onTap: () => state.clearColumnSelection()),
         ],
       ),
     );

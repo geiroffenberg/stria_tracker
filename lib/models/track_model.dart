@@ -120,7 +120,7 @@ class TrackModel {
   void writeColumnValue(int row, CellColumn column, int? v) {
     switch (column) {
       case CellColumn.note:
-        cells[row].note = NoteValue.fromScrollIndex(v ?? 0);
+        setNote(row, NoteValue.fromScrollIndex(v ?? 0));
         break;
       case CellColumn.instrument:
         cells[row].instrument = v?.clamp(0, 99);
