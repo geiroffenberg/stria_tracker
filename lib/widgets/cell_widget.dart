@@ -117,7 +117,17 @@ class _CellWidgetState extends State<CellWidget> {
   Widget build(BuildContext context) {
     final text = cellDisplay(widget.column, widget.cell);
     final empty = cellIsEmpty(widget.column, widget.cell);
-    final style = empty ? kStyleEmpty : columnStyle(widget.column);
+    // VOL shows an implied default (80) for any row with a real note even
+    // when the cell itself is still empty (see cellDisplay) — style it the
+    // same as an explicitly-set value so it isn't shown in two different
+    // colors for what looks like the same kind of value.
+    final showingImpliedVolume =
+        widget.column == CellColumn.volume &&
+        widget.cell.volume == null &&
+        widget.cell.note.isNote;
+    final style = (empty && !showingImpliedVolume)
+        ? kStyleEmpty
+        : columnStyle(widget.column);
     final state = AppStateScope.of(context);
     final isBoxSelected = state.isCellInBoxSelection(
       widget.trackIndex,
