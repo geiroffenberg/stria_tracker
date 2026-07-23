@@ -39,8 +39,20 @@ Song screen.
 | CUT | Copy the selection to the clipboard, then clear it |
 | COPY | Copy the selection to the clipboard (source unchanged) |
 | PASTE | Paste the clipboard, top-left aligned to the current selection |
+| INS | Insert a new empty pattern slot immediately after the selection |
+| DUP | Duplicate the selected pattern, inserting the copy immediately after it |
 | DEL | Clear the selection to empty |
 | ✕ | Dismiss the selection |
+
+INS and DUP act on whole **pattern slots** in the arrangement rather than on
+cell contents — patterns below the insertion point shift down to make room
+(the song holds a fixed 99 slots, so the operation is refused if the last
+slot already contains data). DUP also carries over the source pattern's
+settings (BPM, beats, swing, LPB, beat overrides, FX envelopes), not just its
+notes — equivalent to inserting an empty pattern and then copy/pasting every
+cell, but in one step. For a multi-row selection, INS inserts after the
+bottom-most selected row and DUP duplicates the pattern at the top of the
+selection.
 
 ### Multi-cell selection
 

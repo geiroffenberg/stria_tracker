@@ -21,7 +21,7 @@ C-4    01     75    PAN  50
 |---|---|
 | NOTE | The note to play (`C-4`, `D#3`, `OFF`, `---`) |
 | INST | `--` = hold/carry (no trigger); `00` = pitch-change only (no retrigger, glide applies); `01`–`16` = trigger with that instrument slot |
-| VOL | Per-cell volume override (00–99) |
+| VOL | Per-cell volume override (00–99). Any row with a real note shows an implied default of `80` even if you never set it explicitly — this is a display-only fallback (nothing is written until you actually tap/drag the cell); rows with no note still show `--` |
 | FX | Effect command (3-letter code) |
 | VAL | Effect value (00–99) |
 
@@ -86,6 +86,22 @@ When one or more rows are selected (by tapping row numbers in the Pattern screen
 - **No selection** — playback behaves normally (full pattern from the current cursor position).
 
 This makes it easy to audition a fill, check a transition, or loop a specific beat without moving the cursor.
+
+## Column Selection
+
+In **Normal view** only, tapping a **NOTE**, **IN**, or **VL** column header selects that entire column — every row of that field on the current track — instead of a single cell or row. FX column headers are not selectable this way.
+
+- Each selected cell is outlined with the same dotted border used for multi-row selection.
+- Tap the header again to deselect. Selecting a row, a cell, or a box range clears the column selection (only one selection mode is active at a time).
+- The action bar at the bottom shows a column-specific menu:
+
+| Column | Buttons | Effect |
+|---|---|---|
+| NOTE | `+ST` / `-ST` / `+OCT` / `-OCT` | Transpose every note in the track by 1 or 12 semitones. Non-note rows (`---`, `OFF`) are skipped. |
+| IN | `+1` / `-1` / `+10` / `-10` | Adjust every non-empty instrument number in the track. Empty rows are skipped. |
+| VOL | `+1` / `-1` / `+10` / `-10` | Adjust every volume in the track. Rows showing the implied default of 80 (see Cell Columns above) are nudged from that value; rows with no note are skipped. |
+
+All column edits apply to the whole track at once and can be undone with the pattern undo button.
 
 ## Views
 
