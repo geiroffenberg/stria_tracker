@@ -141,6 +141,17 @@ struct Voice {
     float  loopEndNorm       = 1.0f;  // 0..1 — loop region end
     float  sampleGain        = 1.0f;
 
+    // Anti-click retrigger tail. Continuously mirrors the last audible
+    // sampler output sample. When a note-on retriggers an already-sounding
+    // voice, that captured level is faded to zero over a few ms in parallel
+    // with the new note's own attack, instead of jumping straight from the
+    // old note's current amplitude to the new note's silent attack start —
+    // an instantaneous discontinuity that would otherwise click.
+    float  sampleLastOutput       = 0.0f;
+    float  declickTailGain0       = 0.0f;
+    int    declickTailFramesTotal = 1;
+    int    declickTailFramesLeft  = 0;
+
     // Sampler HP -> LP filter (in series). Bypassed entirely when samplerFilterOn == false.
     bool   samplerFilterOn   = false;
     float  samplerHpCutoff   = 0.0f;  // 0..1 (0 = bypass, 1 = closed)

@@ -67,6 +67,7 @@ void startKarplusVoice(Voice& v, int midiNote, int sampleRate) {
     v.karplusMode = true;
     v.samplerMode = false;
     v.sampleActive = false;
+    v.declickTailFramesLeft = 0;
     v.noteHeld = true;
     v.gain = 0.0f;
     v.gainTarget = 1.0f;
@@ -537,6 +538,7 @@ void AudioEngine::stop() {
                 v.sampleSlot        = -1;
                 v.samplePos         = 0.0;
                 v.sampleStep        = 1.0;
+                v.declickTailFramesLeft = 0;
             }
         }
         LOGI("Transport stopped (voices muted, stream kept running)");
@@ -1125,6 +1127,18 @@ void AudioEngine::triggerRowLocked(const std::vector<int>& rowData) {
                 }
                 const auto& s = mSamplerSlots[v.sampleSlot];
                 if (!s.mono.empty()) {
+                    // Anti-click: if this voice is already sounding, capture
+                    // its last output as a short fading tail instead of
+                    // letting the jump to the new note's silent attack start
+                    // produce an instantaneous (clicking) discontinuity.
+                    if (v.sampleActive) {
+                        constexpr float kDeclickTailMs = 3.0f;
+                        v.declickTailGain0 = v.sampleLastOutput;
+                        v.declickTailFramesTotal = std::max(
+                            1,
+                            static_cast<int>(kDeclickTailMs * 0.001f * mCachedSampleRate));
+                        v.declickTailFramesLeft = v.declickTailFramesTotal;
+                    }
                     v.midiNote = n;
                     // Cancel any in-flight SLU/SLD step ramp — new note takes over.
                     v.pitchRampSamplesLeft = 0;
@@ -2425,6 +2439,15 @@ oboe::DataCallbackResult AudioEngine::onAudioReady(
                     v.sampleSlot < static_cast<int>(mSamplerSlots.size())) {
                     const auto& s = mSamplerSlots[v.sampleSlot];
                     if (!s.mono.empty()) {
+                        // Anti-click: fade out whatever this voice was already
+                        // playing instead of jumping straight to the new hit.
+                        if (v.sampleActive) {
+                            constexpr float kDeclickTailMs = 3.0f;
+                            v.declickTailGain0 = v.sampleLastOutput;
+                            v.declickTailFramesTotal = std::max(
+                                1, static_cast<int>(kDeclickTailMs * 0.001 * sampleRate));
+                            v.declickTailFramesLeft = v.declickTailFramesTotal;
+                        }
                         const int sampleFrames = static_cast<int>(s.mono.size());
                         const int startFrame = std::clamp(
                             static_cast<int>(v.sampleStartNorm * static_cast<float>(sampleFrames - 1)),
@@ -2538,6 +2561,17 @@ oboe::DataCallbackResult AudioEngine::onAudioReady(
                     v.sampleSlot < static_cast<int>(mSamplerSlots.size())) {
                     const auto& s = mSamplerSlots[v.sampleSlot];
                     if (!s.mono.empty()) {
+                        // Anti-click: fade out whatever this voice was already
+                        // playing instead of jumping straight to the new hit —
+                        // important here since R (retrig) can fire many times
+                        // per row on a long sample.
+                        if (v.sampleActive) {
+                            constexpr float kDeclickTailMs = 3.0f;
+                            v.declickTailGain0 = v.sampleLastOutput;
+                            v.declickTailFramesTotal = std::max(
+                                1, static_cast<int>(kDeclickTailMs * 0.001 * sampleRate));
+                            v.declickTailFramesLeft = v.declickTailFramesTotal;
+                        }
                         const int sampleFrames = static_cast<int>(s.mono.size());
                         const int startFrame = std::clamp(
                             static_cast<int>(v.sampleStartNorm * static_cast<float>(sampleFrames - 1)),
@@ -2906,6 +2940,17 @@ oboe::DataCallbackResult AudioEngine::onAudioReady(
                 const float interpSample = hermite4(v.samplePos);
                 float dry = interpSample * v.level * v.instrumentVolume * v.sampleGain * envGain * treAmpMod;
 
+                // Anti-click retrigger tail: blend in the fading remnant of
+                // whatever this voice was outputting right before it was
+                // retriggered, so the signal stays continuous instead of
+                // jumping straight to the new note's silent attack start.
+                if (v.declickTailFramesLeft > 0) {
+                    const float tailFrac = static_cast<float>(v.declickTailFramesLeft) /
+                                            static_cast<float>(v.declickTailFramesTotal);
+                    dry += v.declickTailGain0 * tailFrac;
+                    v.declickTailFramesLeft--;
+                }
+
                 // LFO → volume: gain multiplier per anchor mode. DOWN pulls the
                 // level below the knob value (envelope-style swell with Ramp Up).
                 // Slew-limited to eliminate clicks from sudden square-wave jumps.
@@ -2981,6 +3026,7 @@ oboe::DataCallbackResult AudioEngine::onAudioReady(
                 const float leftGain  = std::cos(angle);
                 const float rightGain = std::sin(angle);
 
+                v.sampleLastOutput = dry;
                 mTrackBusL[trackIdx][i] += dry * leftGain;
                 mTrackBusR[trackIdx][i] += dry * rightGain;
 

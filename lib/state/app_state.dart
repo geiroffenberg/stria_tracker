@@ -400,6 +400,12 @@ class AppState extends ChangeNotifier {
   // Playback carry state, per track. One record per pattern track.
   List<_TrackCarry> _trackCarry = const [];
   int _carryPatternIndex = -1;
+  // When true, suppresses the automatic carry reset that normally happens
+  // at row 0. Set only while _buildScheduledRows() is building a seamless
+  // loop-pass continuation, so tracks holding/ringing a note across the
+  // loop boundary keep their real instrument/FX state instead of being
+  // reset to defaults.
+  bool _suppressCarryResetAtRowZero = false;
 
   bool isPlaying = false;
   bool isRecording = false;
@@ -4374,6 +4380,12 @@ class AppState extends ChangeNotifier {
   List<_ScheduledPlaybackRow> _buildScheduledRows({
     int startRow = 0,
     int? endRow,
+    // When true, and the existing carry state already matches the current
+    // pattern, this build continues from the live carry state instead of
+    // resetting it — used when pre-building the next loop pass so notes
+    // held/ringing across the loop boundary aren't corrupted back to
+    // default-instrument data on a hold row at the top of the range.
+    bool continueCarry = false,
   }) {
     final originalPlayheadRow = playheadRow;
     final pattern = song.patterns[_currentPatternIndex];
@@ -4384,11 +4396,18 @@ class AppState extends ChangeNotifier {
     );
     final scheduledRows = <_ScheduledPlaybackRow>[];
 
-    _resetInstrumentCarry();
-    // Dry-run rows before the range so instrument carry state is correct.
-    for (int row = 0; row < safeStart; row++) {
-      playheadRow = row;
-      _triggerCurrentRow();
+    final canContinueCarry = continueCarry &&
+        _carryPatternIndex == _currentPatternIndex &&
+        _trackCarry.length == pattern.tracks.length;
+    if (canContinueCarry) {
+      _suppressCarryResetAtRowZero = true;
+    } else {
+      _resetInstrumentCarry();
+      // Dry-run rows before the range so instrument carry state is correct.
+      for (int row = 0; row < safeStart; row++) {
+        playheadRow = row;
+        _triggerCurrentRow();
+      }
     }
     // Schedule exactly the requested range (no wrapping).
     for (int row = safeStart; row <= safeEnd; row++) {
@@ -4397,7 +4416,11 @@ class AppState extends ChangeNotifier {
     }
 
     playheadRow = originalPlayheadRow;
-    _resetInstrumentCarry();
+    if (canContinueCarry) {
+      _suppressCarryResetAtRowZero = false;
+    } else {
+      _resetInstrumentCarry();
+    }
     return scheduledRows;
   }
 
@@ -4439,6 +4462,7 @@ class AppState extends ChangeNotifier {
     final rows = _buildScheduledRows(
       startRow: _playbackStartRow,
       endRow: _playbackEndRow,
+      continueCarry: true,
     );
     await AudioEngine.instance.scheduleNextLoopRows(
       rows
@@ -4767,7 +4791,7 @@ class AppState extends ChangeNotifier {
 
     if (_carryPatternIndex != patternIdx ||
         _trackCarry.length != pattern.tracks.length ||
-        playheadRow == 0) {
+        (playheadRow == 0 && !_suppressCarryResetAtRowZero)) {
       _carryPatternIndex = patternIdx;
       _trackCarry = List<_TrackCarry>.generate(
         pattern.tracks.length,

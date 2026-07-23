@@ -3594,6 +3594,7 @@ class _SamplerEditorState extends State<_SamplerEditor>
                         label: 'PITCH',
                         value: (p.pitch + 1) / 2,
                         display: '${(p.pitch * 12).toStringAsFixed(1)} st',
+                        sensitivity: 0.006,
                         onChanged: (v) {
                           p.pitch = (v * 2) - 1;
                           state.instrumentParamsChanged();
@@ -4149,12 +4150,16 @@ class _Knob extends StatelessWidget {
   final double value; // 0..1
   final String display;
   final ValueChanged<double> onChanged;
+  // Drag distance -> value change rate. Lower = less sensitive (finer
+  // control). Default matches the original knob feel.
+  final double sensitivity;
 
   const _Knob({
     required this.label,
     required this.value,
     required this.display,
     required this.onChanged,
+    this.sensitivity = 0.012,
   });
 
   @override
@@ -4163,7 +4168,7 @@ class _Knob extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
       child: GestureDetector(
         onVerticalDragUpdate: (d) {
-          final n = (value - d.delta.dy * 0.012).clamp(0.0, 1.0);
+          final n = (value - d.delta.dy * sensitivity).clamp(0.0, 1.0);
           onChanged(n);
         },
         onDoubleTap: () => onChanged(0.5),
