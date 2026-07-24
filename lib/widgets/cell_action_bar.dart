@@ -313,8 +313,11 @@ class _RowActions extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(6, 0, 6, 6),
       child: Row(
         children: [
-          _ActionBtn(label: 'SHUF', onTap: () => state.shuffleSelectedRows()),
-          _ActionBtn(label: 'SCAT', onTap: () => state.scatterSelectedRows()),
+          _ActionBtn(label: 'SHF', onTap: () => state.shuffleSelectedRows()),
+          _ActionBtn(label: 'SCT', onTap: () => state.scatterSelectedRows()),
+          const SizedBox(width: 4),
+          _ActionBtn(label: 'HUV', onTap: () => state.humanizeVolume()),
+          _ActionBtn(label: 'HUT', onTap: () => state.humanizeTiming()),
           const SizedBox(width: 4),
           _ActionBtn(
             label: '+OCT',

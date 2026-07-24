@@ -23,7 +23,7 @@ FX commands are entered in the FX column of a pattern cell. Each command takes a
 | `TRE` | XY | Tremolo. X = speed (0–9), Y = depth (0–9). Sine-wave volume LFO. Carries through hold rows. |
 | `VIB` | XY | Vibrato. X = speed (0–9), Y = depth (0–9). Pitch LFO. Carries through hold rows. |
 | `VOL` | 00–99 | Override volume. Carries through hold rows until note-off. |
-| `ARC` | XY | Octave arp config. X = octave layers, Y = notes per line |
+| `ARC` | XY | Arp mode config. X = mode (1–9), Y = notes per line. 1–3 = linear, 4–6 = bidirectional, 7–9 = random |
 
 ### ARP — Arpeggio Detail
 
@@ -39,6 +39,48 @@ ARP can be placed on a hold row to start arpeggiation mid-note.
 |---|---|
 | 0 | Flat (same volume each retrig) |
 | 1–9 | *TBD — document curve shapes* |
+
+### ARC — Arpeggio Mode & Configuration
+
+ARC controls **how** the arp is played (mode) and **how fast** (speed). The X digit (tens) selects the mode; the Y digit (ones) sets how many notes play per line.
+
+**Modes 1–3 (Linear)** — Play notes forward, one octave per mode:
+
+| Mode | Octaves | Sequence (for ARP `37` = notes 3, 7) | Sound |
+|---|---|---|---|
+| 1 | 1 | `root, +3, +7` | Simple forward sweep |
+| 2 | 2 | `root, +3, +7, root+12, +3+12, +7+12` | Two-octave ascending |
+| 3 | 3 | (extends to +24 semitones) | Three-octave rising |
+
+**Modes 4–6 (Bidirectional)** — Play forward, then backward with peak repeat:
+
+| Mode | Octaves | Sequence (for ARP `37` = notes 3, 7) | Sound |
+|---|---|---|---|
+| 4 | 1 | `root, +3, +7, +7, +3, root` | Swell: up to peak, back down |
+| 5 | 2 | (forward then backward, spanning 2 octaves) | Dramatic up-and-down |
+| 6 | 3 | (extends across 3 octaves) | Sweeping riser/faller |
+
+**Modes 7–9 (Random)** — Shuffle notes within each octave for organic variation:
+
+| Mode | Octaves | Sequence (for ARP `37` = notes 3, 7) | Sound |
+|---|---|---|---|
+| 7 | 1 | Random order of `root, +3, +7` each cycle | Unpredictable fills |
+| 8 | 2 | Shuffled across 2-octave range | Synth-sweep randomness |
+| 9 | 3 | Shuffled across 3-octave range | Deep chaotic motion |
+
+**Speed (Y digit, 0–9)**
+
+The Y digit controls **notes per line**:
+
+- `Y=0` (e.g., `ARC 10`) — play entire cycle each line (sequence length varies by mode)
+- `Y=1` (e.g., `ARC 11`) — play 1 note per line, cycle repeats
+- `Y=7` (e.g., `ARC 17`) — play 7 notes per line, stacking the cycle
+
+**Examples**
+
+- `ARC 17` — Mode 1 (linear, 1 octave), 7 notes per line. Plays 3-note sequence 2+ times per line.
+- `ARC 45` — Mode 4 (bidirectional, 1 octave), 5 notes per line. Plays swell (up-down) 5 times per line.
+- `ARC 79` — Mode 7 (random, 1 octave), 9 notes per line. Random notes fill the line.
 
 ### SLU / SLD — Pitch Slide Detail
 

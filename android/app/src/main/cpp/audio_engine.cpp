@@ -1458,7 +1458,12 @@ void AudioEngine::queueDelaysLocked(const std::vector<int>& data) {
         const int delayPct = std::clamp(data[i], 0, 99);
         const double norm = (delayPct >= 99) ? 1.0 : (delayPct / 100.0);
         const int32_t sampleOffset = std::max(0, static_cast<int32_t>(mLineSamplesPerRow * norm));
-        const int32_t target = sampleOffset + mSubRowSampleCounter;
+        // Clamp strictly below the row length as defensive margin (the
+        // audio callback now fires pending events before row-boundary
+        // advancement, so this is no longer required for correctness, but
+        // keeps the target from ever exactly equaling the boundary sample).
+        const int32_t safeOffset = std::min(sampleOffset, mLineSamplesPerRow - 1);
+        const int32_t target = safeOffset + mSubRowSampleCounter;
         mPendingDelays.push_back({target, data[i + 1], data[i + 2], data[i + 3]});
     }
 }
@@ -1475,7 +1480,8 @@ void AudioEngine::queueKillsLocked(const std::vector<int>& data) {
         const int killPct = std::clamp(data[i], 0, 99);
         const double norm = (killPct >= 99) ? 1.0 : (killPct / 100.0);
         const int32_t sampleOffset = std::max(0, static_cast<int32_t>(mLineSamplesPerRow * norm));
-        const int32_t target = sampleOffset + mSubRowSampleCounter;
+        const int32_t safeOffset = std::min(sampleOffset, mLineSamplesPerRow - 1);
+        const int32_t target = safeOffset + mSubRowSampleCounter;
         mPendingKills.push_back({target, data[i + 1]});
     }
 }
@@ -2404,21 +2410,17 @@ oboe::DataCallbackResult AudioEngine::onAudioReady(
 
     std::lock_guard<std::mutex> lock(mVoiceMutex);
 
-    if (mPlayheadRunning.load() && mLineSamplesPerRow > 0) {
-        mPlayheadSampleCounter += numFrames;
-        while (mPlayheadSampleCounter >= mLineSamplesPerRow) {
-            mPlayheadSampleCounter -= mLineSamplesPerRow;
-            // Always count the boundary so the Dart poller detects queue
-            // exhaustion even when primeNextQueuedPlaybackRowLocked() fails.
-            mPendingRowAdvances.fetch_add(1);
-            if (!primeNextQueuedPlaybackRowLocked()) {
-                mPlayheadRunning.store(false);
-                break;
-            }
-        }
-    }
-
-    // Advance the per-row sample counter and fire due sub-row events.
+    // Advance the per-row sample counter and fire due sub-row events BEFORE
+    // handling row-boundary advancement below. Ordering matters here: a
+    // pending DEL/ARP/RET/KIL event can be scheduled very close to the end
+    // of a row (e.g. DEL 97-98). If the row-boundary-advance code ran first
+    // in the same callback, primeNextQueuedPlaybackRowLocked() ->
+    // triggerRowLocked() would clear the pending event before its
+    // firing-check ever ran — a race whose outcome depends on exact
+    // callback/row alignment, so near-end-of-row events fired sometimes and
+    // silently dropped other times. Firing first guarantees every pending
+    // event gets checked against this callback's updated counter before the
+    // row it belongs to can end.
     // Events queued via queueArp()/queueRetrigs() fire at buffer granularity,
     // which is far more accurate than Dart Timer jitter.
     mSubRowSampleCounter += numFrames;
@@ -2648,6 +2650,22 @@ oboe::DataCallbackResult AudioEngine::onAudioReady(
             std::remove_if(mPendingKills.begin(), mPendingKills.end(),
                 [](const KillEvent& e) { return e.sampleTarget < 0; }),
             mPendingKills.end());
+    }
+
+    // Handle row-boundary advancement after firing this row's pending
+    // events above (see comment near the mSubRowSampleCounter increment).
+    if (mPlayheadRunning.load() && mLineSamplesPerRow > 0) {
+        mPlayheadSampleCounter += numFrames;
+        while (mPlayheadSampleCounter >= mLineSamplesPerRow) {
+            mPlayheadSampleCounter -= mLineSamplesPerRow;
+            // Always count the boundary so the Dart poller detects queue
+            // exhaustion even when primeNextQueuedPlaybackRowLocked() fails.
+            mPendingRowAdvances.fetch_add(1);
+            if (!primeNextQueuedPlaybackRowLocked()) {
+                mPlayheadRunning.store(false);
+                break;
+            }
+        }
     }
 
     // Process slice commands (SLC) — set sampler boundaries at row start.

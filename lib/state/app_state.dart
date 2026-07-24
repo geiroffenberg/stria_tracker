@@ -2846,6 +2846,167 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  // Humanize baselines — captured the first time HUV/HUT is used on a given
+  // selection so repeated taps re-roll from the original values/layout
+  // instead of compounding on top of the last tap's result. A new selection
+  // (different track or row range) resets the baseline automatically.
+  int? _huvBaselineTrack;
+  (int, int)? _huvBaselineRange;
+  List<int?>? _huvBaselineVolumes;
+
+  int? _hutBaselineTrack;
+  (int, int)? _hutBaselineRange;
+  List<TrackerCell>? _hutBaselineCells;
+
+  /// Rolls a random timing offset in [-range, range], excluding 0 (a no-op —
+  /// every humanized note should actually move) and -1 (which maps to DEL
+  /// value 99 via 100+offset, a value the audio engine can't trigger due to
+  /// an exact-row-boundary edge case in queueDelaysLocked).
+  int _rollTimingOffset(math.Random rnd, int range) {
+    int offset;
+    do {
+      offset = rnd.nextInt(range * 2 + 1) - range;
+    } while (offset == 0 || offset == -1);
+    return offset;
+  }
+
+  /// HUV: Humanize volume. Every note row in the selection gets its volume
+  /// nudged by a random amount between -25 and +25, clamped to 0-99. The
+  /// original volumes are snapshotted on first use per selection so repeated
+  /// taps re-roll from the original values rather than drifting further
+  /// away with each tap. Selection is intentionally left active so HUT can
+  /// be applied next.
+  void humanizeVolume() {
+    final range = selectedRowRange;
+    if (range == null) return;
+    _pushPatternUndo('humanize volume');
+    final cells = currentTrack.cells;
+    final rnd = math.Random();
+
+    final isNewSelection =
+        _huvBaselineTrack != currentTrackIndex || _huvBaselineRange != range;
+    if (isNewSelection) {
+      _huvBaselineTrack = currentTrackIndex;
+      _huvBaselineRange = range;
+      _huvBaselineVolumes = [
+        for (int r = range.$1; r <= range.$2; r++) cells[r].volume,
+      ];
+    }
+    final baseline = _huvBaselineVolumes!;
+
+    for (int r = range.$1; r <= range.$2; r++) {
+      if (!cells[r].note.isNote) continue;
+      final base = baseline[r - range.$1] ?? 80;
+      final offset = rnd.nextInt(51) - 25; // -25..+25
+      cells[r].volume = (base + offset).clamp(0, 99);
+    }
+    notifyListeners();
+  }
+
+  /// Finds an existing DEL slot on [cell], or the first empty slot, to reuse
+  /// for a humanize timing shift. Returns null if no DEL slot exists and all
+  /// slots are already occupied by other commands (no room).
+  int? _findOrCreateDelSlot(TrackerCell cell) {
+    for (int i = 0; i < cell.fxSlots.length; i++) {
+      if (cell.fxSlots[i].command == kFxDEL) return i;
+    }
+    for (int i = 0; i < cell.fxSlots.length; i++) {
+      if (cell.fxSlots[i].command == null) return i;
+    }
+    return null;
+  }
+
+  /// HUT: Humanize timing. Every note row in the selection is shifted
+  /// randomly by -25..+25 (percent of a row), never landing on 0 (a no-op)
+  /// or a value that maps to the unplayable DEL 99. Positive offsets delay
+  /// the note in place via DEL. Negative offsets move the note to the
+  /// previous row and set DEL near the end of that row (75-98), simulating
+  /// an early trigger. If the previous row already has a note, or has no
+  /// free FX slot for DEL, falls back to a late-only shift on the original
+  /// row. The original layout is snapshotted on first use per selection so
+  /// repeated taps restore it before re-rolling, instead of ratcheting notes
+  /// permanently toward row 0. Selection is intentionally left active so HUV
+  /// can be applied next.
+  void humanizeTiming() {
+    final range = selectedRowRange;
+    if (range == null) return;
+    _pushPatternUndo('humanize timing');
+    final cells = currentTrack.cells;
+    final rnd = math.Random();
+
+    final isNewSelection =
+        _hutBaselineTrack != currentTrackIndex || _hutBaselineRange != range;
+    if (isNewSelection) {
+      _hutBaselineTrack = currentTrackIndex;
+      _hutBaselineRange = range;
+      _hutBaselineCells = [
+        for (int r = range.$1; r <= range.$2; r++) cells[r].copy(),
+      ];
+    } else {
+      // Restore the original layout before re-rolling so repeated taps
+      // don't ratchet notes permanently toward row 0.
+      for (int r = range.$1; r <= range.$2; r++) {
+        cells[r] = _hutBaselineCells![r - range.$1].copy();
+      }
+    }
+
+    // Phase 1: evaluate against the original (pre-mutation) state.
+    final lateShifts = <int, int>{}; // row -> delValue
+    final earlyShifts = <int, ({int destRow, int delValue})>{}; // srcRow -> ...
+
+    for (int r = range.$1; r <= range.$2; r++) {
+      if (!cells[r].note.isNote) continue;
+      final offset = _rollTimingOffset(rnd, 25); // -25..+25, never 0 or -1
+
+      if (offset > 0) {
+        lateShifts[r] = offset;
+        continue;
+      }
+
+      final destRow = r - 1;
+      final canMoveEarly =
+          destRow >= 0 &&
+          !cells[destRow].note.isNote &&
+          _findOrCreateDelSlot(cells[destRow]) != null;
+      if (canMoveEarly) {
+        earlyShifts[r] = (destRow: destRow, delValue: 100 + offset);
+      } else {
+        lateShifts[r] = offset.abs(); // fallback to late-only
+      }
+    }
+
+    // Phase 2: apply.
+    for (final entry in earlyShifts.entries) {
+      final srcRow = entry.key;
+      final destRow = entry.value.destRow;
+      final delValue = entry.value.delValue;
+      final src = cells[srcRow];
+      final dest = cells[destRow];
+
+      dest.note = src.note;
+      dest.instrument = src.instrument;
+      dest.volume = src.volume;
+      src.note = NoteValue.empty;
+      src.instrument = null;
+      src.volume = null;
+
+      final slot = _findOrCreateDelSlot(dest)!;
+      dest.fxSlots[slot].command = kFxDEL;
+      dest.fxSlots[slot].value = delValue;
+    }
+    for (final entry in lateShifts.entries) {
+      final row = entry.key;
+      final delValue = entry.value;
+      final cell = cells[row];
+      final slot = _findOrCreateDelSlot(cell);
+      if (slot == null) continue; // no room — skip this note's timing shift
+      cell.fxSlots[slot].command = kFxDEL;
+      cell.fxSlots[slot].value = delValue;
+    }
+
+    notifyListeners();
+  }
+
   /// RAND: Note positions stay fixed; pitch changes to a random MIDI value
   /// within the min–max range of notes already in the selection.
   void randomizePitchInSelection() {
