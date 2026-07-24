@@ -4950,6 +4950,7 @@ class AppState extends ChangeNotifier {
       int retrigNotesPerLine = 0;
       int arpInterval1 = -1;
       int arpInterval2 = -1;
+      int arcMode = 0; // 1-3=linear, 4-6=bidirectional, 7-9=random
       int arcOctaveLayers = 0;
       int arcNotesPerLine = 0;
       int? chancePct;
@@ -5083,7 +5084,8 @@ class AppState extends ChangeNotifier {
             arpInterval2 = fx.value! & 0x0F;
           }
           if (fx.command == kFxARC && fx.value != null) {
-            arcOctaveLayers = (fx.value! ~/ 10).clamp(0, 9);
+            arcMode = (fx.value! ~/ 10).clamp(1, 9);
+            arcOctaveLayers = ((arcMode - 1) % 3) + 1; // 1-9 → 1,2,3,1,2,3,1,2,3 octaves
             arcNotesPerLine = (fx.value! % 10).clamp(0, 9);
           }
           // SLU/SLD XY: X (tens) = lines to slide over, Y (ones) = semitones.
@@ -5311,12 +5313,28 @@ class AppState extends ChangeNotifier {
         // New note or mid-note hold row with ARP: (re)start the carry.
         final baseNote = noteCmd >= 0 ? noteCmd : _trackCarry[t].note!;
         final layers = arcOctaveLayers > 0 ? arcOctaveLayers : 1;
+        final modeType = arcMode <= 3 ? 1 : (arcMode <= 6 ? 2 : 3); // 1=linear, 2=bidirectional, 3=random
         final cycle = <int>[];
+        
         for (int oct = 0; oct < layers; oct++) {
           final offset = 12 * oct;
-          cycle.add((baseNote + offset).clamp(0, 127));
-          cycle.add((baseNote + arpInterval1 + offset).clamp(0, 127));
-          cycle.add((baseNote + arpInterval2 + offset).clamp(0, 127));
+          final base = (baseNote + offset).clamp(0, 127);
+          final int1 = (baseNote + arpInterval1 + offset).clamp(0, 127);
+          final int2 = (baseNote + arpInterval2 + offset).clamp(0, 127);
+          
+          if (modeType == 1) {
+            // Linear: play notes forward
+            cycle.addAll([base, int1, int2]);
+          } else if (modeType == 2) {
+            // Bidirectional: forward + backward with peak repeat
+            cycle.addAll([base, int1, int2, int2, int1, base]);
+          } else {
+            // Random: shuffle the three notes for this octave
+            final notes = [base, int1, int2];
+            // Seeded shuffle for deterministic "random" feel
+            notes.shuffle(rng);
+            cycle.addAll(notes);
+          }
         }
         final notesPerLine = arcNotesPerLine > 0
             ? arcNotesPerLine
