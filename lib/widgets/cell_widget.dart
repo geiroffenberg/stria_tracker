@@ -25,15 +25,15 @@ String cellDisplay(CellColumn column, TrackerCell cell) {
     case CellColumn.fx0cmd:
       return fxCommandName(cell.fxSlots[0].command);
     case CellColumn.fx0val:
-      return FxSlot.fxValueDisplay(cell.fxSlots[0].value);
+      return FxSlot.fxValueDisplay(cell.fxSlots[0].value, command: cell.fxSlots[0].command);
     case CellColumn.fx1cmd:
       return fxCommandName(cell.fxSlots[1].command);
     case CellColumn.fx1val:
-      return FxSlot.fxValueDisplay(cell.fxSlots[1].value);
+      return FxSlot.fxValueDisplay(cell.fxSlots[1].value, command: cell.fxSlots[1].command);
     case CellColumn.fx2cmd:
       return fxCommandName(cell.fxSlots[2].command);
     case CellColumn.fx2val:
-      return FxSlot.fxValueDisplay(cell.fxSlots[2].value);
+      return FxSlot.fxValueDisplay(cell.fxSlots[2].value, command: cell.fxSlots[2].command);
   }
 }
 

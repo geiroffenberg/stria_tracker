@@ -150,16 +150,30 @@ class TrackModel {
   }
 
   /// Max value for clamping scroll input.
-  int maxValue(CellColumn column) {
+  /// For FX value columns, checks the command in that cell (if row is provided)
+  /// to determine if it should clamp to 99 or 255 (for ARP only).
+  int maxValue(CellColumn column, {int? row}) {
     if (column == CellColumn.note) return 121; // 0=empty … 121=OFF
     if (column == CellColumn.instrument || column == CellColumn.volume) {
       return 99;
     }
-    // FX value columns use full byte range (hex 00–FF).
+    // FX value columns: default to 99 (most commands), except ARP which uses 255.
     if (column == CellColumn.fx0val ||
         column == CellColumn.fx1val ||
         column == CellColumn.fx2val) {
-      return 255;
+      // Determine which FX slot (0, 1, or 2) and check the command
+      final fxIndex = column == CellColumn.fx0val
+          ? 0
+          : column == CellColumn.fx1val
+          ? 1
+          : 2;
+      if (row != null && row >= 0 && row < cells.length) {
+        final command = cells[row].fxSlots[fxIndex].command;
+        // ARP (command 0) uses full byte range for hex nibbles (0-255)
+        if (command == 0) return 255; // kFxARP
+      }
+      // All other FX commands use 0-99 (percentage scale)
+      return 99;
     }
     return kFxInsertEnd; // FX command columns
   }

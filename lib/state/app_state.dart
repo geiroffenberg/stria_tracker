@@ -1916,7 +1916,7 @@ class AppState extends ChangeNotifier {
     final current = track.readColumnValue(row, column) ?? 0;
     final clamped = (current + delta).clamp(
       track.minValue(column),
-      track.maxValue(column),
+      track.maxValue(column, row: row),
     );
     track.writeColumnValue(row, column, clamped);
 
@@ -2934,7 +2934,6 @@ class AppState extends ChangeNotifier {
     _pushPatternUndo('nudge column');
     final track = currentTrack;
     final minV = track.minValue(column);
-    final maxV = track.maxValue(column);
     for (int r = 0; r < track.cells.length; r++) {
       var current = track.readColumnValue(r, column);
       if (current == null) {
@@ -2944,6 +2943,7 @@ class AppState extends ChangeNotifier {
           continue;
         }
       }
+      final maxV = track.maxValue(column, row: r); // Pass row for command-aware clamping
       final clamped = (current + delta).clamp(minV, maxV);
       track.writeColumnValue(r, column, clamped);
     }

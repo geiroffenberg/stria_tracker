@@ -440,7 +440,7 @@ class _NumericActions extends StatelessWidget {
 
   void _writeValue(int v) {
     final track = state.currentTrack;
-    final maxV = track.maxValue(column);
+    final maxV = track.maxValue(column, row: row);
     final minV = track.minValue(column);
     final clamped = v.clamp(minV, maxV);
     track.writeColumnValue(row, column, clamped);
@@ -492,10 +492,13 @@ class _NumericActions extends StatelessWidget {
     int minV,
     int maxV,
   ) async {
-    final isHex = _isFxValColumn;
+    // Determine if this is a hex input (only ARP uses hex format)
+    final fxCmd = _fxCommandForCell(state.currentTrack.cells[row]);
+    final isHex = _isFxValColumn && fxCmd == 0; // kFxARP = 0
+    
     final String initText = isHex
         ? current.toRadixString(16).toUpperCase().padLeft(2, '0')
-        : current.toString();
+        : current.toString().padLeft(2, '0');
     final String rangeHint = isHex
         ? '${minV.toRadixString(16).toUpperCase()}-${maxV.toRadixString(16).toUpperCase()}'
         : '$minV-$maxV';
@@ -592,7 +595,7 @@ class _NumericActions extends StatelessWidget {
     final display = cellDisplay(column, cell);
     final color = columnColor(column);
     final value = _readValue(cell);
-    final maxV = track.maxValue(column);
+    final maxV = track.maxValue(column, row: row);
     final minV = track.minValue(column);
     final fxCmd = _fxCommandForCell(cell);
     final String? fxHint;

@@ -28,9 +28,20 @@ class FxSlot {
   static String hexDisplay(int? v) =>
       v == null ? '--' : v.toRadixString(16).toUpperCase().padLeft(2, '0');
 
-  /// 2-digit hex display for FX values (00–FF), or '--' if empty.
-  static String fxValueDisplay(int? v) =>
-      v == null ? '--' : v.clamp(0, 255).toRadixString(16).toUpperCase().padLeft(2, '0');
+  /// Display FX value as 0-99 for most commands, or hex (0-11, 0-11) for ARP.
+  /// Pass [command] to determine the format. If null, defaults to decimal.
+  static String fxValueDisplay(int? v, {int? command}) {
+    if (v == null) return '--';
+    // ARP (command 0) shows X and Y as hex nibbles (0-11 for chromatic notes)
+    if (command == 0) {
+      final clamped = v.clamp(0, 255);
+      final x = (clamped >> 4) & 0x0F;
+      final y = clamped & 0x0F;
+      return '${x.toRadixString(16).toUpperCase()}${y.toRadixString(16).toUpperCase()}';
+    }
+    // All other commands: display as 0-99 decimal
+    return v.clamp(0, 99).toString().padLeft(2, '0');
+  }
 }
 
 /// Fixed command ID → 3-letter display name.
