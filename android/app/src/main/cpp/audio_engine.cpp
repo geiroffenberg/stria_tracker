@@ -101,6 +101,98 @@ void startKarplusVoice(Voice& v, int midiNote, int sampleRate) {
     }
 }
 
+// ── Drum Synth (Kick/Snare/Hat/Tom/Crash) helpers ───────────────────────────
+// Simple 0..1 -> musical-range mappings, same style as the Karplus helpers
+// above. Piece constants match DrumPiece in instrument_model.dart.
+enum DrumPieceId : int { kDrumKick = 0, kDrumSnare = 1, kDrumHat = 2, kDrumTom = 3, kDrumCrash = 4 };
+
+float drumPitchEnvCoeff(float pitchDecayNorm, int sampleRate) {
+    // Pitch-sweep time constant: ~15ms (punchy snap) to ~250ms (long boom).
+    const float ms = 15.0f + std::clamp(pitchDecayNorm, 0.0f, 1.0f) * 235.0f;
+    const float tau = ms * 0.001f * static_cast<float>(sampleRate);
+    return std::exp(-1.0f / std::max(1.0f, tau));
+}
+
+float drumAmpEnvCoeff(float decayNorm, int sampleRate) {
+    // Overall amplitude decay time constant: ~40ms to ~1200ms.
+    const float ms = 40.0f + std::clamp(decayNorm, 0.0f, 1.0f) * 1160.0f;
+    const float tau = ms * 0.001f * static_cast<float>(sampleRate);
+    return std::exp(-1.0f / std::max(1.0f, tau));
+}
+
+float drumClickEnvCoeff(int sampleRate) {
+    // Fixed short click/snap transient, ~4ms.
+    const float tau = 0.004f * static_cast<float>(sampleRate);
+    return std::exp(-1.0f / std::max(1.0f, tau));
+}
+
+float drumCombFeedback(float resonanceNorm) {
+    // Stable feedback range for the metallic comb resonator (Hat/Crash).
+    return 0.30f + std::clamp(resonanceNorm, 0.0f, 1.0f) * 0.55f;
+}
+
+void startDrumVoice(Voice& v, int sampleRate) {
+    const float pitchN = std::clamp(v.drumPitchNorm, 0.0f, 1.0f);
+    float freqStart;
+    float freqEnd;
+    switch (v.drumPiece) {
+        case kDrumKick:
+            freqStart = 90.0f + pitchN * 160.0f;   // 90-250 Hz
+            freqEnd   = freqStart * 0.30f;
+            break;
+        case kDrumTom:
+            freqStart = 130.0f + pitchN * 270.0f;  // 130-400 Hz
+            freqEnd   = freqStart * 0.55f;
+            break;
+        case kDrumSnare:
+            freqStart = 150.0f + pitchN * 200.0f;  // 150-350 Hz
+            freqEnd   = freqStart * 0.65f;
+            break;
+        case kDrumHat:
+        case kDrumCrash:
+        default:
+            freqStart = 2000.0f + pitchN * 6000.0f; // 2-8 kHz metallic center
+            freqEnd   = freqStart;
+            break;
+    }
+    v.drumFreqStart = freqStart;
+    v.drumFreqEnd   = freqEnd;
+    v.drumOscPhase  = 0.0;
+    v.drumAmpEnvLevel   = 1.0f;
+    v.drumPitchEnvLevel = 1.0f;
+    v.drumClickEnvLevel = 1.0f;
+    v.drumFilterLow  = 0.0f;
+    v.drumFilterBand = 0.0f;
+
+    // Short metallic comb delay (Hat/Crash ring; harmless no-op for other pieces).
+    const float combHz = 400.0f + pitchN * 3000.0f; // 400 Hz - 3.4 kHz ring
+    const int combLen = std::clamp(
+        static_cast<int>(static_cast<float>(sampleRate) / combHz + 0.5f),
+        4, kMaxDrumCombBuf);
+    if (static_cast<int>(v.drumCombBuf.size()) != combLen) {
+        v.drumCombBuf.assign(combLen, 0.0f);
+    } else {
+        std::fill(v.drumCombBuf.begin(), v.drumCombBuf.end(), 0.0f);
+    }
+    v.drumCombPos = 0;
+
+    v.drumMode      = true;
+    v.drumActive    = true;
+    v.samplerMode   = false;
+    v.karplusMode   = false;
+    v.karplusActive = false;
+    v.sampleActive  = false;
+    v.declickTailFramesLeft = 0;
+    v.noteHeld   = true;
+    v.gain       = 0.0f;
+    v.gainTarget = 1.0f;
+    v.pendingWaveform = -1;
+    v.envStage       = EnvelopeStage::Idle;
+    v.filterEnvStage = EnvelopeStage::Idle;
+    v.envLevel       = 0.0f;
+    v.filterEnvLevel = 0.0f;
+}
+
 float fxValueToUnit(int value) {
     return std::clamp(value, 0, 99) / 99.0f;
 }
@@ -470,6 +562,7 @@ bool AudioEngine::open() {
     // (called from the audio thread via pending events) never allocates.
     for (auto& v : mVoices) {
         v.karplusBuf.reserve(kMaxKarplusBuf);
+        v.drumCombBuf.reserve(kMaxDrumCombBuf);
     }
 
     return true;
@@ -539,6 +632,12 @@ void AudioEngine::stop() {
                 v.samplePos         = 0.0;
                 v.sampleStep        = 1.0;
                 v.declickTailFramesLeft = 0;
+                v.drumMode          = false;
+                v.drumActive        = false;
+                v.drumCombBuf.clear();
+                v.drumCombPos       = 0;
+                v.drumFilterLow     = 0.0f;
+                v.drumFilterBand    = 0.0f;
             }
         }
         LOGI("Transport stopped (voices muted, stream kept running)");
@@ -999,6 +1098,7 @@ void AudioEngine::triggerRowLocked(const std::vector<int>& rowData) {
 
         const bool isSampler = (instrumentType == 1);
         const bool isKarplus = (instrumentType == 2);
+        const bool isDrum = (instrumentType == 3);
 
         const int clampedWave = std::clamp(wave, 0, 5);
         const bool waveChanging = (clampedWave != v.waveform);
@@ -1059,6 +1159,16 @@ void AudioEngine::triggerRowLocked(const std::vector<int>& rowData) {
         v.karplusAttackColorNorm = byteToNorm(fdec);
         v.karplusBodyNorm = byteToNorm(fsus);
         v.karplusDriveNorm = byteToNorm(frel);
+        // Drum Synth reuses the same 8 payload slots the Karplus mapping
+        // above uses, since only one of isKarplus/isDrum is ever active.
+        v.drumPitchNorm = byteToNorm(detune);
+        v.drumPitchDecayNorm = byteToNorm(cutoff);
+        v.drumToneNorm = byteToNorm(resonance);
+        v.drumCutoffNorm = byteToNorm(filterMode);
+        v.drumResonanceNorm = byteToNorm(fatk);
+        v.drumDecayNorm = byteToNorm(fdec);
+        v.drumPunchNorm = byteToNorm(fsus);
+        v.drumDriveNorm = byteToNorm(frel);
 
         if (vol >= 0) {
             const int clampedVol = std::clamp(vol, 0, 255);
@@ -1072,6 +1182,7 @@ void AudioEngine::triggerRowLocked(const std::vector<int>& rowData) {
 
         v.samplerMode = isSampler;
         v.karplusMode = isKarplus;
+        v.drumMode = isDrum;
         if (isSampler) {
             v.karplusActive = false;
             v.karplusBuf.clear();
@@ -1208,6 +1319,28 @@ void AudioEngine::triggerRowLocked(const std::vector<int>& rowData) {
                 startKarplusVoice(v, n, static_cast<int>(mCachedSampleRate));
             } else if (pitchOnly) {
                 startKarplusVoice(v, pitchMidi, static_cast<int>(mCachedSampleRate));
+            } else if (n == -2) {
+                v.noteHeld = false;
+                v.gainTarget = 0.0f;
+            }
+            continue;
+        }
+
+        if (isDrum) {
+            v.sampleActive = false;
+            v.filterLow = 0.0f;
+            v.filterBand = 0.0f;
+            v.pendingWaveform = -1;
+            // Piece selector reuses the `wave` payload byte, same convention
+            // Sampler uses to reuse it for the sample-slot index.
+            v.drumPiece = std::clamp(wave, 0, 4);
+
+            if (n >= 0 || pitchOnly) {
+                // Drum synth ignores incoming pitch — the PITCH knob controls
+                // tuning for every hit, so both note-on and pitch-only
+                // (ARP/SLU/SLD) events simply (re)trigger the same voice.
+                startDrumVoice(v, static_cast<int>(mCachedSampleRate));
+                v.midiNote = n >= 0 ? n : pitchMidi;
             } else if (n == -2) {
                 v.noteHeld = false;
                 v.gainTarget = 0.0f;
@@ -1496,6 +1629,9 @@ bool AudioEngine::isVoicePlaying(int trackIdx) const {
     if (v.karplusMode) {
         return v.karplusActive || v.gain > 1e-4f || v.gainTarget > 1e-4f;
     }
+    if (v.drumMode) {
+        return v.drumActive || v.gain > 1e-4f || v.gainTarget > 1e-4f;
+    }
     return v.midiNote >= 0 && v.envStage != EnvelopeStage::Idle;
 }
 
@@ -1506,6 +1642,9 @@ int AudioEngine::getVoiceEnvelopeStage(int trackIdx) const {
     std::lock_guard<std::mutex> lock(mVoiceMutex);
     if (mVoices[trackIdx].karplusMode) {
         return mVoices[trackIdx].karplusActive ? 3 : 0;
+    }
+    if (mVoices[trackIdx].drumMode) {
+        return mVoices[trackIdx].drumActive ? 3 : 0;
     }
     return static_cast<int>(mVoices[trackIdx].envStage);
 }
@@ -2480,6 +2619,9 @@ oboe::DataCallbackResult AudioEngine::onAudioReady(
                 v.pendingWaveform = -1;
             } else if (v.karplusMode) {
                 startKarplusVoice(v, ev.note, sampleRate);
+            } else if (v.drumMode) {
+                startDrumVoice(v, sampleRate);
+                v.midiNote = ev.note;
             } else {
                 v.midiNote = ev.note;
                 const float detuneSemitones = (v.detuneNorm - 0.5f) * 24.0f;
@@ -2529,6 +2671,11 @@ oboe::DataCallbackResult AudioEngine::onAudioReady(
                 v.sampleStep = std::pow(2.0f, semis / 12.0f);
             } else if (v.karplusMode) {
                 startKarplusVoice(v, ev.note, sampleRate);
+            } else if (v.drumMode) {
+                // Pitch-only ARP for drum synth: PITCH knob controls tuning,
+                // so retrigger the same one-shot rather than retuning it.
+                startDrumVoice(v, sampleRate);
+                v.midiNote = ev.note;
             } else {
                 // Pitch-only ARP for synth: retune oscillator without retrigger.
                 v.targetFreq = static_cast<float>(midiToFreq(ev.note)) *
@@ -2593,6 +2740,9 @@ oboe::DataCallbackResult AudioEngine::onAudioReady(
                 }
             } else if (v.karplusMode) {
                 startKarplusVoice(v, ev.note, sampleRate);
+            } else if (v.drumMode) {
+                startDrumVoice(v, sampleRate);
+                v.midiNote = ev.note;
             } else {
                 // Synth retrigger: restart amp/filter envelopes from zero.
                 v.midiNote = ev.note;
@@ -3120,6 +3270,111 @@ oboe::DataCallbackResult AudioEngine::onAudioReady(
                 if (!v.noteHeld && v.gain < 1e-4f) {
                     v.karplusActive = false;
                     v.karplusMode = false;
+                    v.midiNote = -1;
+                    break;
+                }
+            }
+            continue;
+        }
+
+        if (v.drumMode) {
+            if (!v.drumActive) {
+                if (!v.noteHeld && v.gain < 1e-4f && v.gainTarget < 1e-4f) {
+                    v.drumMode = false;
+                    v.midiNote = -1;
+                }
+                continue;
+            }
+
+            const float pitchEnvCoeff = drumPitchEnvCoeff(v.drumPitchDecayNorm, sampleRate);
+            const float ampEnvCoeff   = drumAmpEnvCoeff(v.drumDecayNorm, sampleRate);
+            const float clickEnvCoeff = drumClickEnvCoeff(sampleRate);
+            const float toneAmt       = std::clamp(v.drumToneNorm, 0.0f, 1.0f);
+            const float punchAmt      = std::clamp(v.drumPunchNorm, 0.0f, 1.0f);
+            const float driveAmt      = std::clamp(v.drumDriveNorm, 0.0f, 1.0f);
+            const int combLen         = static_cast<int>(v.drumCombBuf.size());
+            const float combFeedback  = drumCombFeedback(v.drumResonanceNorm);
+            const bool isMetallic     = (v.drumPiece == kDrumHat || v.drumPiece == kDrumCrash);
+            const bool isTonalSweep   = (v.drumPiece == kDrumKick || v.drumPiece == kDrumTom);
+
+            // Noise-layer state-variable filter coefficients (Snare/Hat/Crash).
+            const float srF = static_cast<float>(sampleRate);
+            const float noiseHz = isMetallic
+                ? (1500.0f + std::clamp(v.drumCutoffNorm, 0.0f, 1.0f) * 7000.0f)   // 1.5-8.5 kHz HP
+                : (300.0f + std::clamp(v.drumCutoffNorm, 0.0f, 1.0f) * 3500.0f);   // 300-3800 Hz BP
+            const float noiseF = std::clamp(2.0f * std::sin(static_cast<float>(M_PI) * noiseHz / srF),
+                                             0.001f, 0.99f);
+            const float noiseDamp = std::max(0.05f, 1.0f - v.drumResonanceNorm * 0.85f);
+
+            for (int i = 0; i < numFrames; ++i) {
+                v.gain += smoothK * (v.gainTarget - v.gain);
+                v.pan  += panSmoothK * (v.panTarget - v.pan);
+
+                v.drumPitchEnvLevel *= pitchEnvCoeff;
+                v.drumAmpEnvLevel   *= ampEnvCoeff;
+                v.drumClickEnvLevel *= clickEnvCoeff;
+
+                // Fresh noise sample this frame (shared PRNG, same as Karplus).
+                v.noiseState = v.noiseState * 1664525u + 1013904223u;
+                const float noise = (static_cast<float>((v.noiseState >> 8) & 0xFFFFu) / 32767.5f) - 1.0f;
+
+                float sample;
+                if (isMetallic) {
+                    // Hi-hat / Crash: highpassed noise + short metallic comb ring.
+                    const float high = noise - v.drumFilterLow - (noiseDamp * v.drumFilterBand);
+                    v.drumFilterBand += noiseF * high;
+                    v.drumFilterLow  += noiseF * v.drumFilterBand;
+                    float combOut = 0.0f;
+                    if (combLen > 0) {
+                        combOut = v.drumCombBuf[v.drumCombPos];
+                        const float combIn = std::clamp(high + combOut * combFeedback, -1.0f, 1.0f);
+                        v.drumCombBuf[v.drumCombPos] = combIn;
+                        v.drumCombPos = (v.drumCombPos + 1) % combLen;
+                    }
+                    sample = (high * (1.0f - toneAmt) + combOut * toneAmt) * v.drumAmpEnvLevel;
+                    sample += noise * v.drumClickEnvLevel * punchAmt * 0.5f;
+                } else {
+                    // Kick / Tom / Snare: sine (+ pitch sweep for Kick/Tom) oscillator.
+                    const float freq = v.drumFreqEnd +
+                        (v.drumFreqStart - v.drumFreqEnd) *
+                            (isTonalSweep ? v.drumPitchEnvLevel : 1.0f);
+                    const double phaseInc = 2.0 * M_PI * freq / sampleRate;
+                    v.drumOscPhase += phaseInc;
+                    if (v.drumOscPhase >= 2.0 * M_PI) v.drumOscPhase -= 2.0 * M_PI;
+                    const float osc = static_cast<float>(std::sin(v.drumOscPhase));
+                    // TONE adds cubic harmonic content for a harder body.
+                    const float shaped = osc + toneAmt * (osc * osc * osc - osc) * 0.6f;
+
+                    if (v.drumPiece == kDrumSnare) {
+                        const float high = noise - v.drumFilterLow - (noiseDamp * v.drumFilterBand);
+                        v.drumFilterBand += noiseF * high;
+                        v.drumFilterLow  += noiseF * v.drumFilterBand;
+                        sample = (shaped * (1.0f - toneAmt) * 0.6f + v.drumFilterBand * (0.4f + toneAmt * 0.6f))
+                                 * v.drumAmpEnvLevel;
+                        sample += noise * v.drumClickEnvLevel * punchAmt * 0.8f;
+                    } else {
+                        sample = shaped * v.drumAmpEnvLevel;
+                        sample += noise * v.drumClickEnvLevel * punchAmt * 0.6f;
+                    }
+                }
+
+                if (driveAmt > 0.001f) {
+                    const float boosted = sample * (1.0f + driveAmt * 6.0f);
+                    sample = boosted / (1.0f + std::fabs(boosted));
+                }
+                sample = sample * v.gain * v.level * v.instrumentVolume * 0.6f;
+
+                const float pan01 = std::clamp(v.pan, 0.0f, 1.0f);
+                const float angle = pan01 * 1.57079632679f;
+                const float leftGain = std::cos(angle);
+                const float rightGain = std::sin(angle);
+
+                mTrackBusL[trackIdx][i] += sample * leftGain;
+                mTrackBusR[trackIdx][i] += sample * rightGain;
+
+                if (v.drumAmpEnvLevel < 1e-4f || (v.gain < 1e-4f && !v.noteHeld)) {
+                    v.drumActive = false;
+                    v.drumMode = false;
                     v.midiNote = -1;
                     break;
                 }

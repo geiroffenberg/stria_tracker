@@ -9,7 +9,9 @@
 // to ship across the MethodChannel to the Oboe engine when wiring up
 // audio later.
 
-enum InstrumentType { sampler, simpleSynth, karplusStrong, empty }
+// NOTE: [drumSynth] is appended after [empty] (not inserted alphabetically)
+// so existing serialized `type.index` values in saved songs stay valid.
+enum InstrumentType { sampler, simpleSynth, karplusStrong, empty, drumSynth }
 
 extension InstrumentTypeLabel on InstrumentType {
   String get label {
@@ -22,10 +24,34 @@ extension InstrumentTypeLabel on InstrumentType {
         return 'KARPLUS';
       case InstrumentType.empty:
         return 'EMPTY';
+      case InstrumentType.drumSynth:
+        return 'DRUM SYNTH';
     }
   }
 
   bool get isEmpty => this == InstrumentType.empty;
+}
+
+/// Which drum piece a Drum Synth instrument slot is currently voicing.
+/// Reuses the same row-payload byte the Sampler uses for its sample-slot
+/// index (zero payload-size change — see `_waveCodeForInstrumentSlot`).
+enum DrumPiece { kick, snare, hat, tom, crash }
+
+extension DrumPieceLabel on DrumPiece {
+  String get label {
+    switch (this) {
+      case DrumPiece.kick:
+        return 'KICK';
+      case DrumPiece.snare:
+        return 'SNARE';
+      case DrumPiece.hat:
+        return 'HAT';
+      case DrumPiece.tom:
+        return 'TOM';
+      case DrumPiece.crash:
+        return 'CRASH';
+    }
+  }
 }
 
 enum SynthWave { sine, triangle, saw, square, pulse, noise }
@@ -515,6 +541,139 @@ class KarplusStrongParams {
   }
 }
 
+/// Parameters for the Drum Synth instrument type (Kick / Snare / Hat / Tom /
+/// Crash). A single 8-knob parameter set is shared across all five pieces —
+/// [piece] selects which native DSP path interprets the knobs (mirrors how
+/// Sampler/Karplus reuse the synth's 44-slot param array for different
+/// meanings; see `_synthParamsForInstrumentSlot`).
+class DrumSynthParams {
+  DrumPiece piece;
+  double pitch; // 0..1 -> base tuning / frequency
+  double pitchDecay; // 0..1 -> pitch-sweep time (kick/tom/snare body)
+  double tone; // 0..1 -> harmonic/metallic character
+  double cutoff; // 0..1 -> noise-layer filter cutoff
+  double resonance; // 0..1 -> filter resonance / metallic ring amount
+  double decay; // 0..1 -> overall amplitude decay time
+  double punch; // 0..1 -> click/snap transient amount
+  double drive; // 0..1 -> output saturation
+  double volume; // 0..1 -> instrument level
+
+  DrumSynthParams({
+    this.piece = DrumPiece.kick,
+    this.pitch = 0.5,
+    this.pitchDecay = 0.4,
+    this.tone = 0.3,
+    this.cutoff = 0.7,
+    this.resonance = 0.3,
+    this.decay = 0.4,
+    this.punch = 0.5,
+    this.drive = 0.15,
+    this.volume = 0.85,
+  });
+
+  Map<String, dynamic> toJson() => {
+    'piece': piece.index,
+    'pitch': pitch,
+    'pitchDecay': pitchDecay,
+    'tone': tone,
+    'cutoff': cutoff,
+    'resonance': resonance,
+    'decay': decay,
+    'punch': punch,
+    'drive': drive,
+    'volume': volume,
+  };
+
+  factory DrumSynthParams.fromJson(Map<String, dynamic> j) => DrumSynthParams(
+    piece:
+        DrumPiece.values[((j['piece'] as int?) ?? 0).clamp(
+          0,
+          DrumPiece.values.length - 1,
+        )],
+    pitch: (j['pitch'] as num?)?.toDouble() ?? 0.5,
+    pitchDecay: (j['pitchDecay'] as num?)?.toDouble() ?? 0.4,
+    tone: (j['tone'] as num?)?.toDouble() ?? 0.3,
+    cutoff: (j['cutoff'] as num?)?.toDouble() ?? 0.7,
+    resonance: (j['resonance'] as num?)?.toDouble() ?? 0.3,
+    decay: (j['decay'] as num?)?.toDouble() ?? 0.4,
+    punch: (j['punch'] as num?)?.toDouble() ?? 0.5,
+    drive: (j['drive'] as num?)?.toDouble() ?? 0.15,
+    volume: (j['volume'] as num?)?.toDouble() ?? 0.85,
+  );
+
+  DrumSynthParams copy() => DrumSynthParams(
+    piece: piece,
+    pitch: pitch,
+    pitchDecay: pitchDecay,
+    tone: tone,
+    cutoff: cutoff,
+    resonance: resonance,
+    decay: decay,
+    punch: punch,
+    drive: drive,
+    volume: volume,
+  );
+
+  /// Highest Pxx param index supported for drum synth instruments.
+  static const int maxParamIndex = 9;
+
+  /// Display name for drum synth Pxx param slot [idx] (0=reset, 1-9=params).
+  static String paramName(int idx) {
+    switch (idx) {
+      case 0:
+        return 'Reset';
+      case 1:
+        return 'Pitch';
+      case 2:
+        return 'Pitch Decay';
+      case 3:
+        return 'Tone';
+      case 4:
+        return 'Cutoff';
+      case 5:
+        return 'Resonance';
+      case 6:
+        return 'Decay';
+      case 7:
+        return 'Punch';
+      case 8:
+        return 'Drive';
+      case 9:
+        return 'Volume';
+      default:
+        return 'P${idx.toString().padLeft(2, '0')}';
+    }
+  }
+
+  /// One-line description for drum synth Pxx param slot [idx].
+  static String paramDescription(int idx) {
+    switch (idx) {
+      case 0:
+        return 'P00 — reset all Drum Synth params to original slider values';
+      case 1:
+        return 'P01 Pitch — base tuning (00=low, 99=high)';
+      case 2:
+        return 'P02 Pitch Decay — pitch-sweep time (00=fast snap, 99=slow sweep)';
+      case 3:
+        return 'P03 Tone — harmonic/metallic character (00=soft, 99=hard)';
+      case 4:
+        return 'P04 Cutoff — noise-layer filter cutoff (00=dark, 99=bright)';
+      case 5:
+        return 'P05 Resonance — filter/metallic ring amount (00=none, 99=max)';
+      case 6:
+        return 'P06 Decay — overall amplitude decay (00=short, 99=long)';
+      case 7:
+        return 'P07 Punch — click/snap transient amount (00=none, 99=max)';
+      case 8:
+        return 'P08 Drive — output saturation (00=clean, 99=full drive)';
+      case 9:
+        return 'P09 Volume — instrument level (00=silent, 99=full)';
+      default:
+        return '';
+    }
+  }
+}
+
 enum SamplerLoopMode { off, forward, pingPong }
 
 extension SamplerLoopModeLabel on SamplerLoopMode {
@@ -606,7 +765,6 @@ String samplerLfoDivLabel(int index) {
   return labels[index];
 }
 
-
 class SamplerParams {
   static const int sliceCount = 9;
 
@@ -622,33 +780,34 @@ class SamplerParams {
   List<int> sliceStarts; // 9 x 0..999, where 0 = unused
 
   // ── Stretch ────────────────────────────────────────────────────────────────
-  bool stretchEnabled;    // false = off (passthrough)
-  int stretchBeats;       // 1..99
-  bool stretchPreservePitch; // true = time-stretch only; false = pitch follows rate
+  bool stretchEnabled; // false = off (passthrough)
+  int stretchBeats; // 1..99
+  bool
+  stretchPreservePitch; // true = time-stretch only; false = pitch follows rate
 
   // ── Filter (HP → LP in series) ────────────────────────────────────────────
   // Auto-bypassed (zero CPU) when hpCutoff = 0 and lpCutoff = 1 (default bypass state).
-  double hpCutoff;        // 0..1 (0 = bypass, 1 = fully closed)
-  double hpResonance;     // 0..1
-  double lpCutoff;        // 0..1 (0 = fully closed, 1 = bypass / fully open)
-  double lpResonance;     // 0..1
+  double hpCutoff; // 0..1 (0 = bypass, 1 = fully closed)
+  double hpResonance; // 0..1
+  double lpCutoff; // 0..1 (0 = fully closed, 1 = bypass / fully open)
+  double lpResonance; // 0..1
 
   // ── Loop region ───────────────────────────────────────────────────────────
   // Defines where the loop wraps when loopMode != off.
   // Independent of start/end (playback region). Defaults cover the full file.
   double loopStart; // 0..1 — loop region start
-  double loopEnd;   // 0..1 — loop region end
+  double loopEnd; // 0..1 — loop region end
 
   // ── LFO (note-synced, BPM-relative) ─────────────────────────────────────────
   // Starts on note-on. Bypassed entirely (zero CPU) when lfoWave == off.
-  SamplerLfoWave lfoWave;   // shape / OFF
-  int lfoRateIndex;         // index into kSamplerLfoDivBeats (cycle length)
-  double lfoDepth;          // 0..1 modulation amount
-  SamplerLfoMode lfoMode;   // anchor: center / up / down
-  bool lfoTargetVolume;     // modulate volume
-  bool lfoTargetPitch;      // modulate pitch
-  bool lfoTargetHp;         // modulate HP filter cutoff
-  bool lfoTargetLp;         // modulate LP filter cutoff
+  SamplerLfoWave lfoWave; // shape / OFF
+  int lfoRateIndex; // index into kSamplerLfoDivBeats (cycle length)
+  double lfoDepth; // 0..1 modulation amount
+  SamplerLfoMode lfoMode; // anchor: center / up / down
+  bool lfoTargetVolume; // modulate volume
+  bool lfoTargetPitch; // modulate pitch
+  bool lfoTargetHp; // modulate HP filter cutoff
+  bool lfoTargetLp; // modulate LP filter cutoff
 
   // keep legacy bool getter so existing code using p.loop still compiles
   bool get loop => loopMode != SamplerLoopMode.off;
@@ -837,13 +996,21 @@ class SamplerParams {
     lpResonance: (j['lpResonance'] as num?)?.toDouble() ?? 0.0,
     loopStart: (j['loopStart'] as num?)?.toDouble() ?? 0.0,
     loopEnd: (j['loopEnd'] as num?)?.toDouble() ?? 1.0,
-    lfoWave: SamplerLfoWave.values[((j['lfoWave'] as int?) ?? 0)
-        .clamp(0, SamplerLfoWave.values.length - 1)],
-    lfoRateIndex: ((j['lfoRateIndex'] as int?) ?? 5)
-        .clamp(0, kSamplerLfoDivBeats.length - 1),
+    lfoWave:
+        SamplerLfoWave.values[((j['lfoWave'] as int?) ?? 0).clamp(
+          0,
+          SamplerLfoWave.values.length - 1,
+        )],
+    lfoRateIndex: ((j['lfoRateIndex'] as int?) ?? 5).clamp(
+      0,
+      kSamplerLfoDivBeats.length - 1,
+    ),
     lfoDepth: ((j['lfoDepth'] as num?)?.toDouble() ?? 0.5).clamp(0.0, 1.0),
-    lfoMode: SamplerLfoMode.values[((j['lfoMode'] as int?) ?? 2)
-        .clamp(0, SamplerLfoMode.values.length - 1)],
+    lfoMode:
+        SamplerLfoMode.values[((j['lfoMode'] as int?) ?? 2).clamp(
+          0,
+          SamplerLfoMode.values.length - 1,
+        )],
     lfoTargetVolume: (j['lfoTargetVolume'] as bool?) ?? false,
     lfoTargetPitch: (j['lfoTargetPitch'] as bool?) ?? false,
     lfoTargetHp: (j['lfoTargetHp'] as bool?) ?? false,
@@ -963,9 +1130,11 @@ class InstrumentModel {
   SimpleSynthParams synth;
   KarplusStrongParams karplus;
   SamplerParams sampler;
+  DrumSynthParams drum;
   late SimpleSynthParams synthStartState;
   late KarplusStrongParams karplusStartState;
   late SamplerParams samplerStartState;
+  late DrumSynthParams drumStartState;
 
   InstrumentModel({
     required this.name,
@@ -973,17 +1142,21 @@ class InstrumentModel {
     SimpleSynthParams? synth,
     KarplusStrongParams? karplus,
     SamplerParams? sampler,
+    DrumSynthParams? drum,
     SimpleSynthParams? synthStartState,
     KarplusStrongParams? karplusStartState,
     SamplerParams? samplerStartState,
+    DrumSynthParams? drumStartState,
   }) : synth = synth ?? SimpleSynthParams(),
        karplus = karplus ?? KarplusStrongParams(),
-       sampler = sampler ?? SamplerParams() {
+       sampler = sampler ?? SamplerParams(),
+       drum = drum ?? DrumSynthParams() {
     // Initialize start states as copies of the working parameters.
     // When play() is called, these get updated as snapshots.
     this.synthStartState = synthStartState ?? this.synth.copy();
     this.karplusStartState = karplusStartState ?? this.karplus.copy();
     this.samplerStartState = samplerStartState ?? this.sampler.copy();
+    this.drumStartState = drumStartState ?? this.drum.copy();
   }
 
   factory InstrumentModel.empty(int index) =>
@@ -995,9 +1168,11 @@ class InstrumentModel {
     'synth': synth.toJson(),
     'karplus': karplus.toJson(),
     'sampler': sampler.toJson(),
+    'drum': drum.toJson(),
     'synthStartState': synthStartState.toJson(),
     'karplusStartState': karplusStartState.toJson(),
     'samplerStartState': samplerStartState.toJson(),
+    'drumStartState': drumStartState.toJson(),
   };
 
   factory InstrumentModel.fromJson(Map<String, dynamic> j) => InstrumentModel(
@@ -1015,6 +1190,7 @@ class InstrumentModel {
     sampler: SamplerParams.fromJson(
       (j['sampler'] as Map<String, dynamic>?) ?? {},
     ),
+    drum: DrumSynthParams.fromJson((j['drum'] as Map<String, dynamic>?) ?? {}),
     synthStartState: SimpleSynthParams.fromJson(
       (j['synthStartState'] as Map<String, dynamic>?) ?? {},
     ),
@@ -1023,6 +1199,9 @@ class InstrumentModel {
     ),
     samplerStartState: SamplerParams.fromJson(
       (j['samplerStartState'] as Map<String, dynamic>?) ?? {},
+    ),
+    drumStartState: DrumSynthParams.fromJson(
+      (j['drumStartState'] as Map<String, dynamic>?) ?? {},
     ),
   );
 }

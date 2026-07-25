@@ -11,6 +11,7 @@ import 'package:file_picker/file_picker.dart';
 import '../audio/audio_engine.dart';
 import '../audio/wav_encoder.dart';
 import '../models/instrument_model.dart';
+import '../models/drum_synth_preset_bank.dart';
 import '../models/karplus_preset_bank.dart';
 import '../models/synth_preset_bank.dart';
 import '../state/app_state.dart';
@@ -39,6 +40,7 @@ class InstrumentScreen extends StatelessWidget {
               InstrumentType.karplusStrong => _KarplusStrongEditor(
                 state: state,
               ),
+              InstrumentType.drumSynth => _DrumSynthEditor(state: state),
               InstrumentType.sampler => _SamplerEditor(state: state),
               InstrumentType.empty => _EmptyInstrumentPlaceholder(
                 onPick: (t) =>
@@ -187,6 +189,8 @@ class _InstrumentHeader extends StatelessWidget {
                     : 'SAMPLER  ·  no sample';
               } else if (ins.type == InstrumentType.karplusStrong) {
                 sub = 'KARPLUS  ·  ${ins.name}';
+              } else if (ins.type == InstrumentType.drumSynth) {
+                sub = 'DRUM  ·  ${ins.drum.piece.label}';
               } else {
                 sub = 'SYNTH  ·  ${ins.name}';
               }
@@ -301,6 +305,7 @@ class _TypeButton extends StatelessWidget {
                 for (final t in [
                   InstrumentType.simpleSynth,
                   InstrumentType.karplusStrong,
+                  InstrumentType.drumSynth,
                   InstrumentType.sampler,
                 ])
                   ListTile(
@@ -310,6 +315,8 @@ class _TypeButton extends StatelessWidget {
                           ? Icons.graphic_eq
                           : t == InstrumentType.karplusStrong
                           ? Icons.music_note
+                          : t == InstrumentType.drumSynth
+                          ? Icons.album
                           : Icons.audiotrack,
                       color: t == type ? kColAccent : kColHeader,
                     ),
@@ -382,6 +389,7 @@ class _EmptyInstrumentPlaceholder extends StatelessWidget {
               for (final t in [
                 InstrumentType.simpleSynth,
                 InstrumentType.karplusStrong,
+                InstrumentType.drumSynth,
                 InstrumentType.sampler,
               ])
                 Padding(
@@ -1158,6 +1166,218 @@ class _KarplusStrongEditor extends StatelessWidget {
                 Text(
                   'Karplus params are live in the native audio engine.',
                   style: kStyleBase.copyWith(color: kColInactive, fontSize: 11),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── Drum synth editor ────────────────────────────────────────────────────────
+
+class _DrumSynthEditor extends StatelessWidget {
+  final AppState state;
+  const _DrumSynthEditor({required this.state});
+
+  @override
+  Widget build(BuildContext context) {
+    final p = state.currentInstrument.drum;
+    final presets = [...kDrumSynthPresets];
+
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _Section(
+            title: 'PRESETS',
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: ElevatedButton.icon(
+                    onPressed: () async {
+                      final err = await state.previewCurrentDrumOneShot();
+                      if (!context.mounted || err == null) return;
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text('Preview failed: $err'),
+                          duration: const Duration(seconds: 2),
+                        ),
+                      );
+                    },
+                    icon: const Icon(Icons.play_arrow),
+                    label: const Text('PREVIEW'),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                DropdownButtonFormField<DrumSynthPreset>(
+                  initialValue: null,
+                  isExpanded: true,
+                  dropdownColor: kBgTrackHeader,
+                  decoration: const InputDecoration(
+                    border: OutlineInputBorder(),
+                  ),
+                  hint: const Text('Select preset'),
+                  items: [
+                    for (final preset in presets)
+                      DropdownMenuItem<DrumSynthPreset>(
+                        value: preset,
+                        child: Text(preset.name),
+                      ),
+                  ],
+                  onChanged: (picked) {
+                    if (picked == null) return;
+                    picked.applyTo(state.currentInstrument.drum);
+                    state.instrumentParamsChanged();
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text('Loaded preset: ${picked.name}'),
+                        duration: const Duration(milliseconds: 1200),
+                      ),
+                    );
+                  },
+                ),
+              ],
+            ),
+          ),
+          _Section(
+            title: 'DRUM PIECE',
+            child: _DrumPiecePicker(
+              value: p.piece,
+              onChanged: (v) {
+                p.piece = v;
+                state.instrumentParamsChanged();
+              },
+            ),
+          ),
+          _Section(
+            title: 'TONE',
+            child: Row(
+              children: [
+                Expanded(
+                  child: _Knob(
+                    label: 'PITCH',
+                    value: p.pitch,
+                    display: '${(p.pitch * 100).round()}%',
+                    onChanged: (v) {
+                      p.pitch = v;
+                      state.instrumentParamsChanged();
+                    },
+                  ),
+                ),
+                Expanded(
+                  child: _Knob(
+                    label: 'PITCH DEC',
+                    value: p.pitchDecay,
+                    display: '${(p.pitchDecay * 100).round()}%',
+                    onChanged: (v) {
+                      p.pitchDecay = v;
+                      state.instrumentParamsChanged();
+                    },
+                  ),
+                ),
+                Expanded(
+                  child: _Knob(
+                    label: 'TONE',
+                    value: p.tone,
+                    display: '${(p.tone * 100).round()}%',
+                    onChanged: (v) {
+                      p.tone = v;
+                      state.instrumentParamsChanged();
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ),
+          _Section(
+            title: 'FILTER',
+            child: Row(
+              children: [
+                Expanded(
+                  child: _Knob(
+                    label: 'CUTOFF',
+                    value: p.cutoff,
+                    display: '${(p.cutoff * 100).round()}%',
+                    onChanged: (v) {
+                      p.cutoff = v;
+                      state.instrumentParamsChanged();
+                    },
+                  ),
+                ),
+                Expanded(
+                  child: _Knob(
+                    label: 'RESONANCE',
+                    value: p.resonance,
+                    display: '${(p.resonance * 100).round()}%',
+                    onChanged: (v) {
+                      p.resonance = v;
+                      state.instrumentParamsChanged();
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ),
+          _Section(
+            title: 'ENVELOPE',
+            child: Row(
+              children: [
+                Expanded(
+                  child: _Knob(
+                    label: 'DECAY',
+                    value: p.decay,
+                    display: '${(p.decay * 100).round()}%',
+                    onChanged: (v) {
+                      p.decay = v;
+                      state.instrumentParamsChanged();
+                    },
+                  ),
+                ),
+                Expanded(
+                  child: _Knob(
+                    label: 'PUNCH',
+                    value: p.punch,
+                    display: '${(p.punch * 100).round()}%',
+                    onChanged: (v) {
+                      p.punch = v;
+                      state.instrumentParamsChanged();
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ),
+          _Section(
+            title: 'MASTER',
+            child: Row(
+              children: [
+                Expanded(
+                  child: _Knob(
+                    label: 'DRIVE',
+                    value: p.drive,
+                    display: '${(p.drive * 100).round()}%',
+                    onChanged: (v) {
+                      p.drive = v;
+                      state.instrumentParamsChanged();
+                    },
+                  ),
+                ),
+                Expanded(
+                  child: _Knob(
+                    label: 'VOLUME',
+                    value: p.volume,
+                    display: '${(p.volume * 100).round()}%',
+                    onChanged: (v) {
+                      p.volume = v;
+                      state.instrumentParamsChanged();
+                    },
+                  ),
                 ),
               ],
             ),
@@ -4087,6 +4307,50 @@ class _FilterModePicker extends StatelessWidget {
                     fontSize: 13,
                     color: m == value ? kColAccent : kColHeader,
                     fontWeight: m == value
+                        ? FontWeight.w700
+                        : FontWeight.normal,
+                  ),
+                ),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+class _DrumPiecePicker extends StatelessWidget {
+  final DrumPiece value;
+  final ValueChanged<DrumPiece> onChanged;
+  const _DrumPiecePicker({required this.value, required this.onChanged});
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        for (final piece in DrumPiece.values)
+          Expanded(
+            child: GestureDetector(
+              onTap: () => onChanged(piece),
+              child: Container(
+                margin: const EdgeInsets.symmetric(horizontal: 3),
+                padding: const EdgeInsets.symmetric(vertical: 7),
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: piece == value
+                      ? kColAccent.withAlpha(40)
+                      : Colors.transparent,
+                  border: Border.all(
+                    color: piece == value ? kColAccent : kColInactive,
+                  ),
+                  borderRadius: BorderRadius.circular(3),
+                ),
+                child: Text(
+                  piece.label,
+                  style: kStyleBase.copyWith(
+                    fontSize: 11,
+                    color: piece == value ? kColAccent : kColHeader,
+                    fontWeight: piece == value
                         ? FontWeight.w700
                         : FontWeight.normal,
                   ),

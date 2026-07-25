@@ -3615,6 +3615,9 @@ class AppState extends ChangeNotifier {
     // Native interprets this as sample-slot id when instrumentType=1.
     if (ins.type == InstrumentType.sampler) return safe;
     if (ins.type == InstrumentType.karplusStrong) return 0;
+    // Drum synth encodes the DRUM PIECE selector here (0=kick, 1=snare,
+    // 2=hat, 3=tom, 4=crash) — same convention Sampler uses above.
+    if (ins.type == InstrumentType.drumSynth) return ins.drum.piece.index;
     switch (ins.synth.wave) {
       case SynthWave.sine:
         return 0;
@@ -3636,6 +3639,7 @@ class AppState extends ChangeNotifier {
     final ins = instruments[safe];
     if (ins.type == InstrumentType.sampler) return 1;
     if (ins.type == InstrumentType.karplusStrong) return 2;
+    if (ins.type == InstrumentType.drumSynth) return 3;
     return 0;
   }
 
@@ -3783,6 +3787,56 @@ class AppState extends ChangeNotifier {
         0, // LFO mode padding (sampler-only)
       ];
     }
+    if (ins.type == InstrumentType.drumSynth) {
+      final dp = ins.drum;
+      return <int>[
+        _norm01ToAudio255(dp.pitch),
+        _norm01ToAudio255(dp.pitchDecay),
+        _norm01ToAudio255(dp.tone),
+        _norm01ToAudio255(dp.cutoff),
+        _norm01ToAudio255(dp.resonance),
+        _norm01ToAudio255(dp.decay),
+        _norm01ToAudio255(dp.punch),
+        _norm01ToAudio255(dp.drive),
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        _norm01ToAudio255(dp.volume),
+        0,
+        0,
+        0,
+        0,
+        0,
+        // OSC fields — not applicable for Drum Synth, use safe defaults
+        255, // osc1Gain (full)
+        0, // osc2On
+        0, // osc2Wave
+        128, // osc2Detune
+        0, // osc2Gain
+        0, // osc3On
+        0, // osc3Wave
+        128, // osc3Detune
+        0, // osc3Gain
+        0, // osc2FmDepth
+        0, // osc3FmDepth
+        2, // osc1Oct (0=−2..4=+2; 2=0)
+        2, // osc2Oct
+        2, // osc3Oct
+        _norm01ToAudio255(treSpeedNorm ?? 0.0), // treSpeed (TRE/GAT)
+        _norm01ToAudio255(treDepthNorm ?? 0.0), // treDepth
+        treMode ?? 0, // treMode: 0=off, 1=TRE(sine), 2=GAT(square)
+        0, // loopStart padding (sampler-only, unused for Drum Synth)
+        0, // loopEnd padding (sampler-only, unused for Drum Synth)
+        0, // LFO waveform padding (sampler-only)
+        0, // LFO rate index padding (sampler-only)
+        0, // LFO target mask padding (sampler-only)
+        0, // LFO depth padding (sampler-only)
+        0, // LFO mode padding (sampler-only)
+      ];
+    }
     final p = ins.synth;
     return <int>[
       _norm01ToAudio255((p.detune + 1.0) / 2.0), // map -1..1 → 0..1
@@ -3902,6 +3956,27 @@ class AppState extends ChangeNotifier {
             synthParams[6] = _ui99ToAudio255(rawVal); // body
           case 8:
             synthParams[7] = _ui99ToAudio255(rawVal); // drive
+        }
+      } else if (instrumentType == InstrumentType.drumSynth) {
+        switch (paramIdx) {
+          case 1:
+            synthParams[0] = _ui99ToAudio255(rawVal); // pitch
+          case 2:
+            synthParams[1] = _ui99ToAudio255(rawVal); // pitch decay
+          case 3:
+            synthParams[2] = _ui99ToAudio255(rawVal); // tone
+          case 4:
+            synthParams[3] = _ui99ToAudio255(rawVal); // cutoff
+          case 5:
+            synthParams[4] = _ui99ToAudio255(rawVal); // resonance
+          case 6:
+            synthParams[5] = _ui99ToAudio255(rawVal); // decay
+          case 7:
+            synthParams[6] = _ui99ToAudio255(rawVal); // punch
+          case 8:
+            synthParams[7] = _ui99ToAudio255(rawVal); // drive
+          case 9:
+            synthParams[14] = _ui99ToAudio255(rawVal); // volume
         }
       } else {
         switch (paramIdx) {
@@ -6720,6 +6795,85 @@ class AppState extends ChangeNotifier {
       final ins = instruments[slot];
       if (ins.type != InstrumentType.karplusStrong) {
         return 'Current instrument is not Karplus';
+      }
+
+      if (_previewSamplerSlot >= 0) {
+        await stopPreviewCurrentSampler();
+      }
+
+      final waveCmd = _waveCodeForInstrumentSlot(slot);
+      final instrumentTypeCmd = _instrumentTypeCodeForSlot(slot);
+      final synthParams = _synthParamsForInstrumentSlot(slot);
+
+      final previewVoice = _previewVoiceIndexForInstrumentSlot(slot);
+      if (_previewBypassVoice >= 0 && _previewBypassVoice != previewVoice) {
+        await _setPreviewDryBypass(_previewBypassVoice, false);
+      }
+      final noteOff = _buildPreviewRowData(
+        voiceIdx: previewVoice,
+        note: -2,
+        waveCmd: waveCmd,
+        instrumentTypeCmd: instrumentTypeCmd,
+        synthParams: synthParams,
+      );
+      final noteOn = _buildPreviewRowData(
+        voiceIdx: previewVoice,
+        note: midiNote.clamp(0, 127),
+        waveCmd: waveCmd,
+        instrumentTypeCmd: instrumentTypeCmd,
+        synthParams: synthParams,
+      );
+
+      await _primeAudioForPreview();
+      await _setPreviewDryBypass(previewVoice, true);
+      await AudioEngine.instance.setRowData(noteOff);
+      await AudioEngine.instance.setRowData(noteOn);
+
+      _synthPreviewStopTimer?.cancel();
+      final clampedDurationMs = durationMs.clamp(80, 4000);
+      final startTime = DateTime.now();
+      bool noteOffSent = false;
+      _synthPreviewStopTimer = Timer.periodic(
+        const Duration(milliseconds: 50),
+        (_) async {
+          if (_disposed) return;
+          final elapsed = DateTime.now().difference(startTime).inMilliseconds;
+          if (!noteOffSent && elapsed >= clampedDurationMs) {
+            noteOffSent = true;
+            await AudioEngine.instance.setRowData(noteOff);
+          }
+          final stillPlaying = await AudioEngine.instance.isVoicePlaying(
+            previewVoice,
+          );
+          if (!stillPlaying && elapsed >= clampedDurationMs) {
+            _synthPreviewStopTimer?.cancel();
+            _synthPreviewStopTimer = null;
+            if (_previewBypassVoice == previewVoice) {
+              await _setPreviewDryBypass(previewVoice, false);
+            }
+          }
+        },
+      );
+
+      return null;
+    } catch (e) {
+      return e.toString();
+    }
+  }
+
+  Future<String?> previewCurrentDrumOneShot({
+    int midiNote = 60,
+    int durationMs = 420,
+  }) async {
+    try {
+      if (isPlaying) {
+        return 'Stop playback before Drum Synth preview';
+      }
+
+      final slot = currentInstrumentIndex.clamp(0, instruments.length - 1);
+      final ins = instruments[slot];
+      if (ins.type != InstrumentType.drumSynth) {
+        return 'Current instrument is not Drum Synth';
       }
 
       if (_previewSamplerSlot >= 0) {

@@ -17,6 +17,8 @@ static constexpr int kMaxVoices = 16; // one per track
 static constexpr int kMaxAudioBurst = 1024;
 // Maximum Karplus-Strong delay line length (matches startKarplusVoice cap).
 static constexpr int kMaxKarplusBuf = 8192;
+// Maximum Drum Synth metallic comb-delay length (matches startDrumVoice cap).
+static constexpr int kMaxDrumCombBuf = 512;
 
 enum class EnvelopeStage : int {
     Idle = 0,
@@ -118,6 +120,33 @@ struct Voice {
     float  karplusDispersionState = 0.0f;
     float  karplusBodyState = 0.0f;
     float  karplusBodyState2 = 0.0f;
+
+    // Drum Synth (Kick/Snare/Hat/Tom/Crash) percussive voice state.
+    // Reuses the shared `noiseState` PRNG above for its noise layer, and the
+    // shared gain/gainTarget/noteHeld machinery for note-on ramp + kill-fade
+    // (the drum's own amplitude envelope below decays on its own regardless
+    // of noteHeld, matching how the Karplus string decays via feedback).
+    bool   drumMode          = false;
+    bool   drumActive        = false;
+    int    drumPiece         = 0;     // 0=kick,1=snare,2=hat,3=tom,4=crash
+    float  drumPitchNorm      = 0.5f;
+    float  drumPitchDecayNorm = 0.5f;
+    float  drumToneNorm       = 0.3f;
+    float  drumCutoffNorm     = 0.7f;
+    float  drumResonanceNorm  = 0.3f;
+    float  drumDecayNorm      = 0.4f;
+    float  drumPunchNorm      = 0.5f;
+    float  drumDriveNorm      = 0.1f;
+    double drumOscPhase       = 0.0;
+    float  drumFreqStart      = 0.0f;
+    float  drumFreqEnd        = 0.0f;
+    float  drumAmpEnvLevel    = 0.0f;  // 1→0 exponential amplitude envelope
+    float  drumPitchEnvLevel  = 0.0f;  // 1→0 exponential pitch-sweep envelope
+    float  drumClickEnvLevel  = 0.0f;  // fast 1→0 decay for the click/snap transient
+    float  drumFilterLow      = 0.0f;  // state-variable filter state (noise layer)
+    float  drumFilterBand     = 0.0f;
+    std::vector<float> drumCombBuf;    // short metallic comb delay (Hat/Crash)
+    int    drumCombPos        = 0;
 
     // Sampler playback state
     bool   samplerMode       = false;

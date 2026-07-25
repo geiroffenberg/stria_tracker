@@ -988,6 +988,7 @@ class _FxCmdActions extends StatelessWidget {
       InstrumentType.sampler => SamplerParams.maxParamIndex,
       InstrumentType.simpleSynth => SimpleSynthParams.maxParamIndex,
       InstrumentType.karplusStrong => KarplusStrongParams.maxParamIndex,
+      InstrumentType.drumSynth => DrumSynthParams.maxParamIndex,
       InstrumentType.empty => 0,
     };
     return List<int>.generate(maxIdx + 1, (i) => kFxPParamStart + i);
@@ -999,6 +1000,9 @@ class _FxCmdActions extends StatelessWidget {
     if (type == InstrumentType.karplusStrong) {
       return KarplusStrongParams.paramName(idx);
     }
+    if (type == InstrumentType.drumSynth) {
+      return DrumSynthParams.paramName(idx);
+    }
     return SimpleSynthParams.paramName(idx);
   }
 
@@ -1009,6 +1013,9 @@ class _FxCmdActions extends StatelessWidget {
     }
     if (type == InstrumentType.karplusStrong) {
       return KarplusStrongParams.paramDescription(idx);
+    }
+    if (type == InstrumentType.drumSynth) {
+      return DrumSynthParams.paramDescription(idx);
     }
     return SimpleSynthParams.paramDescription(idx);
   }
@@ -1181,6 +1188,7 @@ class _FxCmdActions extends StatelessWidget {
                       InstrumentType.sampler => 'Sampler Params',
                       InstrumentType.karplusStrong => 'Karplus Params',
                       InstrumentType.simpleSynth => 'Synth Params',
+                      InstrumentType.drumSynth => 'Drum Params',
                       InstrumentType.empty => 'Instrument Params',
                     };
                     return [
