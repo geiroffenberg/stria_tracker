@@ -3748,16 +3748,18 @@ class AppState extends ChangeNotifier {
         _norm01ToAudio255(kp.attackColor),
         _norm01ToAudio255(kp.body),
         _norm01ToAudio255(kp.drive),
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        _norm01ToAudio255(0.95),
-        0,
-        0,
-        0,
+        _norm01ToAudio255(kp.filterEnvAmt), // famt
+        _norm01ToAudio255(kp.ampAttack), // atk
+        _norm01ToAudio255(kp.ampDecay), // dec
+        _norm01ToAudio255(kp.ampSustain), // sus
+        _norm01ToAudio255(kp.ampRelease), // rel
+        0, // glide (unused)
+        _norm01ToAudio255(kp.volume), // instVol
+        _norm01ToAudio255(kp.filterCutoff), // lfoRate reused as filter cutoff
+        _norm01ToAudio255(
+          kp.filterResonance,
+        ), // lfoDepth reused as filter resonance
+        kp.filterMode.index2, // lfoTarget reused as filter mode (0/1/2)
         0,
         0,
         // OSC fields — not applicable for Karplus, use safe defaults
@@ -3956,6 +3958,24 @@ class AppState extends ChangeNotifier {
             synthParams[6] = _ui99ToAudio255(rawVal); // body
           case 8:
             synthParams[7] = _ui99ToAudio255(rawVal); // drive
+          case 9:
+            synthParams[14] = _ui99ToAudio255(rawVal); // volume
+          case 10:
+            synthParams[15] = _ui99ToAudio255(rawVal); // filter cutoff
+          case 11:
+            synthParams[16] = _ui99ToAudio255(rawVal); // filter resonance
+          case 12:
+            synthParams[17] = rawVal.clamp(0, 2); // filter mode (direct)
+          case 13:
+            synthParams[8] = _ui99ToAudio255(rawVal); // filter env amt
+          case 14:
+            synthParams[9] = _ui99ToAudio255(rawVal); // amp attack
+          case 15:
+            synthParams[10] = _ui99ToAudio255(rawVal); // amp decay
+          case 16:
+            synthParams[11] = _ui99ToAudio255(rawVal); // amp sustain
+          case 17:
+            synthParams[12] = _ui99ToAudio255(rawVal); // amp release
         }
       } else if (instrumentType == InstrumentType.drumSynth) {
         switch (paramIdx) {

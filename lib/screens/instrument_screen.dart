@@ -1169,6 +1169,144 @@ class _KarplusStrongEditor extends StatelessWidget {
               ],
             ),
           ),
+          _Section(
+            title: 'FILTER',
+            child: Column(
+              children: [
+                _FilterModePicker(
+                  value: p.filterMode,
+                  onChanged: (m) {
+                    p.filterMode = m;
+                    state.instrumentParamsChanged();
+                  },
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    Expanded(
+                      child: _Knob(
+                        label: 'CUTOFF',
+                        value: p.filterCutoff,
+                        display: '${(p.filterCutoff * 100).round()}%',
+                        onChanged: (v) {
+                          p.filterCutoff = v;
+                          state.instrumentParamsChanged();
+                        },
+                      ),
+                    ),
+                    Expanded(
+                      child: _Knob(
+                        label: 'RES',
+                        value: p.filterResonance,
+                        display: '${(p.filterResonance * 100).round()}%',
+                        onChanged: (v) {
+                          p.filterResonance = v;
+                          state.instrumentParamsChanged();
+                        },
+                      ),
+                    ),
+                    Expanded(
+                      child: _Knob(
+                        label: 'ENV AMT',
+                        value: p.filterEnvAmt,
+                        display: '${(p.filterEnvAmt * 100).round()}%',
+                        onChanged: (v) {
+                          p.filterEnvAmt = v;
+                          state.instrumentParamsChanged();
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  'ENV AMT modulates cutoff using the Amp Envelope below '
+                  '(e.g. opens on the pluck, closes as it decays/releases).',
+                  style: kStyleBase.copyWith(color: kColInactive, fontSize: 11),
+                ),
+              ],
+            ),
+          ),
+          _Section(
+            title: 'AMP ENVELOPE',
+            child: Column(
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: _Knob(
+                        label: 'A',
+                        value: p.ampAttack,
+                        display: '${(p.ampAttack * 100).round()}',
+                        onChanged: (v) {
+                          p.ampAttack = v;
+                          state.instrumentParamsChanged();
+                        },
+                      ),
+                    ),
+                    Expanded(
+                      child: _Knob(
+                        label: 'D',
+                        value: p.ampDecay,
+                        display: '${(p.ampDecay * 100).round()}',
+                        onChanged: (v) {
+                          p.ampDecay = v;
+                          state.instrumentParamsChanged();
+                        },
+                      ),
+                    ),
+                    Expanded(
+                      child: _Knob(
+                        label: 'S',
+                        value: p.ampSustain,
+                        display: '${(p.ampSustain * 100).round()}',
+                        onChanged: (v) {
+                          p.ampSustain = v;
+                          state.instrumentParamsChanged();
+                        },
+                      ),
+                    ),
+                    Expanded(
+                      child: _Knob(
+                        label: 'R',
+                        value: p.ampRelease,
+                        display: '${(p.ampRelease * 100).round()}',
+                        onChanged: (v) {
+                          p.ampRelease = v;
+                          state.instrumentParamsChanged();
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  'Layered on top of the string\'s own natural Decay above '
+                  '\u2014 leave at A=0/D=0/S=100%/R=0 for the classic pluck.',
+                  style: kStyleBase.copyWith(color: kColInactive, fontSize: 11),
+                ),
+              ],
+            ),
+          ),
+          _Section(
+            title: 'MASTER',
+            child: Row(
+              children: [
+                Expanded(
+                  child: _Knob(
+                    label: 'VOLUME',
+                    value: p.volume,
+                    display: '${(p.volume * 100).round()}%',
+                    onChanged: (v) {
+                      p.volume = v;
+                      state.instrumentParamsChanged();
+                    },
+                  ),
+                ),
+                const Expanded(child: SizedBox.shrink()),
+              ],
+            ),
+          ),
         ],
       ),
     );

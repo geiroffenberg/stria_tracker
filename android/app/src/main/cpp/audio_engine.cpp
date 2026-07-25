@@ -76,6 +76,13 @@ void startKarplusVoice(Voice& v, int midiNote, int sampleRate) {
     v.filterEnvStage = EnvelopeStage::Idle;
     v.envLevel = 0.0f;
     v.filterEnvLevel = 0.0f;
+    // Karplus's own dedicated amp envelope + tone filter: always retrigger
+    // fresh on a new pluck (Karplus fully re-excites the string every note,
+    // unlike the generic synth's legato-aware continuity).
+    v.karplusEnvStage = EnvelopeStage::Attack;
+    v.karplusEnvLevel = 0.0f;
+    v.karplusFilterLow = 0.0f;
+    v.karplusFilterBand = 0.0f;
 
     float excite = 0.0f;
     const float tone = karplusExcitationTone(v.karplusToneNorm);
@@ -1168,6 +1175,19 @@ void AudioEngine::triggerRowLocked(const std::vector<int>& rowData) {
         v.karplusAttackColorNorm = byteToNorm(fdec);
         v.karplusBodyNorm = byteToNorm(fsus);
         v.karplusDriveNorm = byteToNorm(frel);
+        // Karplus tone-shaping filter + amp envelope: reuses otherwise-unused
+        // payload slots (famt/atk/dec/sus/rel for the envelope, lfoRate/
+        // lfoDepth/lfoTgt for the filter) with dedicated karplus* Voice
+        // fields so there is no cross-talk with the generic synth's own
+        // cutoff/resonance/filterMode/envelope fields above.
+        v.karplusFilterEnvAmt = byteToNorm(famt);
+        v.karplusAmpAttackSec = normToAttackSec(byteToNorm(atk));
+        v.karplusAmpDecaySec = normToDecaySec(byteToNorm(dec));
+        v.karplusAmpSustainLevel = byteToNorm(sus);
+        v.karplusAmpReleaseSec = normToReleaseSec(byteToNorm(rel));
+        v.karplusFilterCutoffNorm = byteToNorm(lfoRate);
+        v.karplusFilterResonanceNorm = byteToNorm(lfoDepth);
+        v.karplusFilterMode = std::clamp(lfoTgt, 0, 2);
         // Drum Synth reuses the same 8 payload slots the Karplus mapping
         // above uses, since only one of isKarplus/isDrum is ever active.
         v.drumPitchNorm = byteToNorm(detune);
@@ -1329,8 +1349,14 @@ void AudioEngine::triggerRowLocked(const std::vector<int>& rowData) {
             } else if (pitchOnly) {
                 startKarplusVoice(v, pitchMidi, static_cast<int>(mCachedSampleRate));
             } else if (n == -2) {
+                // Note off: defer to the amp envelope's own Release stage
+                // (mirroring the generic synth) instead of hard-zeroing
+                // gainTarget here — otherwise a long Release setting would
+                // be cut short by the fast anti-click gain ramp.
                 v.noteHeld = false;
-                v.gainTarget = 0.0f;
+                if (v.karplusEnvStage != EnvelopeStage::Idle) {
+                    v.karplusEnvStage = EnvelopeStage::Release;
+                }
             }
             continue;
         }
@@ -1516,7 +1542,9 @@ void AudioEngine::killVoicesLocked(const std::vector<int>& killMask) {
         v.noteHeld = false;
         v.envStage = EnvelopeStage::Release;
         if (v.samplerMode) v.sampleActive = false;
-        if (v.karplusMode) v.gainTarget = 0.0f;
+        if (v.karplusMode && v.karplusEnvStage != EnvelopeStage::Idle) {
+            v.karplusEnvStage = EnvelopeStage::Release;
+        }
     }
 }
 
@@ -2804,6 +2832,14 @@ oboe::DataCallbackResult AudioEngine::onAudioReady(
             v.noteHeld = false;
             v.midiNote = -1;
             v.sampleActive = false;
+            if (v.karplusMode) {
+                // Karplus's amp envelope is otherwise deferred (so a long
+                // Release setting can ring out after normal note-off) — a
+                // hard KIL must still free the voice immediately.
+                v.karplusEnvStage = EnvelopeStage::Idle;
+                v.karplusEnvLevel = 0.0f;
+                v.karplusActive = false;
+            }
         }
         mPendingKills.erase(
             std::remove_if(mPendingKills.begin(), mPendingKills.end(),
@@ -3215,7 +3251,7 @@ oboe::DataCallbackResult AudioEngine::onAudioReady(
 
         if (v.karplusMode) {
             if (!v.karplusActive || v.karplusBuf.empty()) {
-                if (!v.noteHeld && v.gain < 1e-4f && v.gainTarget < 1e-4f) {
+                if (!v.noteHeld && v.karplusEnvLevel < 1e-4f && v.gainTarget < 1e-4f) {
                     v.karplusMode = false;
                     v.midiNote = -1;
                 }
@@ -3229,10 +3265,51 @@ oboe::DataCallbackResult AudioEngine::onAudioReady(
             const float driveAmount = karplusDriveAmount(v.karplusDriveNorm);
             const int bufSize = static_cast<int>(v.karplusBuf.size());
             const double trePhaseInc = 2.0 * M_PI * normToLfoHz(v.treSpeedNorm) / sampleRate;
+            // Amp envelope (layered on top of the string's own natural decay)
+            // and tone-shaping filter coefficients, precomputed once per
+            // callback (matches the generic synth's approach).
+            const float ampAtkK = poleK(static_cast<float>(sampleRate), v.karplusAmpAttackSec);
+            const float ampDecK = poleK(static_cast<float>(sampleRate), v.karplusAmpDecaySec);
+            const float ampRelK = poleK(static_cast<float>(sampleRate), v.karplusAmpReleaseSec);
+            const float filterDamp = std::max(0.05f, 1.0f - v.karplusFilterResonanceNorm * 0.95f);
 
             for (int i = 0; i < numFrames; ++i) {
                 v.gain += smoothK * (v.gainTarget - v.gain);
                 v.pan += panSmoothK * (v.panTarget - v.pan);
+
+                switch (v.karplusEnvStage) {
+                    case EnvelopeStage::Idle:
+                        v.karplusEnvLevel = 0.0f;
+                        break;
+                    case EnvelopeStage::Attack:
+                        v.karplusEnvLevel += ampAtkK * (1.0f - v.karplusEnvLevel);
+                        if (v.karplusEnvLevel >= 0.999f) {
+                            v.karplusEnvLevel = 1.0f;
+                            v.karplusEnvStage = EnvelopeStage::Decay;
+                        }
+                        break;
+                    case EnvelopeStage::Decay:
+                        v.karplusEnvLevel += ampDecK * (v.karplusAmpSustainLevel - v.karplusEnvLevel);
+                        if (std::fabs(v.karplusEnvLevel - v.karplusAmpSustainLevel) < 1e-4f) {
+                            v.karplusEnvLevel = v.karplusAmpSustainLevel;
+                            v.karplusEnvStage = v.noteHeld ? EnvelopeStage::Sustain
+                                                            : EnvelopeStage::Release;
+                        }
+                        break;
+                    case EnvelopeStage::Sustain:
+                        v.karplusEnvLevel = v.karplusAmpSustainLevel;
+                        if (!v.noteHeld) {
+                            v.karplusEnvStage = EnvelopeStage::Release;
+                        }
+                        break;
+                    case EnvelopeStage::Release:
+                        v.karplusEnvLevel += ampRelK * (0.0f - v.karplusEnvLevel);
+                        if (v.karplusEnvLevel < 1e-4f) {
+                            v.karplusEnvLevel = 0.0f;
+                            v.karplusEnvStage = EnvelopeStage::Idle;
+                        }
+                        break;
+                }
 
                 const int nextPos = (v.karplusPos + 1) % bufSize;
                 const float current = v.karplusBuf[v.karplusPos];
@@ -3256,6 +3333,34 @@ oboe::DataCallbackResult AudioEngine::onAudioReady(
                     const float boosted = sample * (1.0f + driveAmount * 6.0f);
                     sample = boosted / (1.0f + std::fabs(boosted));
                 }
+
+                // Tone-shaping filter (Chamberlin SVF, LP/HP/BP). Fully
+                // transparent at default settings (cutoff=1.0, res=0,
+                // envAmt=0) so existing Karplus sounds are unaffected until
+                // this is dialed in. EnvAmt modulates cutoff using the same
+                // amp envelope above (e.g. a filter that opens on the pluck
+                // and closes as the note decays/releases).
+                {
+                    const float cutoffNormDyn = std::clamp(
+                        v.karplusFilterCutoffNorm + v.karplusFilterEnvAmt * v.karplusEnvLevel,
+                        0.0f, 1.0f);
+                    const float cutoffHz = std::clamp(
+                        normToCutoffHz(cutoffNormDyn), 20.0f,
+                        static_cast<float>(sampleRate) * 0.20f);
+                    const float f = std::clamp(
+                        2.0f * std::sin(static_cast<float>(M_PI) * cutoffHz /
+                                         static_cast<float>(sampleRate)),
+                        0.001f, 0.99f);
+                    const float svfHigh = sample - v.karplusFilterLow - (filterDamp * v.karplusFilterBand);
+                    v.karplusFilterBand += f * svfHigh;
+                    v.karplusFilterLow += f * v.karplusFilterBand;
+                    switch (v.karplusFilterMode) {
+                        case 1: sample = svfHigh; break;              // HP
+                        case 2: sample = v.karplusFilterBand; break;  // BP
+                        default: sample = v.karplusFilterLow; break;  // LP
+                    }
+                }
+
                 // TRE/GAT: independent volume LFO (sine = TRE, square = GAT).
                 float treAmpMod = 1.0f;
                 if (v.treMode > 0 && v.treDepth > 0.001f) {
@@ -3266,7 +3371,7 @@ oboe::DataCallbackResult AudioEngine::onAudioReady(
                     v.trePhase += trePhaseInc;
                     if (v.trePhase >= 2.0 * M_PI) v.trePhase -= 2.0 * M_PI;
                 }
-                sample = sample * v.gain * v.level * v.instrumentVolume * 0.35f * treAmpMod;
+                sample = sample * v.gain * v.karplusEnvLevel * v.level * v.instrumentVolume * 0.35f * treAmpMod;
 
                 const float pan01 = std::clamp(v.pan, 0.0f, 1.0f);
                 const float angle = pan01 * 1.57079632679f;
@@ -3276,10 +3381,12 @@ oboe::DataCallbackResult AudioEngine::onAudioReady(
                 mTrackBusL[trackIdx][i] += sample * leftGain;
                 mTrackBusR[trackIdx][i] += sample * rightGain;
 
-                if (!v.noteHeld && v.gain < 1e-4f) {
+                if (!v.noteHeld && v.karplusEnvLevel < 1e-4f) {
                     v.karplusActive = false;
                     v.karplusMode = false;
                     v.midiNote = -1;
+                    v.gainTarget = 0.0f;
+                    v.gain = 0.0f;
                     break;
                 }
             }

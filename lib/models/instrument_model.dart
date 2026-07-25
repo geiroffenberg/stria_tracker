@@ -442,6 +442,20 @@ class KarplusStrongParams {
   double attackColor; // 0..1 -> brightness / noisiness of the pick transient
   double body; // 0..1 -> resonant body emphasis
   double drive; // 0..1 -> output saturation
+  double volume; // 0..1 -> instrument level
+  // ── Tone-shaping filter (optional; transparent at defaults) ────────────
+  double filterCutoff; // 0..1 (1.0 = fully open / no filtering)
+  double filterResonance; // 0..1
+  SynthFilterMode filterMode; // LP / HP / BP
+  double filterEnvAmt; // 0..1 -> how much the amp envelope pushes cutoff
+  // ── Amp envelope (layered on top of the string's own natural decay) ────
+  // Defaults (A=0, D=0, S=1, R=0) are fully transparent — the string's own
+  // "Decay" knob above remains the dominant sustain/decay shape until these
+  // are dialed in.
+  double ampAttack; // 0..1
+  double ampDecay; // 0..1
+  double ampSustain; // 0..1
+  double ampRelease; // 0..1
 
   KarplusStrongParams({
     this.decay = 0.55,
@@ -452,6 +466,15 @@ class KarplusStrongParams {
     this.attackColor = 0.48,
     this.body = 0.35,
     this.drive = 0.10,
+    this.volume = 0.95,
+    this.filterCutoff = 1.0,
+    this.filterResonance = 0.0,
+    this.filterMode = SynthFilterMode.lowPass,
+    this.filterEnvAmt = 0.0,
+    this.ampAttack = 0.0,
+    this.ampDecay = 0.0,
+    this.ampSustain = 1.0,
+    this.ampRelease = 0.0,
   });
 
   Map<String, dynamic> toJson() => {
@@ -463,6 +486,15 @@ class KarplusStrongParams {
     'attackColor': attackColor,
     'body': body,
     'drive': drive,
+    'volume': volume,
+    'filterCutoff': filterCutoff,
+    'filterResonance': filterResonance,
+    'filterMode': filterMode.index,
+    'filterEnvAmt': filterEnvAmt,
+    'ampAttack': ampAttack,
+    'ampDecay': ampDecay,
+    'ampSustain': ampSustain,
+    'ampRelease': ampRelease,
   };
 
   factory KarplusStrongParams.fromJson(Map<String, dynamic> j) =>
@@ -475,6 +507,19 @@ class KarplusStrongParams {
         attackColor: (j['attackColor'] as num?)?.toDouble() ?? 0.48,
         body: (j['body'] as num?)?.toDouble() ?? 0.35,
         drive: (j['drive'] as num?)?.toDouble() ?? 0.10,
+        volume: (j['volume'] as num?)?.toDouble() ?? 0.95,
+        filterCutoff: (j['filterCutoff'] as num?)?.toDouble() ?? 1.0,
+        filterResonance: (j['filterResonance'] as num?)?.toDouble() ?? 0.0,
+        filterMode:
+            SynthFilterMode.values[((j['filterMode'] as int?) ?? 0).clamp(
+              0,
+              SynthFilterMode.values.length - 1,
+            )],
+        filterEnvAmt: (j['filterEnvAmt'] as num?)?.toDouble() ?? 0.0,
+        ampAttack: (j['ampAttack'] as num?)?.toDouble() ?? 0.0,
+        ampDecay: (j['ampDecay'] as num?)?.toDouble() ?? 0.0,
+        ampSustain: (j['ampSustain'] as num?)?.toDouble() ?? 1.0,
+        ampRelease: (j['ampRelease'] as num?)?.toDouble() ?? 0.0,
       );
 
   KarplusStrongParams copy() => KarplusStrongParams(
@@ -486,9 +531,18 @@ class KarplusStrongParams {
     attackColor: attackColor,
     body: body,
     drive: drive,
+    volume: volume,
+    filterCutoff: filterCutoff,
+    filterResonance: filterResonance,
+    filterMode: filterMode,
+    filterEnvAmt: filterEnvAmt,
+    ampAttack: ampAttack,
+    ampDecay: ampDecay,
+    ampSustain: ampSustain,
+    ampRelease: ampRelease,
   );
 
-  static const int maxParamIndex = 8;
+  static const int maxParamIndex = 17;
 
   static String paramName(int idx) {
     switch (idx) {
@@ -510,6 +564,24 @@ class KarplusStrongParams {
         return 'Body';
       case 8:
         return 'Drive';
+      case 9:
+        return 'Volume';
+      case 10:
+        return 'Filter Cutoff';
+      case 11:
+        return 'Filter Res';
+      case 12:
+        return 'Filter Mode';
+      case 13:
+        return 'Filter Env Amt';
+      case 14:
+        return 'Amp Attack';
+      case 15:
+        return 'Amp Decay';
+      case 16:
+        return 'Amp Sustain';
+      case 17:
+        return 'Amp Release';
       default:
         return 'P${idx.toString().padLeft(2, '0')}';
     }
@@ -535,6 +607,24 @@ class KarplusStrongParams {
         return 'P07 Body — resonant body emphasis (00=dry, 99=boxy/resonant)';
       case 8:
         return 'P08 Drive — output saturation (00=clean, 99=full drive)';
+      case 9:
+        return 'P09 Volume — instrument level (00=silent, 99=full)';
+      case 10:
+        return 'P10 Filter Cutoff — tone filter cutoff (00=closed, 99=open)';
+      case 11:
+        return 'P11 Filter Res — tone filter resonance (00=none, 99=max)';
+      case 12:
+        return 'P12 Filter Mode — 00=lowpass 01=highpass 02=bandpass';
+      case 13:
+        return 'P13 Filter Env Amt — envelope push on filter cutoff (00=none, 99=max)';
+      case 14:
+        return 'P14 Amp Attack — fade-in on pluck (00=instant, 99=slowest)';
+      case 15:
+        return 'P15 Amp Decay — fade to Amp Sustain level (00=instant, 99=slowest)';
+      case 16:
+        return 'P16 Amp Sustain — held level while note is held (00=silent, 99=full)';
+      case 17:
+        return 'P17 Amp Release — fade-out after note-off (00=instant, 99=slowest)';
       default:
         return '';
     }

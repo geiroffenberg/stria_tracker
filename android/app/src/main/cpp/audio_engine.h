@@ -120,6 +120,23 @@ struct Voice {
     float  karplusDispersionState = 0.0f;
     float  karplusBodyState = 0.0f;
     float  karplusBodyState2 = 0.0f;
+    // Karplus amp envelope (layered on top of the string's own natural
+    // decay) + tone-shaping filter. Dedicated fields (not shared with the
+    // generic synth's envStage/filterMode/etc.) to avoid any cross-talk.
+    // Both default to fully transparent values so existing sounds/presets
+    // are unaffected until the new knobs are dialed in.
+    EnvelopeStage karplusEnvStage        = EnvelopeStage::Idle;
+    float  karplusEnvLevel               = 0.0f;
+    float  karplusAmpAttackSec           = 0.0f;
+    float  karplusAmpDecaySec            = 0.0f;
+    float  karplusAmpSustainLevel        = 1.0f;
+    float  karplusAmpReleaseSec          = 0.0f;
+    float  karplusFilterCutoffNorm       = 1.0f;
+    float  karplusFilterResonanceNorm    = 0.0f;
+    int    karplusFilterMode             = 0;     // 0=LP,1=HP,2=BP
+    float  karplusFilterEnvAmt           = 0.0f;
+    float  karplusFilterLow              = 0.0f;
+    float  karplusFilterBand             = 0.0f;
 
     // Drum Synth (Kick/Snare/Hat/Tom/Crash) percussive voice state.
     // Reuses the shared `noiseState` PRNG above for its noise layer, and the
