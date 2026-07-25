@@ -430,6 +430,22 @@ class AppState extends ChangeNotifier {
   // reset to defaults.
   bool _suppressCarryResetAtRowZero = false;
 
+  // BPM FX (tempo nudge) running state. Tracks the "live" tempo as modified
+  // by BPM FX commands encountered while stepping through a pattern.
+  // Always resets to the pattern's own snapshot BPM at row 0 or when the
+  // pattern being played changes — deliberately NOT gated by
+  // _suppressCarryResetAtRowZero, since tempo must reset every loop pass
+  // even when note carry continues across the loop boundary.
+  double _bpmFxEffective = 120.0;
+  int _bpmFxPatternIndex = -1;
+
+  // SWN FX (swing override) running state. Mirrors _bpmFxEffective: resets
+  // to the pattern's own snapshot swing amount at row 0 or when the pattern
+  // being played changes, unconditionally (not gated by
+  // _suppressCarryResetAtRowZero).
+  double _swnFxEffective = 0.0;
+  int _swnFxPatternIndex = -1;
+
   bool isPlaying = false;
   bool isRecording = false;
   bool _loopPlaybackEnabled = false;
@@ -4398,6 +4414,26 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Copy the current pattern's BPM to all other patterns.
+  void copyCurrentBpmToAllPatterns() {
+    final bpmToCopy = currentPattern.bpm ?? 120.0;
+    for (final pattern in song.patterns) {
+      pattern.bpm = bpmToCopy;
+    }
+    _restartPlayheadTimerIfNeeded();
+    notifyListeners();
+  }
+
+  /// Copy the current pattern's Swing to all other patterns.
+  void copyCurrentSwingToAllPatterns() {
+    final swingToCopy = currentPattern.swing;
+    for (final pattern in song.patterns) {
+      pattern.swing = swingToCopy;
+    }
+    _restartPlayheadTimerIfNeeded();
+    notifyListeners();
+  }
+
   // ── Pattern undo / redo / clear / reset ───────────────────────────────────
 
   /// True when the current pattern has at least one undoable edit on its stack.
@@ -4600,14 +4636,18 @@ class AppState extends ChangeNotifier {
   }
 
   /// Duration of one line for a specific row, respecting per-beat overrides.
-  Duration _lineDurationForPatternRow(PatternModel pattern, int row) {
+  /// Uses [bpm] rather than reading pattern.bpm directly so BPM FX tempo
+  /// nudges (see _bpmFxEffective) can override the pattern's base tempo for
+  /// this row without mutating the stored pattern snapshot.
+  Duration _lineDurationForPatternRow(PatternModel pattern, int row, double bpm) {
     final beat = pattern.beatForRow(row);
     final lpbForBeat = pattern.linesForBeat(beat);
-    final microsPerLine = (60000000 / ((pattern.bpm ?? 120.0) * lpbForBeat))
+    final microsPerLine = (60000000 / (bpm * lpbForBeat))
         .round()
         .clamp(1000, 60000000);
     return Duration(microseconds: microsPerLine);
   }
+
 
   /// Builds the scheduled row list for the current pattern from [startRow].
   /// Pure Dart computation — no channel calls and no song mutation, so we
@@ -5035,6 +5075,21 @@ class AppState extends ChangeNotifier {
       );
     }
 
+    // BPM FX: reset the running effective tempo to this pattern's own
+    // snapshot BPM whenever we (re)enter the pattern at row 0, or when the
+    // pattern being played has changed. Unconditional on purpose — tempo
+    // must snap back every loop pass even when note carry is preserved.
+    if (_bpmFxPatternIndex != patternIdx || playheadRow == 0) {
+      _bpmFxPatternIndex = patternIdx;
+      _bpmFxEffective = pattern.bpm ?? 120.0;
+    }
+
+    // SWN FX: same reset policy as BPM FX above, but for pattern swing.
+    if (_swnFxPatternIndex != patternIdx || playheadRow == 0) {
+      _swnFxPatternIndex = patternIdx;
+      _swnFxEffective = pattern.swing;
+    }
+
     _rowSegments = [];
     // Pending DEL events: [sampleOffset, trackIdx, note, volume, ...]
     // queued natively for sample-accurate firing.
@@ -5070,6 +5125,11 @@ class AppState extends ChangeNotifier {
     final immediateKillData = <int>[];
     final hasSolo = pattern.tracks.any((track) => track.mixerSolo);
     bool anyImmediateKill = false;
+    // BPM FX is a pattern-global effect (not per-track). Only the first
+    // track (lowest index) carrying it on this row takes effect.
+    bool bpmFxAppliedThisRow = false;
+    // SWN FX: same pattern-global, first-track-wins policy as BPM FX.
+    bool swnFxAppliedThisRow = false;
     for (int t = 0; t < pattern.tracks.length; t++) {
       final track = pattern.tracks[t];
       var currentSlot = _trackCarry[t].instrument;
@@ -5196,6 +5256,30 @@ class AppState extends ChangeNotifier {
           }
           if (fx.command == kFxCHA && fx.value != null) {
             chancePct = fx.value!.clamp(0, 99);
+          }
+          if (fx.command == kFxBPM && fx.value != null && !bpmFxAppliedThisRow) {
+            // BPM FX is pattern-global: only the first track carrying it on
+            // this row applies. Value 00 resets to the pattern's own base
+            // BPM. 01-50 = +1..+50, 51-99 = -49..-1 (stacks onto whatever
+            // tempo is currently in effect this playthrough).
+            bpmFxAppliedThisRow = true;
+            final bpmXy = fx.value!.clamp(0, 99);
+            if (bpmXy == 0) {
+              _bpmFxEffective = pattern.bpm ?? 120.0;
+            } else if (bpmXy <= 50) {
+              _bpmFxEffective += bpmXy;
+            } else {
+              _bpmFxEffective -= (100 - bpmXy);
+            }
+            _bpmFxEffective = _bpmFxEffective.clamp(20.0, 300.0);
+          }
+          if (fx.command == kFxSWN && fx.value != null && !swnFxAppliedThisRow) {
+            // SWN FX is pattern-global: only the first track carrying it on
+            // this row applies. Directly overrides the pattern's swing
+            // amount (00-99) for this row onward, until reset at pattern
+            // start / loop start.
+            swnFxAppliedThisRow = true;
+            _swnFxEffective = fx.value!.clamp(0, 99).toDouble();
           }
           if (fx.command == kFxRAN && fx.value != null) {
             ranChancePct = fx.value!.clamp(0, 99);
@@ -5615,7 +5699,8 @@ class AppState extends ChangeNotifier {
     // 48000 Hz matches the Oboe stream sample rate.
     const int kSampleRate = 48000;
     final int baseLineSamples =
-        (_lineDurationForPatternRow(pattern, playheadRow).inMicroseconds *
+        (_lineDurationForPatternRow(pattern, playheadRow, _bpmFxEffective)
+                .inMicroseconds *
             kSampleRate) ~/
         1000000;
 
@@ -5623,8 +5708,11 @@ class AppState extends ChangeNotifier {
     // positions 1, 3, 5 … i.e. the 2nd, 4th, 6th lines) are pushed later by
     // swingDelta samples; the preceding even-indexed line grows by the same
     // amount so beat boundaries never drift.
+    // patSwing comes from _swnFxEffective rather than pattern.swing directly
+    // so an SWN FX command can override it for this playthrough; it is
+    // reset back to the pattern's own snapshot swing at pattern start/loop.
     final int lineSamples;
-    final double patSwing = pattern.swing;
+    final double patSwing = _swnFxEffective;
     if (patSwing > 0.0) {
       final int posInBeat = pattern.rowWithinBeat(playheadRow);
       final int swingDelta = (patSwing / 100.0 * baseLineSamples).round();

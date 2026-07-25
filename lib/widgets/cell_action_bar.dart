@@ -625,6 +625,9 @@ class _NumericActions extends StatelessWidget {
         kFxVIB => 'XY: X=speed (0-9), Y=depth (0-9)',
         kFxVOL => '00=silent, 99=full — sets level for this row only',
         kFxARC => 'XY: X=octave layers, Y=notes/line (Y0=full cycle)',
+        kFxBPM =>
+          '00=reset to pattern BPM, 01-50=+1..+50, 51-99=-49..-1 (stacks)',
+        kFxSWN => '00-99: overrides pattern swing (resets at start/loop)',
         _ => null,
       };
     }
@@ -737,6 +740,8 @@ class _FxCmdActions extends StatelessWidget {
     kFxSLC,
     kFxTRE,
     kFxGAT,
+    kFxBPM,
+    kFxSWN,
   ];
 
   final AppState state;

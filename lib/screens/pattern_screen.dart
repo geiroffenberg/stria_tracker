@@ -372,6 +372,32 @@ class _PatternMenuButton extends StatelessWidget {
             ],
           ),
         ),
+        PopupMenuItem<String>(
+          value: 'copyBpmAll',
+          child: Row(
+            children: [
+              Icon(Icons.speed, size: 18, color: kColHeader),
+              const SizedBox(width: 10),
+              Text(
+                'Copy BPM to all patterns',
+                style: kStyleBase.copyWith(fontSize: 14, color: kColHeader),
+              ),
+            ],
+          ),
+        ),
+        PopupMenuItem<String>(
+          value: 'copySwingAll',
+          child: Row(
+            children: [
+              Icon(Icons.shuffle, size: 18, color: kColHeader),
+              const SizedBox(width: 10),
+              Text(
+                'Copy Swing to all patterns',
+                style: kStyleBase.copyWith(fontSize: 14, color: kColHeader),
+              ),
+            ],
+          ),
+        ),
         const PopupMenuDivider(),
         PopupMenuItem<String>(
           value: 'follow',
@@ -446,6 +472,12 @@ class _PatternMenuButton extends StatelessWidget {
         break;
       case 'swing':
         if (context.mounted) await _showSwingDialog(context);
+        break;
+      case 'copyBpmAll':
+        state.copyCurrentBpmToAllPatterns();
+        break;
+      case 'copySwingAll':
+        state.copyCurrentSwingToAllPatterns();
         break;
       case 'follow':
         state.toggleFollowPlayhead();

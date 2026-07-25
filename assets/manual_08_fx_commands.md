@@ -9,6 +9,7 @@ FX commands are entered in the FX column of a pattern cell. Each command takes a
 | Command | Value (XY) | Description |
 |---|---|---|
 | `ARP` | XY | Arpeggio. X = first interval (semitones), Y = second interval. Carries through hold rows. |
+| `BPM` | 00–99 | Tempo nudge (pattern-global). 00 = reset to pattern's BPM, 01–50 = +1..+50, 51–99 = -49..-1. Stacks onto the current tempo; resets to the pattern's snapshot BPM at pattern start / loop start. |
 | `CHA` | 00–99 | Chance. 00 = never play, 99 = always play, 50 = 50% |
 | `DEL` | 00–99 | Delay note-on by % of the row duration (00 = start, 99 = end) |
 | `GAT` | XY | Gate. X = speed (0–9), Y = depth (0–9). Square-wave volume LFO. Carries through hold rows. |
@@ -20,6 +21,7 @@ FX commands are entered in the FX column of a pattern cell. Each command takes a
 | `SLC` | XY | Slice player. X = play mode (0 = slice only, 1 = play through), Y = slice number (1–9) |
 | `SLD` | XY | Slide Down. X = lines to slide over (1–9), Y = semitones down (1–9). Works on hold rows. |
 | `SLU` | XY | Slide Up. X = lines to slide over (1–9), Y = semitones up (1–9). Works on hold rows. |
+| `SWN` | 00–99 | Swing override (pattern-global). Directly sets the pattern's swing amount for the rest of this playthrough; resets to the pattern's snapshot swing at pattern start / loop start. |
 | `TRE` | XY | Tremolo. X = speed (0–9), Y = depth (0–9). Sine-wave volume LFO. Carries through hold rows. |
 | `VIB` | XY | Vibrato. X = speed (0–9), Y = depth (0–9). Pitch LFO. Carries through hold rows. |
 | `VOL` | 00–99 | Override volume. Carries through hold rows until note-off. |
@@ -32,6 +34,24 @@ The arp cycles through root → root+X → root+Y semitones. Values 0–9 are ch
 `0`=unison, `1`=m2, `2`=M2, `3`=m3, `4`=M3, `5`=P4, `6`=tritone, `7`=P5, `8`=m6, `9`=M6
 
 ARP can be placed on a hold row to start arpeggiation mid-note.
+
+### BPM / SWN — Pattern-Global Tempo & Swing Overrides
+
+Unlike most FX commands (which affect only the track/note they're placed on), `BPM` and `SWN` are **pattern-global**: they affect the whole pattern's timing, no matter which track carries the command. If more than one track has the command on the same row, only the lowest-numbered track's value is used.
+
+Both commands automatically reset to the pattern's own saved value (the value shown on the transport bar / pattern settings) at the **start of playback** and every time the pattern **loops back to its start** — so a BPM/SWN ramp you build up during one pass never bleeds into the next.
+
+**BPM** (`00`–`99`) is a signed nudge relative to whatever tempo is currently in effect, not the pattern's base tempo:
+
+| Value | Meaning |
+|---|---|
+| `00` | Reset tempo to the pattern's own BPM right now |
+| `01`–`50` | Add `+1` to `+50` BPM |
+| `51`–`99` | Subtract `1` to `49` BPM (`99`=-1, `98`=-2, `97`=-3 … `51`=-49) |
+
+Because it stacks, several `BPM` commands across a pattern can build a gradual tempo ramp (e.g. speeding up into a drop), and `BPM 00` is a quick way to snap back to the base tempo mid-pattern without waiting for a loop.
+
+**SWN** (`00`–`99`) simply overrides the pattern's swing percentage directly — no +/- encoding, the value you enter *is* the new swing amount until the next `SWN` command, pattern restart, or loop.
 
 ### RET — Retrigger Volume Curves
 

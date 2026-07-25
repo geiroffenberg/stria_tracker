@@ -78,6 +78,8 @@ const Map<int, String> kFxCommandNames = {
   206: 'SLD', // slide down: X=lines, Y=semitones
   207: 'TRE', // tremolo: XY speed+depth, sine wave volume LFO
   208: 'GAT', // gate: XY speed+depth, square wave volume LFO
+  209: 'BPM', // tempo nudge: 00=reset, 01-50=+1..+50, 51-99=-49..-1
+  210: 'SWN', // swing override: 00-99, resets to pattern swing at start/loop
 };
 
 /// Fixed command ID → full description string. Same key space as kFxCommandNames.
@@ -122,6 +124,8 @@ const Map<int, String> kFxCommandDescriptions = {
   206: 'Slide Down — XY: X=lines to slide over (1-9), Y=semitones down (1-9)',
   207: 'Tremolo — XY: X=speed (0-9), Y=depth (0-9), sine wave volume LFO',
   208: 'Gate — XY: X=speed (0-9), Y=depth (0-9), square wave volume gate',
+  209: 'Tempo — 00=reset to pattern BPM, 01-50=+1..+50, 51-99=-49..-1 (stacks on current tempo)',
+  210: 'Swing — 00-99: overrides pattern swing amount (resets to pattern swing at start/loop)',
   // ── Add new FX descriptions below ────────────────────────────────────
 };
 
@@ -148,7 +152,9 @@ const int kFxSLU = 205; // slide up:   X=lines, Y=semitones
 const int kFxSLD = 206; // slide down: X=lines, Y=semitones
 const int kFxTRE = 207; // tremolo: XY speed+depth, sine wave volume LFO
 const int kFxGAT = 208; // gate: XY speed+depth, square wave volume LFO
-// → To add a new FX: pick an ID > 208, add to kFxCommandNames + kFxCommandDescriptions
+const int kFxBPM = 209; // tempo nudge: 00=reset, 01-50=+1..+50, 51-99=-49..-1
+const int kFxSWN = 210; // swing override: 00-99, resets to pattern swing at start/loop
+// → To add a new FX: pick an ID > 210, add to kFxCommandNames + kFxCommandDescriptions
 const int kFxInsertStart = 340;
 const int kFxInsertEnd = 399; // 6 slots × 10 functions (0–9) = 60 commands
 

@@ -10,7 +10,7 @@ In most trackers, BPM is a single global value for the whole song. In Stria, **e
 
 This means:
 - A breakdown section can run at 70 BPM while the main loop runs at 140 BPM — no automation required.
-- Tempo changes are structural (arranged in the Song screen) rather than encoded as FX commands.
+- Tempo changes are normally structural (arranged in the Song screen), but the `BPM` FX command can also nudge the tempo temporarily within a pattern — see the FX Commands section. Any FX-driven tempo change resets back to the pattern's own BPM at the start of playback or when the pattern loops.
 
 ---
 
