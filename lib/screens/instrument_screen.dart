@@ -383,8 +383,10 @@ class _EmptyInstrumentPlaceholder extends StatelessWidget {
             style: kStyleHeader.copyWith(color: kColInactive, fontSize: 14),
           ),
           const SizedBox(height: 24),
-          Row(
-            mainAxisSize: MainAxisSize.min,
+          Wrap(
+            alignment: WrapAlignment.center,
+            spacing: 8,
+            runSpacing: 8,
             children: [
               for (final t in [
                 InstrumentType.simpleSynth,
@@ -392,12 +394,9 @@ class _EmptyInstrumentPlaceholder extends StatelessWidget {
                 InstrumentType.drumSynth,
                 InstrumentType.sampler,
               ])
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 8),
-                  child: ElevatedButton(
-                    onPressed: () => onPick(t),
-                    child: Text(t.label),
-                  ),
+                ElevatedButton(
+                  onPressed: () => onPick(t),
+                  child: Text(t.label),
                 ),
             ],
           ),

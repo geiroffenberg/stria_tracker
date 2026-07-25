@@ -114,10 +114,19 @@ float drumPitchEnvCoeff(float pitchDecayNorm, int sampleRate) {
 }
 
 float drumAmpEnvCoeff(float decayNorm, int sampleRate) {
-    // Overall amplitude decay time constant: ~40ms to ~1200ms.
-    const float ms = 40.0f + std::clamp(decayNorm, 0.0f, 1.0f) * 1160.0f;
-    const float tau = ms * 0.001f * static_cast<float>(sampleRate);
-    return std::exp(-1.0f / std::max(1.0f, tau));
+    // decayNorm maps directly to the *audible tail length* — the time for
+    // the envelope to fall from 1.0 down to the voice-end threshold
+    // (1e-4, matched to the `v.drumAmpEnvLevel < 1e-4f` check below) —
+    // rather than to an exponential time-constant. A time-constant mapping
+    // makes even the shortest setting ring out for ~9x longer than the
+    // stated ms (tau * ln(10000) \u2248 tau * 9.21), which is why decay=0 used
+    // to sound like a long tail instead of a snappy near-instant hit.
+    // 0.0 = ~10ms (all-but-instant/snappy), 1.0 = ~2.8s (long boomy/crash tail).
+    const float d = std::clamp(decayNorm, 0.0f, 1.0f);
+    const float tailMs = 10.0f + d * d * 2790.0f;
+    const float tailSamples = tailMs * 0.001f * static_cast<float>(sampleRate);
+    // level(n) = coeff^n = 1e-4  =>  coeff = 1e-4^(1/n) = exp(ln(1e-4)/n)
+    return std::exp(-9.2103404f / std::max(1.0f, tailSamples));
 }
 
 float drumClickEnvCoeff(int sampleRate) {
@@ -3359,10 +3368,19 @@ oboe::DataCallbackResult AudioEngine::onAudioReady(
                 }
 
                 if (driveAmt > 0.001f) {
-                    const float boosted = sample * (1.0f + driveAmt * 6.0f);
+                    // Wider boost range so cranking DRIVE actually delivers a
+                    // noticeable loudness/punch increase instead of barely
+                    // moving off the saturation asymptote.
+                    const float boosted = sample * (1.0f + driveAmt * 10.0f);
                     sample = boosted / (1.0f + std::fabs(boosted));
                 }
-                sample = sample * v.gain * v.level * v.instrumentVolume * 0.6f;
+                // Kick/Tom are a single low-frequency sine — perceptually the
+                // quietest piece at equal peak amplitude — so give them extra
+                // makeup gain. Overall ceiling raised from 0.6 to bring Drum
+                // Synth's headroom closer to sample-based kicks (Sampler has
+                // no such attenuation at all).
+                const float pieceMakeup = isTonalSweep ? 1.15f : 1.0f;
+                sample = sample * v.gain * v.level * v.instrumentVolume * 0.95f * pieceMakeup;
 
                 const float pan01 = std::clamp(v.pan, 0.0f, 1.0f);
                 const float angle = pan01 * 1.57079632679f;
