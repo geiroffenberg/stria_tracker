@@ -47,8 +47,14 @@ float karplusDispersion(float n) {
 }
 
 void startKarplusVoice(Voice& v, int midiNote, int sampleRate) {
-    const float detuneSemitones = (v.detuneNorm - 0.5f) * 24.0f;
-    const float freq = static_cast<float>(440.0 * std::pow(2.0, ((midiNote - 69) + detuneSemitones) / 12.0));
+    // NOTE: deliberately does NOT apply v.detuneNorm here. Karplus reuses
+    // the generic synth's payload slots for its own 8 String Model params
+    // (Decay/Damping/Tone/Stretch/PickPosition/AttackColor/Body/Drive), and
+    // "Decay" (P00) is packed into the very same raw byte that sets
+    // v.detuneNorm elsewhere in triggerRowLocked(). Reading v.detuneNorm
+    // here used to make the Decay knob accidentally retune the string by
+    // up to +/-12 semitones. Pitch must come from midiNote alone.
+    const float freq = static_cast<float>(440.0 * std::pow(2.0, (midiNote - 69) / 12.0));
     const float clampedFreq = std::clamp(freq, 20.0f, 12000.0f);
     const int delayLen = std::clamp(
         static_cast<int>(static_cast<float>(sampleRate) / clampedFreq + 0.5f),
