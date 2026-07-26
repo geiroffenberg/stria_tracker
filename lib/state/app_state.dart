@@ -1399,6 +1399,111 @@ class AppState extends ChangeNotifier {
               i('stereo', 0),
             );
           }
+        case 'EQ-5':
+          // EQ-5 is a UI-only 5-knob view over the native 3-band EQ engine
+          // (see mixer_screen.dart onMasterInsertTap/onInsertSlotTap) — it
+          // shares typeCode 7 and only bass/presence/air map to the 3 bands.
+          final typeCode = 7;
+          final wet = d('wet', 1.0);
+          double toNorm(double db) => (db / 12.0).clamp(-1.0, 1.0);
+          final lowGain = toNorm(d('bass', 0.0));
+          final midGain = toNorm(d('presence', 0.0));
+          final highGain = toNorm(d('air', 0.0));
+          const lowFreq = 0.07;
+          const midFreq = 0.436;
+          const midQ = 0.091;
+          const highFreq = 0.862;
+          if (onMaster) {
+            await AudioEngine.instance.setMasterInsertEffect(
+              slot,
+              typeCode,
+              wet,
+            );
+            await AudioEngine.instance.setMasterInsertMix(
+              slot,
+              d('dry', 0.0),
+              wet,
+            );
+            await AudioEngine.instance.setMasterEqParams(
+              slot,
+              lowGain,
+              lowFreq,
+              midGain,
+              midFreq,
+              midQ,
+              highGain,
+              highFreq,
+            );
+          } else {
+            await AudioEngine.instance.setTrackInsertEffect(
+              trackIdx!,
+              slot,
+              typeCode,
+              wet,
+            );
+            await AudioEngine.instance.setTrackInsertMix(
+              trackIdx,
+              slot,
+              d('dry', 0.0),
+              wet,
+            );
+            await AudioEngine.instance.setTrackEqParams(
+              trackIdx,
+              slot,
+              lowGain,
+              lowFreq,
+              midGain,
+              midFreq,
+              midQ,
+              highGain,
+              highFreq,
+            );
+          }
+        case 'FLANGER':
+          final typeCode = 9;
+          final wet = d('wet', 1.0);
+          if (onMaster) {
+            await AudioEngine.instance.setMasterInsertEffect(
+              slot,
+              typeCode,
+              wet,
+            );
+            await AudioEngine.instance.setMasterInsertMix(
+              slot,
+              d('dry', 1.0),
+              wet,
+            );
+            await AudioEngine.instance.setMasterFlangerParams(
+              slot,
+              d('rate', 0.3),
+              d('depth', 0.22),
+              d('delay', 0.2),
+              d('feedback', 0.0),
+              i('stereo', 0),
+            );
+          } else {
+            await AudioEngine.instance.setTrackInsertEffect(
+              trackIdx!,
+              slot,
+              typeCode,
+              wet,
+            );
+            await AudioEngine.instance.setTrackInsertMix(
+              trackIdx,
+              slot,
+              d('dry', 1.0),
+              wet,
+            );
+            await AudioEngine.instance.setTrackFlangerParams(
+              trackIdx,
+              slot,
+              d('rate', 0.3),
+              d('depth', 0.22),
+              d('delay', 0.2),
+              d('feedback', 0.0),
+              i('stereo', 0),
+            );
+          }
         case 'EQ':
           final typeCode = 7;
           final wet = d('wet', 1.0);

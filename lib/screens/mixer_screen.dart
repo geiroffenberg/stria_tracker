@@ -727,6 +727,10 @@ class _MixerScreenState extends State<MixerScreen> {
             }
           });
         },
+        onDelete: () {
+          _clearInsertSlot(onMaster: onMaster, trackIdx: trackIdx, slotIdx: slotIdx);
+          Navigator.of(context).pop();
+        },
       ),
     );
   }
@@ -770,6 +774,10 @@ class _MixerScreenState extends State<MixerScreen> {
             }
           });
         },
+        onDelete: () {
+          _clearInsertSlot(onMaster: onMaster, trackIdx: trackIdx, slotIdx: slotIdx);
+          Navigator.of(context).pop();
+        },
       ),
     );
   }
@@ -809,6 +817,10 @@ class _MixerScreenState extends State<MixerScreen> {
             _trackFilterStates[trackIdx!][slotIdx] = s;
           }
         }),
+        onDelete: () {
+          _clearInsertSlot(onMaster: onMaster, trackIdx: trackIdx, slotIdx: slotIdx);
+          Navigator.of(context).pop();
+        },
       ),
     );
   }
@@ -848,6 +860,10 @@ class _MixerScreenState extends State<MixerScreen> {
             _trackDistortionStates[trackIdx!][slotIdx] = s;
           }
         }),
+        onDelete: () {
+          _clearInsertSlot(onMaster: onMaster, trackIdx: trackIdx, slotIdx: slotIdx);
+          Navigator.of(context).pop();
+        },
       ),
     );
   }
@@ -887,6 +903,10 @@ class _MixerScreenState extends State<MixerScreen> {
             _trackBitcrusherStates[trackIdx!][slotIdx] = s;
           }
         }),
+        onDelete: () {
+          _clearInsertSlot(onMaster: onMaster, trackIdx: trackIdx, slotIdx: slotIdx);
+          Navigator.of(context).pop();
+        },
       ),
     );
   }
@@ -926,6 +946,10 @@ class _MixerScreenState extends State<MixerScreen> {
             _trackLimiterStates[trackIdx!][slotIdx] = s;
           }
         }),
+        onDelete: () {
+          _clearInsertSlot(onMaster: onMaster, trackIdx: trackIdx, slotIdx: slotIdx);
+          Navigator.of(context).pop();
+        },
       ),
     );
   }
@@ -965,6 +989,10 @@ class _MixerScreenState extends State<MixerScreen> {
             _trackChorusStates[trackIdx!][slotIdx] = s;
           }
         }),
+        onDelete: () {
+          _clearInsertSlot(onMaster: onMaster, trackIdx: trackIdx, slotIdx: slotIdx);
+          Navigator.of(context).pop();
+        },
       ),
     );
   }
@@ -1004,6 +1032,10 @@ class _MixerScreenState extends State<MixerScreen> {
             _trackFlangerStates[trackIdx!][slotIdx] = s;
           }
         }),
+        onDelete: () {
+          _clearInsertSlot(onMaster: onMaster, trackIdx: trackIdx, slotIdx: slotIdx);
+          Navigator.of(context).pop();
+        },
       ),
     );
   }
@@ -1043,6 +1075,10 @@ class _MixerScreenState extends State<MixerScreen> {
             _trackEqStates[trackIdx!][slotIdx] = s;
           }
         }),
+        onDelete: () {
+          _clearInsertSlot(onMaster: onMaster, trackIdx: trackIdx, slotIdx: slotIdx);
+          Navigator.of(context).pop();
+        },
       ),
     );
   }
@@ -1082,6 +1118,10 @@ class _MixerScreenState extends State<MixerScreen> {
             _trackEq5States[trackIdx!][slotIdx] = s;
           }
         }),
+        onDelete: () {
+          _clearInsertSlot(onMaster: onMaster, trackIdx: trackIdx, slotIdx: slotIdx);
+          Navigator.of(context).pop();
+        },
       ),
     );
   }
@@ -1121,6 +1161,10 @@ class _MixerScreenState extends State<MixerScreen> {
             _trackCompressorStates[trackIdx!][slotIdx] = s;
           }
         }),
+        onDelete: () {
+          _clearInsertSlot(onMaster: onMaster, trackIdx: trackIdx, slotIdx: slotIdx);
+          Navigator.of(context).pop();
+        },
       ),
     );
   }
@@ -1243,6 +1287,407 @@ class _MixerScreenState extends State<MixerScreen> {
       _masterEqStates[slot] = const _EqUiState();
       _masterCompressorStates[slot] = const _CompressorUiState();
     }
+  }
+
+  // Clears a single insert slot (master or track) and closes its editor
+  // sheet. This is the single source of truth for deletion — used by the
+  // DELETE button inside every effect editor.
+  void _clearInsertSlot({
+    required bool onMaster,
+    int? trackIdx,
+    required int slotIdx,
+  }) {
+    final state = AppStateScope.of(context);
+    setState(() {
+      if (onMaster) {
+        _masterInserts[slotIdx] = null;
+        _masterBypassed[slotIdx] = false;
+        _masterReverbStates[slotIdx] = const _ReverbUiState();
+        _masterDelayStates[slotIdx] = const _DelayUiState();
+        _masterFilterStates[slotIdx] = const _FilterUiState();
+        _masterDistortionStates[slotIdx] = const _DistortionUiState();
+        _masterBitcrusherStates[slotIdx] = const _BitcrusherUiState();
+        _masterLimiterStates[slotIdx] = const _LimiterUiState();
+        _masterChorusStates[slotIdx] = const _ChorusUiState();
+        _masterFlangerStates[slotIdx] = const _FlangerUiState();
+        _masterEq5States[slotIdx] = const _Eq5UiState();
+        _masterEqStates[slotIdx] = const _EqUiState();
+        _masterCompressorStates[slotIdx] = const _CompressorUiState();
+      } else {
+        _inserts[trackIdx!][slotIdx] = null;
+        resetTrackInsertSlotState(trackIdx, slotIdx);
+      }
+    });
+    if (onMaster) {
+      AudioEngine.instance.setMasterInsertEffect(slotIdx, -1, 0.0);
+    } else {
+      state.setTrackInsertEffectName(trackIdx!, slotIdx, null);
+      AudioEngine.instance.setTrackInsertEffect(trackIdx, slotIdx, -1, 0.0);
+    }
+    state.setInsertSnapshot(buildInsertSnapshot());
+  }
+
+  void _swapListEntries<T>(List<T> list, int a, int b) {
+    final tmp = list[a];
+    list[a] = list[b];
+    list[b] = tmp;
+  }
+
+  void _swapMasterSlotState(int a, int b) {
+    _swapListEntries(_masterInserts, a, b);
+    _swapListEntries(_masterBypassed, a, b);
+    _swapListEntries(_masterReverbStates, a, b);
+    _swapListEntries(_masterDelayStates, a, b);
+    _swapListEntries(_masterFilterStates, a, b);
+    _swapListEntries(_masterDistortionStates, a, b);
+    _swapListEntries(_masterBitcrusherStates, a, b);
+    _swapListEntries(_masterLimiterStates, a, b);
+    _swapListEntries(_masterChorusStates, a, b);
+    _swapListEntries(_masterFlangerStates, a, b);
+    _swapListEntries(_masterEq5States, a, b);
+    _swapListEntries(_masterEqStates, a, b);
+    _swapListEntries(_masterCompressorStates, a, b);
+  }
+
+  void _swapTrackSlotState(int trackIdx, int a, int b) {
+    _swapListEntries(_inserts[trackIdx], a, b);
+    _swapListEntries(_trackBypassed[trackIdx], a, b);
+    _swapListEntries(_trackReverbStates[trackIdx], a, b);
+    _swapListEntries(_trackDelayStates[trackIdx], a, b);
+    _swapListEntries(_trackFilterStates[trackIdx], a, b);
+    _swapListEntries(_trackDistortionStates[trackIdx], a, b);
+    _swapListEntries(_trackBitcrusherStates[trackIdx], a, b);
+    _swapListEntries(_trackLimiterStates[trackIdx], a, b);
+    _swapListEntries(_trackChorusStates[trackIdx], a, b);
+    _swapListEntries(_trackFlangerStates[trackIdx], a, b);
+    _swapListEntries(_trackEq5States[trackIdx], a, b);
+    _swapListEntries(_trackEqStates[trackIdx], a, b);
+    _swapListEntries(_trackCompressorStates[trackIdx], a, b);
+  }
+
+  // Pushes the effect currently occupying [slot] (master or track) to the
+  // native engine — mirrors the effect-creation logic in onMasterInsertTap
+  // / onInsertSlotTap. Used after a drag-and-drop swap to re-sync both
+  // affected slots with the audio engine.
+  Future<void> _pushSlotToEngine({
+    required bool onMaster,
+    int? trackIdx,
+    required int slot,
+  }) async {
+    final type = onMaster ? _masterInserts[slot] : _inserts[trackIdx!][slot];
+
+    Future<void> setEffect(int typeCode, double wet) => onMaster
+        ? AudioEngine.instance.setMasterInsertEffect(slot, typeCode, wet)
+        : AudioEngine.instance.setTrackInsertEffect(
+            trackIdx!,
+            slot,
+            typeCode,
+            wet,
+          );
+    Future<void> setMix(double dry, double wet) => onMaster
+        ? AudioEngine.instance.setMasterInsertMix(slot, dry, wet)
+        : AudioEngine.instance.setTrackInsertMix(trackIdx!, slot, dry, wet);
+    Future<void> setBypass(bool bypass) => onMaster
+        ? AudioEngine.instance.setMasterInsertBypass(slot, bypass)
+        : AudioEngine.instance.setTrackInsertBypass(
+            trackIdx!,
+            slot,
+            bypass,
+          );
+
+    if (type == null) {
+      await setEffect(-1, 0.0);
+      return;
+    }
+
+    switch (type) {
+      case 'REVERB':
+        final s = onMaster
+            ? _masterReverbStates[slot]
+            : _trackReverbStates[trackIdx!][slot];
+        await setEffect(0, s.wet);
+        await setMix(s.dry, s.wet);
+        await (onMaster
+            ? AudioEngine.instance.setMasterReverbParams(
+                slot,
+                s.roomSize,
+                s.damp,
+                s.width,
+                s.freeze,
+              )
+            : AudioEngine.instance.setTrackReverbParams(
+                trackIdx!,
+                slot,
+                s.roomSize,
+                s.damp,
+                s.width,
+                s.freeze,
+              ));
+      case 'DELAY':
+        final s = onMaster
+            ? _masterDelayStates[slot]
+            : _trackDelayStates[trackIdx!][slot];
+        await setEffect(1, s.wet);
+        await setMix(s.dry, s.wet);
+        await (onMaster
+            ? AudioEngine.instance.setMasterDelayParams(
+                slot,
+                s.timeMs,
+                s.feedback,
+                s.hpCutoff,
+                s.sync,
+              )
+            : AudioEngine.instance.setTrackDelayParams(
+                trackIdx!,
+                slot,
+                s.timeMs,
+                s.feedback,
+                s.hpCutoff,
+                s.sync,
+              ));
+      case 'FILTER':
+        final s = onMaster
+            ? _masterFilterStates[slot]
+            : _trackFilterStates[trackIdx!][slot];
+        await setEffect(2, s.wet);
+        await setMix(s.dry, s.wet);
+        await (onMaster
+            ? AudioEngine.instance.setMasterFilterParams(
+                slot,
+                s.cutoff,
+                s.resonance,
+                s.mode,
+              )
+            : AudioEngine.instance.setTrackFilterParams(
+                trackIdx!,
+                slot,
+                s.cutoff,
+                s.resonance,
+                s.mode,
+              ));
+      case 'DISTORTION':
+        final s = onMaster
+            ? _masterDistortionStates[slot]
+            : _trackDistortionStates[trackIdx!][slot];
+        await setEffect(3, s.wet);
+        await setMix(s.dry, s.wet);
+        await (onMaster
+            ? AudioEngine.instance.setMasterDistortionParams(
+                slot,
+                s.drive,
+                s.tone,
+                s.distType,
+              )
+            : AudioEngine.instance.setTrackDistortionParams(
+                trackIdx!,
+                slot,
+                s.drive,
+                s.tone,
+                s.distType,
+              ));
+      case 'BITCRUSHER':
+        final s = onMaster
+            ? _masterBitcrusherStates[slot]
+            : _trackBitcrusherStates[trackIdx!][slot];
+        await setEffect(4, s.wet);
+        await setMix(s.dry, s.wet);
+        await (onMaster
+            ? AudioEngine.instance.setMasterBitcrusherParams(
+                slot,
+                s.bits,
+                s.rate,
+              )
+            : AudioEngine.instance.setTrackBitcrusherParams(
+                trackIdx!,
+                slot,
+                s.bits,
+                s.rate,
+              ));
+      case 'LIMITER':
+        final s = onMaster
+            ? _masterLimiterStates[slot]
+            : _trackLimiterStates[trackIdx!][slot];
+        await setEffect(5, s.wet);
+        await setMix(s.dry, s.wet);
+        await (onMaster
+            ? AudioEngine.instance.setMasterLimiterParams(slot, s.gain)
+            : AudioEngine.instance.setTrackLimiterParams(
+                trackIdx!,
+                slot,
+                s.gain,
+              ));
+      case 'CHORUS':
+        final s = onMaster
+            ? _masterChorusStates[slot]
+            : _trackChorusStates[trackIdx!][slot];
+        await setEffect(6, s.wet);
+        await setMix(s.dry, s.wet);
+        await (onMaster
+            ? AudioEngine.instance.setMasterChorusParams(
+                slot,
+                s.rate,
+                s.depth * (5.0 / 15.0),
+                s.delay,
+                s.stereo,
+              )
+            : AudioEngine.instance.setTrackChorusParams(
+                trackIdx!,
+                slot,
+                s.rate,
+                s.depth * (5.0 / 15.0),
+                s.delay,
+                s.stereo,
+              ));
+      case 'FLANGER':
+        final s = onMaster
+            ? _masterFlangerStates[slot]
+            : _trackFlangerStates[trackIdx!][slot];
+        await setEffect(9, s.wet);
+        await setMix(s.dry, s.wet);
+        await (onMaster
+            ? AudioEngine.instance.setMasterFlangerParams(
+                slot,
+                s.rate,
+                s.depth,
+                s.delay,
+                s.feedback,
+                s.stereo,
+              )
+            : AudioEngine.instance.setTrackFlangerParams(
+                trackIdx!,
+                slot,
+                s.rate,
+                s.depth,
+                s.delay,
+                s.feedback,
+                s.stereo,
+              ));
+      case 'EQ-5':
+        final s = onMaster
+            ? _masterEq5States[slot]
+            : _trackEq5States[trackIdx!][slot];
+        await setEffect(7, s.wet);
+        await setMix(s.dry, s.wet);
+        double toNorm(double db) => (db / 12.0).clamp(-1.0, 1.0);
+        final lowGain = toNorm(s.bass);
+        final midGain = toNorm(s.presence);
+        final highGain = toNorm(s.air);
+        const lowFreq = 0.07;
+        const midFreq = 0.436;
+        const midQ = 0.091;
+        const highFreq = 0.862;
+        await (onMaster
+            ? AudioEngine.instance.setMasterEqParams(
+                slot,
+                lowGain,
+                lowFreq,
+                midGain,
+                midFreq,
+                midQ,
+                highGain,
+                highFreq,
+              )
+            : AudioEngine.instance.setTrackEqParams(
+                trackIdx!,
+                slot,
+                lowGain,
+                lowFreq,
+                midGain,
+                midFreq,
+                midQ,
+                highGain,
+                highFreq,
+              ));
+      case 'EQ':
+        final s = onMaster
+            ? _masterEqStates[slot]
+            : _trackEqStates[trackIdx!][slot];
+        await setEffect(7, s.wet);
+        await setMix(s.dry, s.wet);
+        await (onMaster
+            ? AudioEngine.instance.setMasterEqParams(
+                slot,
+                s.lowGain,
+                s.lowFreq,
+                s.midGain,
+                s.midFreq,
+                s.midQ,
+                s.highGain,
+                s.highFreq,
+              )
+            : AudioEngine.instance.setTrackEqParams(
+                trackIdx!,
+                slot,
+                s.lowGain,
+                s.lowFreq,
+                s.midGain,
+                s.midFreq,
+                s.midQ,
+                s.highGain,
+                s.highFreq,
+              ));
+      case 'COMPRESSOR':
+        final s = onMaster
+            ? _masterCompressorStates[slot]
+            : _trackCompressorStates[trackIdx!][slot];
+        await setEffect(8, s.wet);
+        await setMix(s.dry, s.wet);
+        await (onMaster
+            ? AudioEngine.instance.setMasterCompressorParams(
+                slot,
+                s.threshold,
+                s.ratio,
+                s.attack,
+                s.release,
+                s.makeup,
+                s.knee,
+              )
+            : AudioEngine.instance.setTrackCompressorParams(
+                trackIdx!,
+                slot,
+                s.threshold,
+                s.ratio,
+                s.attack,
+                s.release,
+                s.makeup,
+                s.knee,
+              ));
+    }
+
+    final bypass = onMaster
+        ? _masterBypassed[slot]
+        : _trackBypassed[trackIdx!][slot];
+    await setBypass(bypass);
+  }
+
+  // Swaps the effects occupying [slotA] and [slotB] on the same strip
+  // (master, or a single track) — drag-and-drop reordering. Swaps every
+  // piece of UI state for the two slots, then re-syncs both slots with the
+  // native audio engine so playback immediately reflects the new order.
+  void _swapInsertSlots({
+    required bool onMaster,
+    int? trackIdx,
+    required int slotA,
+    required int slotB,
+  }) {
+    if (slotA == slotB) return;
+    final state = AppStateScope.of(context);
+    setState(() {
+      if (onMaster) {
+        _swapMasterSlotState(slotA, slotB);
+      } else {
+        _swapTrackSlotState(trackIdx!, slotA, slotB);
+      }
+    });
+    if (!onMaster) {
+      final nameA = _inserts[trackIdx!][slotA];
+      final nameB = _inserts[trackIdx][slotB];
+      state.setTrackInsertEffectName(trackIdx, slotA, nameA);
+      state.setTrackInsertEffectName(trackIdx, slotB, nameB);
+    }
+    _pushSlotToEngine(onMaster: onMaster, trackIdx: trackIdx, slot: slotA);
+    _pushSlotToEngine(onMaster: onMaster, trackIdx: trackIdx, slot: slotB);
+    state.setInsertSnapshot(buildInsertSnapshot());
   }
 
   // Serializes all current in-memory insert state to a Map suitable for
@@ -1669,24 +2114,11 @@ class _MixerScreenState extends State<MixerScreen> {
               onLimiterToggle: () =>
                   state.setMasterLimiterEnabled(!state.masterLimiterEnabled),
               onInsertTap: (slot) => onMasterInsertTap(slot),
-              onInsertClear: (slot) {
-                setState(() {
-                  _masterInserts[slot] = null;
-                  _masterBypassed[slot] = false;
-                  _masterReverbStates[slot] = const _ReverbUiState();
-                  _masterDelayStates[slot] = const _DelayUiState();
-                  _masterFilterStates[slot] = const _FilterUiState();
-                  _masterDistortionStates[slot] = const _DistortionUiState();
-                  _masterBitcrusherStates[slot] = const _BitcrusherUiState();
-                  _masterLimiterStates[slot] = const _LimiterUiState();
-                  _masterChorusStates[slot] = const _ChorusUiState();
-                  _masterFlangerStates[slot] = const _FlangerUiState();
-                  _masterEqStates[slot] = const _EqUiState();
-                  _masterCompressorStates[slot] = const _CompressorUiState();
-                });
-                AudioEngine.instance.setMasterInsertEffect(slot, -1, 0.0);
-                state.setInsertSnapshot(buildInsertSnapshot());
-              },
+              onInsertReorder: (from, to) => _swapInsertSlots(
+                onMaster: true,
+                slotA: from,
+                slotB: to,
+              ),
             ),
             const SizedBox(width: 6),
             // ── Channel strips ─────────────────────────────────────────
@@ -1709,15 +2141,12 @@ class _MixerScreenState extends State<MixerScreen> {
                 onMute: () => state.toggleTrackMixerMute(i),
                 onSolo: () => state.toggleTrackMixerSolo(i),
                 onInsertTap: (slot) => onInsertSlotTap(i, slot),
-                onInsertClear: (slot) {
-                  setState(() {
-                    _inserts[i][slot] = null;
-                    resetTrackInsertSlotState(i, slot);
-                  });
-                  state.setTrackInsertEffectName(i, slot, null);
-                  AudioEngine.instance.setTrackInsertEffect(i, slot, -1, 0.0);
-                  state.setInsertSnapshot(buildInsertSnapshot());
-                },
+                onInsertReorder: (from, to) => _swapInsertSlots(
+                  onMaster: false,
+                  trackIdx: i,
+                  slotA: from,
+                  slotB: to,
+                ),
                 onSendTap: () => onSendTap(i, state),
               ),
           ],
@@ -2482,7 +2911,7 @@ class _MasterStrip extends StatelessWidget {
   final VoidCallback onMute;
   final VoidCallback onLimiterToggle;
   final void Function(int slot) onInsertTap;
-  final void Function(int slot) onInsertClear;
+  final void Function(int fromSlot, int toSlot) onInsertReorder;
 
   const _MasterStrip({
     required this.volume,
@@ -2496,7 +2925,7 @@ class _MasterStrip extends StatelessWidget {
     required this.onMute,
     required this.onLimiterToggle,
     required this.onInsertTap,
-    required this.onInsertClear,
+    required this.onInsertReorder,
   });
 
   @override
@@ -2651,7 +3080,7 @@ class _MasterStrip extends StatelessWidget {
                         fxName: inserts[slot],
                         bypassed: bypassed[slot],
                         onTap: () => onInsertTap(slot),
-                        onClear: () => onInsertClear(slot),
+                        onReorder: onInsertReorder,
                       ),
                     ),
                   ),
@@ -2730,7 +3159,7 @@ class _ChannelStrip extends StatelessWidget {
   final VoidCallback onMute;
   final VoidCallback onSolo;
   final void Function(int slot) onInsertTap;
-  final void Function(int slot) onInsertClear;
+  final void Function(int fromSlot, int toSlot) onInsertReorder;
   final VoidCallback onSendTap;
 
   const _ChannelStrip({
@@ -2751,7 +3180,7 @@ class _ChannelStrip extends StatelessWidget {
     required this.onMute,
     required this.onSolo,
     required this.onInsertTap,
-    required this.onInsertClear,
+    required this.onInsertReorder,
     required this.onSendTap,
   });
 
@@ -2904,7 +3333,7 @@ class _ChannelStrip extends StatelessWidget {
                         fxName: inserts[slot],
                         bypassed: bypassed[slot],
                         onTap: () => onInsertTap(slot),
-                        onClear: () => onInsertClear(slot),
+                        onReorder: onInsertReorder,
                       ),
                     ),
                   ),
@@ -2959,57 +3388,97 @@ class _StripInsertSlot extends StatelessWidget {
   final String? fxName;
   final bool bypassed;
   final VoidCallback onTap;
-  final VoidCallback onClear;
+  // Called when an occupied slot is dropped onto this slot — swaps the
+  // effect at [fromIndex] with the one at this slot (this.index).
+  final void Function(int fromIndex, int toIndex) onReorder;
 
   const _StripInsertSlot({
     required this.index,
     required this.fxName,
     required this.bypassed,
     required this.onTap,
-    required this.onClear,
+    required this.onReorder,
   });
+
+  Widget _box({required bool active, required bool dragOver}) => Container(
+    height: 40,
+    padding: const EdgeInsets.symmetric(horizontal: 4),
+    alignment: Alignment.center,
+    decoration: BoxDecoration(
+      color: dragOver
+          ? kColAccent.withAlpha(60)
+          : active
+          ? kColAccent.withAlpha(30)
+          : Colors.transparent,
+      border: Border.all(
+        color: dragOver
+            ? kColAccent
+            : active
+            ? kColAccent
+            : fxName != null
+            ? kMixerBorderColor
+            : kMixerChromeColor.withAlpha(180),
+        width: dragOver ? 2 : 1,
+      ),
+      borderRadius: BorderRadius.circular(2),
+    ),
+    child: Text(
+      fxName ?? '·',
+      maxLines: 2,
+      overflow: TextOverflow.ellipsis,
+      textAlign: TextAlign.center,
+      style: kStyleBase.copyWith(
+        fontSize: 10,
+        letterSpacing: 0.3,
+        color: active
+            ? kColAccent
+            : fxName != null
+            ? kMixerSecondaryTextColor
+            : kMixerSecondaryTextColor,
+        fontWeight: fxName != null ? FontWeight.w700 : FontWeight.normal,
+        decoration: bypassed && fxName != null
+            ? TextDecoration.lineThrough
+            : null,
+        decorationColor: kMixerSecondaryTextColor,
+      ),
+    ),
+  );
 
   @override
   Widget build(BuildContext context) {
     final filled = fxName != null;
     final active = filled && !bypassed;
-    return GestureDetector(
-      onTap: onTap,
-      onLongPress: filled ? onClear : null,
-      child: Container(
-        height: 40,
-        padding: const EdgeInsets.symmetric(horizontal: 4),
-        alignment: Alignment.center,
-        decoration: BoxDecoration(
-          color: active ? kColAccent.withAlpha(30) : Colors.transparent,
-          border: Border.all(
-            color: active
-                ? kColAccent
-                : filled
-                ? kMixerBorderColor
-                : kMixerChromeColor.withAlpha(180),
-          ),
-          borderRadius: BorderRadius.circular(2),
-        ),
-        child: Text(
-          filled ? fxName! : '·',
-          maxLines: 2,
-          overflow: TextOverflow.ellipsis,
-          textAlign: TextAlign.center,
-          style: kStyleBase.copyWith(
-            fontSize: 10,
-            letterSpacing: 0.3,
-            color: active
-                ? kColAccent
-                : filled
-                ? kMixerSecondaryTextColor
-                : kMixerSecondaryTextColor,
-            fontWeight: filled ? FontWeight.w700 : FontWeight.normal,
-            decoration: bypassed && filled ? TextDecoration.lineThrough : null,
-            decorationColor: kMixerSecondaryTextColor,
-          ),
-        ),
-      ),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final width = constraints.maxWidth;
+        return DragTarget<int>(
+          onWillAcceptWithDetails: (details) => details.data != index,
+          onAcceptWithDetails: (details) => onReorder(details.data, index),
+          builder: (context, candidateData, rejectedData) {
+            final dragOver = candidateData.isNotEmpty;
+            final tappable = GestureDetector(
+              onTap: onTap,
+              child: _box(active: active, dragOver: dragOver),
+            );
+            if (!filled) return tappable;
+            return LongPressDraggable<int>(
+              data: index,
+              feedback: SizedBox(
+                width: width,
+                child: Material(
+                  color: Colors.transparent,
+                  child: _box(active: active, dragOver: false),
+                ),
+              ),
+              childWhenDragging: Opacity(
+                opacity: 0.35,
+                child: _box(active: active, dragOver: false),
+              ),
+              child: tappable,
+            );
+          },
+        );
+      },
     );
   }
 }
@@ -3210,6 +3679,7 @@ class _ReverbEffectEditor extends StatefulWidget {
   final _ReverbUiState initialState;
   final ValueChanged<bool> onBypassChanged;
   final ValueChanged<_ReverbUiState> onParamsChanged;
+  final VoidCallback onDelete;
 
   const _ReverbEffectEditor({
     required this.onMaster,
@@ -3219,6 +3689,7 @@ class _ReverbEffectEditor extends StatefulWidget {
     required this.initialState,
     required this.onBypassChanged,
     required this.onParamsChanged,
+    required this.onDelete,
   });
 
   @override
@@ -3448,6 +3919,7 @@ class _ReverbEffectEditorState extends State<_ReverbEffectEditor> {
                     _updateParams();
                   },
                 ),
+                _DeleteInsertButton(onDelete: widget.onDelete),
               ],
             ),
           ),
@@ -3465,6 +3937,7 @@ class _DelayEffectEditor extends StatefulWidget {
   final _DelayUiState initialState;
   final ValueChanged<bool> onBypassChanged;
   final ValueChanged<_DelayUiState> onParamsChanged;
+  final VoidCallback onDelete;
 
   const _DelayEffectEditor({
     required this.onMaster,
@@ -3474,6 +3947,7 @@ class _DelayEffectEditor extends StatefulWidget {
     required this.initialState,
     required this.onBypassChanged,
     required this.onParamsChanged,
+    required this.onDelete,
   });
 
   @override
@@ -3668,6 +4142,7 @@ class _DelayEffectEditorState extends State<_DelayEffectEditor> {
                     _updateParams();
                   },
                 ),
+                _DeleteInsertButton(onDelete: widget.onDelete),
               ],
             ),
           ),
@@ -3687,6 +4162,7 @@ class _FilterEffectEditor extends StatefulWidget {
   final _FilterUiState initialState;
   final ValueChanged<bool> onBypassChanged;
   final ValueChanged<_FilterUiState> onParamsChanged;
+  final VoidCallback onDelete;
 
   const _FilterEffectEditor({
     required this.onMaster,
@@ -3696,6 +4172,7 @@ class _FilterEffectEditor extends StatefulWidget {
     required this.initialState,
     required this.onBypassChanged,
     required this.onParamsChanged,
+    required this.onDelete,
   });
 
   @override
@@ -3926,6 +4403,7 @@ class _FilterEffectEditorState extends State<_FilterEffectEditor> {
                     _updateParams();
                   },
                 ),
+                _DeleteInsertButton(onDelete: widget.onDelete),
               ],
             ),
           ),
@@ -3945,6 +4423,7 @@ class _DistortionEffectEditor extends StatefulWidget {
   final _DistortionUiState initialState;
   final ValueChanged<bool> onBypassChanged;
   final ValueChanged<_DistortionUiState> onParamsChanged;
+  final VoidCallback onDelete;
 
   const _DistortionEffectEditor({
     required this.onMaster,
@@ -3954,6 +4433,7 @@ class _DistortionEffectEditor extends StatefulWidget {
     required this.initialState,
     required this.onBypassChanged,
     required this.onParamsChanged,
+    required this.onDelete,
   });
 
   @override
@@ -4188,6 +4668,7 @@ class _DistortionEffectEditorState extends State<_DistortionEffectEditor> {
                     _updateParams();
                   },
                 ),
+                _DeleteInsertButton(onDelete: widget.onDelete),
               ],
             ),
           ),
@@ -4207,6 +4688,7 @@ class _BitcrusherEffectEditor extends StatefulWidget {
   final _BitcrusherUiState initialState;
   final ValueChanged<bool> onBypassChanged;
   final ValueChanged<_BitcrusherUiState> onParamsChanged;
+  final VoidCallback onDelete;
 
   const _BitcrusherEffectEditor({
     required this.onMaster,
@@ -4216,6 +4698,7 @@ class _BitcrusherEffectEditor extends StatefulWidget {
     required this.initialState,
     required this.onBypassChanged,
     required this.onParamsChanged,
+    required this.onDelete,
   });
 
   @override
@@ -4395,6 +4878,7 @@ class _BitcrusherEffectEditorState extends State<_BitcrusherEffectEditor> {
                     _updateParams();
                   },
                 ),
+                _DeleteInsertButton(onDelete: widget.onDelete),
               ],
             ),
           ),
@@ -4414,6 +4898,7 @@ class _LimiterEffectEditor extends StatefulWidget {
   final _LimiterUiState initialState;
   final ValueChanged<bool> onBypassChanged;
   final ValueChanged<_LimiterUiState> onParamsChanged;
+  final VoidCallback onDelete;
 
   const _LimiterEffectEditor({
     required this.onMaster,
@@ -4423,6 +4908,7 @@ class _LimiterEffectEditor extends StatefulWidget {
     required this.initialState,
     required this.onBypassChanged,
     required this.onParamsChanged,
+    required this.onDelete,
   });
 
   @override
@@ -4589,6 +5075,7 @@ class _LimiterEffectEditorState extends State<_LimiterEffectEditor> {
                     _updateParams();
                   },
                 ),
+                _DeleteInsertButton(onDelete: widget.onDelete),
               ],
             ),
           ),
@@ -4606,6 +5093,7 @@ class _ChorusEffectEditor extends StatefulWidget {
   final _ChorusUiState initialState;
   final ValueChanged<bool> onBypassChanged;
   final ValueChanged<_ChorusUiState> onParamsChanged;
+  final VoidCallback onDelete;
 
   const _ChorusEffectEditor({
     required this.onMaster,
@@ -4615,6 +5103,7 @@ class _ChorusEffectEditor extends StatefulWidget {
     required this.initialState,
     required this.onBypassChanged,
     required this.onParamsChanged,
+    required this.onDelete,
   });
 
   @override
@@ -4857,6 +5346,7 @@ class _ChorusEffectEditorState extends State<_ChorusEffectEditor> {
                     _updateParams();
                   },
                 ),
+                _DeleteInsertButton(onDelete: widget.onDelete),
               ],
             ),
           ),
@@ -4874,6 +5364,7 @@ class _EqEffectEditor extends StatefulWidget {
   final _EqUiState initialState;
   final ValueChanged<bool> onBypassChanged;
   final ValueChanged<_EqUiState> onParamsChanged;
+  final VoidCallback onDelete;
 
   const _EqEffectEditor({
     required this.onMaster,
@@ -4883,6 +5374,7 @@ class _EqEffectEditor extends StatefulWidget {
     required this.initialState,
     required this.onBypassChanged,
     required this.onParamsChanged,
+    required this.onDelete,
   });
 
   @override
@@ -4897,6 +5389,7 @@ class _FlangerEffectEditor extends StatefulWidget {
   final _FlangerUiState initialState;
   final ValueChanged<bool> onBypassChanged;
   final ValueChanged<_FlangerUiState> onParamsChanged;
+  final VoidCallback onDelete;
 
   const _FlangerEffectEditor({
     required this.onMaster,
@@ -4906,6 +5399,7 @@ class _FlangerEffectEditor extends StatefulWidget {
     required this.initialState,
     required this.onBypassChanged,
     required this.onParamsChanged,
+    required this.onDelete,
   });
 
   @override
@@ -5165,6 +5659,7 @@ class _FlangerEffectEditorState extends State<_FlangerEffectEditor> {
                     _updateParams();
                   },
                 ),
+                _DeleteInsertButton(onDelete: widget.onDelete),
               ],
             ),
           ),
@@ -5493,6 +5988,7 @@ class _EqEffectEditorState extends State<_EqEffectEditor> {
                     _updateParams();
                   },
                 ),
+                _DeleteInsertButton(onDelete: widget.onDelete),
               ],
             ),
           ),
@@ -5510,6 +6006,7 @@ class _CompressorEffectEditor extends StatefulWidget {
   final _CompressorUiState initialState;
   final ValueChanged<bool> onBypassChanged;
   final ValueChanged<_CompressorUiState> onParamsChanged;
+  final VoidCallback onDelete;
 
   const _CompressorEffectEditor({
     required this.onMaster,
@@ -5519,6 +6016,7 @@ class _CompressorEffectEditor extends StatefulWidget {
     required this.initialState,
     required this.onBypassChanged,
     required this.onParamsChanged,
+    required this.onDelete,
   });
 
   @override
@@ -5817,6 +6315,7 @@ class _CompressorEffectEditorState extends State<_CompressorEffectEditor> {
                     _updateParams();
                   },
                 ),
+                _DeleteInsertButton(onDelete: widget.onDelete),
               ],
             ),
           ),
@@ -5920,6 +6419,43 @@ class _ReverbSlider extends StatelessWidget {
   }
 }
 
+// Explicit DELETE action shown at the bottom of every insert effect editor.
+// Replaces the old long-press-to-delete gesture on the mixer strip slot,
+// which was too easy to trigger by accident. Only ever visible once the
+// slot's editor sheet is already open (i.e. only for an occupied slot).
+class _DeleteInsertButton extends StatelessWidget {
+  final VoidCallback onDelete;
+
+  const _DeleteInsertButton({required this.onDelete});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 28),
+      child: GestureDetector(
+        onTap: onDelete,
+        child: Container(
+          height: 44,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: kColStopBtn.withAlpha(30),
+            border: Border.all(color: kColStopBtn),
+            borderRadius: BorderRadius.circular(2),
+          ),
+          child: Text(
+            'DELETE EFFECT',
+            style: kStyleHeader.copyWith(
+              fontSize: 13,
+              color: kColStopBtn,
+              letterSpacing: 1.2,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _Eq5EffectEditor extends StatefulWidget {
   final bool onMaster;
   final int? trackIdx;
@@ -5928,6 +6464,7 @@ class _Eq5EffectEditor extends StatefulWidget {
   final _Eq5UiState initialState;
   final ValueChanged<bool> onBypassChanged;
   final ValueChanged<_Eq5UiState> onParamsChanged;
+  final VoidCallback onDelete;
 
   const _Eq5EffectEditor({
     required this.onMaster,
@@ -5937,6 +6474,7 @@ class _Eq5EffectEditor extends StatefulWidget {
     required this.initialState,
     required this.onBypassChanged,
     required this.onParamsChanged,
+    required this.onDelete,
   });
 
   @override
@@ -6075,6 +6613,7 @@ class _Eq5EffectEditorState extends State<_Eq5EffectEditor> {
                 ),
                 Padding(padding: const EdgeInsets.only(bottom: 28), child: _ReverbSlider(label: 'DRY', value: _dry, onChanged: (v) { setState(() => _dry = v); _updateParams(); })),
                 _ReverbSlider(label: 'WET', value: _wet, onChanged: (v) { setState(() => _wet = v); _updateParams(); }),
+                _DeleteInsertButton(onDelete: widget.onDelete),
               ],
             ),
           ),
