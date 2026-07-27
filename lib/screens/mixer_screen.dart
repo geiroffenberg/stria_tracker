@@ -6432,22 +6432,23 @@ class _DeleteInsertButton extends StatelessWidget {
   Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.only(top: 28),
-      child: GestureDetector(
-        onTap: onDelete,
-        child: Container(
-          height: 44,
-          alignment: Alignment.center,
-          decoration: BoxDecoration(
-            color: kColStopBtn.withAlpha(30),
-            border: Border.all(color: kColStopBtn),
-            borderRadius: BorderRadius.circular(2),
-          ),
-          child: Text(
-            'DELETE EFFECT',
-            style: kStyleHeader.copyWith(
-              fontSize: 13,
-              color: kColStopBtn,
-              letterSpacing: 1.2,
+      child: Center(
+        child: GestureDetector(
+          onTap: onDelete,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+            decoration: BoxDecoration(
+              color: kColStopBtn.withAlpha(30),
+              border: Border.all(color: kColStopBtn),
+              borderRadius: BorderRadius.circular(2),
+            ),
+            child: Text(
+              'DELETE',
+              style: kStyleHeader.copyWith(
+                fontSize: 10,
+                color: kColStopBtn,
+                letterSpacing: 0.5,
+              ),
             ),
           ),
         ),

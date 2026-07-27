@@ -19,6 +19,12 @@ static constexpr int kMaxAudioBurst = 1024;
 static constexpr int kMaxKarplusBuf = 8192;
 // Maximum Drum Synth metallic comb-delay length (matches startDrumVoice cap).
 static constexpr int kMaxDrumCombBuf = 512;
+// Oboe output buffer size, expressed as a multiple of the stream's native
+// burst size. Baseline applies always; Stability Mode trades a few extra
+// milliseconds of output latency for more headroom against CPU spikes
+// (e.g. screen recording). Neither touches onAudioReady or the voice mutex.
+static constexpr int32_t kBufferMarginBaselineMultiplier = 2;
+static constexpr int32_t kBufferMarginStabilityMultiplier = 4;
 
 enum class EnvelopeStage : int {
     Idle = 0,
@@ -548,6 +554,12 @@ public:
     void setMasterLimiterEnabled(bool enabled);
     bool isMasterLimiterEnabled() const;
 
+    /// User-toggleable extra output-buffer margin for CPU-heavy conditions
+    /// (e.g. screen recording). Safe to call any time — only resizes the
+    /// Oboe stream buffer via setBufferSizeInFrames(), never touches
+    /// onAudioReady. Default: disabled (baseline margin only).
+    void setStabilityMode(bool enabled);
+
     /// Direct linear-gain master volume setter (bypasses the lossy 0..99
     /// integer mixer-command transport). Accepts values above 1.0 so users
     /// can intentionally drive the safety limiter for makeup-style gain.
@@ -681,6 +693,12 @@ private:
     // whether to silence voices (hard stop) or leave them ringing (soft stop).
     void haltTransport();
 
+    // Requests the current buffer-margin multiplier (baseline or Stability
+    // Mode) from Oboe. Called after every stream open/rebuild and whenever
+    // setStabilityMode() is toggled. Setup-only — never called from
+    // onAudioReady.
+    void applyBufferSizeMargin();
+
     // Oboe callback shim for the recording (input) stream.
     // Oboe requires a stable pointer so we heap-allocate it.
     class RecordingCallback : public oboe::AudioStreamDataCallback {
@@ -724,6 +742,9 @@ private:
     // Always-on (toggleable) brick-wall sitting after master inserts. Prevents
     // user mixes from clipping the DAC. ~1.5 ms lookahead via a ring buffer.
     std::atomic<bool>   mMasterLimiterEnabled{true};
+    // User-toggleable Stability Mode (extra output-buffer margin). See
+    // applyBufferSizeMargin()/setStabilityMode().
+    std::atomic<bool>   mStabilityModeEnabled{false};
     static constexpr int kMasterLimiterLookahead = 72; // ~1.5 ms @ 48 kHz
     std::array<float, kMasterLimiterLookahead> mLimRingL{};
     std::array<float, kMasterLimiterLookahead> mLimRingR{};

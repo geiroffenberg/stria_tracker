@@ -294,6 +294,10 @@ class AppState extends ChangeNotifier {
   bool _autosaveEnabled = false;
   // Always-on master safety limiter; user-toggleable from the master strip.
   bool _masterLimiterEnabled = true;
+  // User-toggleable extra audio-buffer margin for CPU-heavy conditions (e.g.
+  // screen recording). Off by default — trades a few ms of extra output
+  // latency for more headroom against underrun crackle.
+  bool _stabilityModeEnabled = false;
   Timer? _autosaveTimer;
   Timer? _instrumentParamRebuildTimer;
   bool _liveRebuildInFlight = false;
@@ -485,6 +489,7 @@ class AppState extends ChangeNotifier {
       (_projectRootTreeUri != null && _projectRootTreeUri!.isNotEmpty);
   bool get autosaveEnabled => _autosaveEnabled;
   bool get masterLimiterEnabled => _masterLimiterEnabled;
+  bool get stabilityModeEnabled => _stabilityModeEnabled;
   int get songStateVersion => _songStateVersion;
   bool get hasUnsavedChanges => _songStateVersion != _lastSavedSongStateVersion;
   List<List<bool>> get trackInsertOccupied => _trackInsertOccupied;
@@ -7244,6 +7249,13 @@ class AppState extends ChangeNotifier {
         AudioEngine.instance.setMasterLimiterEnabled(_masterLimiterEnabled),
       );
 
+      // Stability Mode: defaults to disabled. Push the saved value so the
+      // native buffer margin matches the persisted setting on every launch.
+      _stabilityModeEnabled = j['stabilityModeEnabled'] as bool? ?? false;
+      unawaited(
+        AudioEngine.instance.setStabilityMode(_stabilityModeEnabled),
+      );
+
       // Restore the last open song automatically.
       final lastSong = j['lastOpenSongName'] as String?;
       if (lastSong != null && lastSong.isNotEmpty && hasProjectRootFolder) {
@@ -7269,6 +7281,7 @@ class AppState extends ChangeNotifier {
         'projectRootTreeUri': _projectRootTreeUri,
         'autosaveEnabled': _autosaveEnabled,
         'masterLimiterEnabled': _masterLimiterEnabled,
+        'stabilityModeEnabled': _stabilityModeEnabled,
         'lastOpenSongName': song.name,
       });
       await file.writeAsString(payload, flush: true);
@@ -7291,6 +7304,16 @@ class AppState extends ChangeNotifier {
     if (_masterLimiterEnabled == enabled) return;
     _masterLimiterEnabled = enabled;
     await AudioEngine.instance.setMasterLimiterEnabled(enabled);
+    _notifyListenersSafe();
+    await _saveAppSettings();
+  }
+
+  /// Toggle Stability Mode (extra Oboe output-buffer margin for CPU-heavy
+  /// conditions such as screen recording). Setting persists across sessions.
+  Future<void> setStabilityMode(bool enabled) async {
+    if (_stabilityModeEnabled == enabled) return;
+    _stabilityModeEnabled = enabled;
+    await AudioEngine.instance.setStabilityMode(enabled);
     _notifyListenersSafe();
     await _saveAppSettings();
   }

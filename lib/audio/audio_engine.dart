@@ -311,6 +311,14 @@ class AudioEngine {
     });
   }
 
+  /// Stability Mode: requests a larger Oboe output buffer margin (more
+  /// headroom against CPU spikes, e.g. screen recording) at the cost of a
+  /// few extra milliseconds of output latency. Default: disabled.
+  Future<void> setStabilityMode(bool enabled) async {
+    if (!_initialised) return;
+    await _channel.invokeMethod('setStabilityMode', {'enabled': enabled});
+  }
+
   /// Direct linear-gain master volume (bypasses the lossy 0..99 mixer-command
   /// transport). Accepts values >1.0 so users can intentionally drive the
   /// safety limiter for makeup-style gain.

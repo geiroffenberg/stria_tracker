@@ -547,6 +547,7 @@ bool AudioEngine::open() {
     }
     LOGI("Oboe stream opened: sampleRate=%d", mStream->getSampleRate());
     mCachedSampleRate = static_cast<float>(mStream->getSampleRate());
+    applyBufferSizeMargin();
 
     // Master limiter: clear lookahead ring & envelopes for a glitch-free start.
     mLimRingL.fill(0.0f);
@@ -717,6 +718,7 @@ void AudioEngine::restartStream() {
     oboe::Result result = builder.openManagedStream(mStream);
     if (result == oboe::Result::OK) {
         mCachedSampleRate = static_cast<float>(mStream->getSampleRate());
+        applyBufferSizeMargin();
         if (mHasFocus) {
             // Only auto-start if we currently own audio focus.
             // If focus was lost (phone call in progress), leave the stream idle;
@@ -1823,6 +1825,37 @@ bool AudioEngine::isMasterLimiterEnabled() const {
     return mMasterLimiterEnabled.load();
 }
 
+void AudioEngine::setStabilityMode(bool enabled) {
+    mStabilityModeEnabled.store(enabled);
+    applyBufferSizeMargin();
+}
+
+// Requests a larger Oboe output buffer than the stream's default so the
+// callback has more slack against scheduling jitter (e.g. CPU pressure from
+// screen recording). Setup-only: only ever called right after the stream is
+// opened/rebuilt or when the user toggles Stability Mode from Dart \u2014 never
+// from onAudioReady. setBufferSizeInFrames() is a lightweight AAudio call
+// that just adjusts how much of the already-allocated ring buffer is used;
+// it does not reopen the stream or touch the audio thread.
+void AudioEngine::applyBufferSizeMargin() {
+    if (!mStream) return;
+    const int32_t burst = mStream->getFramesPerBurst();
+    if (burst <= 0) return;
+    const int32_t multiplier = mStabilityModeEnabled.load()
+        ? kBufferMarginStabilityMultiplier
+        : kBufferMarginBaselineMultiplier;
+    int32_t target = burst * multiplier;
+    const int32_t capacity = mStream->getBufferCapacityInFrames();
+    if (capacity > 0 && target > capacity) target = capacity;
+    auto result = mStream->setBufferSizeInFrames(target);
+    if (result) {
+        LOGI("Buffer margin applied: %dx burst (%d frames, stability=%d)",
+             multiplier, result.value(), mStabilityModeEnabled.load());
+    } else {
+        LOGW("Buffer margin request failed: %s", oboe::convertToText(result.error()));
+    }
+}
+
 void AudioEngine::setMasterVolumeLinear(float linearGain) {
     // Clamp to a sane ceiling. The safety limiter catches anything above 0 dB,
     // but we still cap to avoid absurd amplification that would just slam the
@@ -2450,41 +2483,55 @@ void AudioEngine::processEffects(float* outL, float* outR, int numFrames, Insert
                 }
                 fx.eqDirty = false;
             }
-            // Process each band in series (Direct Form I)
-            // Capture dry signal first for dry/wet mix
-            constexpr int kMaxFrames = 512;
-            float dryBufL[kMaxFrames], dryBufR[kMaxFrames];
-            int safeFr = (numFrames <= kMaxFrames) ? numFrames : kMaxFrames;
-            std::memcpy(dryBufL, outL, safeFr * sizeof(float));
-            std::memcpy(dryBufR, outR, safeFr * sizeof(float));
+            // Process all 3 bands in series per sample (Direct Form I cascade).
+            // Fused into a single pass over the buffer (perf optimization —
+            // identical cascade order/state semantics to the previous
+            // per-band-over-whole-buffer version, just loop-fused so there's
+            // one buffer sweep instead of five (memcpy x2 + 3 band loops +
+            // blend loop). Also drops the old kMaxFrames=512 truncation since
+            // there's no separate dry snapshot buffer to size-bound anymore.
+            const float b0_0 = fx.eqCoeffs[0][0], b1_0 = fx.eqCoeffs[0][1], b2_0 = fx.eqCoeffs[0][2];
+            const float a1_0 = fx.eqCoeffs[0][3], a2_0 = fx.eqCoeffs[0][4];
+            const float b0_1 = fx.eqCoeffs[1][0], b1_1 = fx.eqCoeffs[1][1], b2_1 = fx.eqCoeffs[1][2];
+            const float a1_1 = fx.eqCoeffs[1][3], a2_1 = fx.eqCoeffs[1][4];
+            const float b0_2 = fx.eqCoeffs[2][0], b1_2 = fx.eqCoeffs[2][1], b2_2 = fx.eqCoeffs[2][2];
+            const float a1_2 = fx.eqCoeffs[2][3], a2_2 = fx.eqCoeffs[2][4];
+            for (int i = 0; i < numFrames; ++i) {
+                float dryL = outL[i];
+                float dryR = outR[i];
 
-            for (int band = 0; band < 3; ++band) {
-                const float b0 = fx.eqCoeffs[band][0];
-                const float b1 = fx.eqCoeffs[band][1];
-                const float b2 = fx.eqCoeffs[band][2];
-                const float a1 = fx.eqCoeffs[band][3];
-                const float a2 = fx.eqCoeffs[band][4];
-                for (int i = 0; i < safeFr; ++i) {
-                    // Left
-                    float xL = outL[i];
-                    float yL = b0*xL + b1*fx.eqZx[band][0][0] + b2*fx.eqZx[band][0][1]
-                                     - a1*fx.eqZy[band][0][0] - a2*fx.eqZy[band][0][1];
-                    fx.eqZx[band][0][1] = fx.eqZx[band][0][0]; fx.eqZx[band][0][0] = xL;
-                    fx.eqZy[band][0][1] = fx.eqZy[band][0][0]; fx.eqZy[band][0][0] = yL;
-                    outL[i] = yL;
-                    // Right
-                    float xR = outR[i];
-                    float yR = b0*xR + b1*fx.eqZx[band][1][0] + b2*fx.eqZx[band][1][1]
-                                     - a1*fx.eqZy[band][1][0] - a2*fx.eqZy[band][1][1];
-                    fx.eqZx[band][1][1] = fx.eqZx[band][1][0]; fx.eqZx[band][1][0] = xR;
-                    fx.eqZy[band][1][1] = fx.eqZy[band][1][0]; fx.eqZy[band][1][0] = yR;
-                    outR[i] = yR;
-                }
-            }
-            // Apply dry/wet mix
-            for (int i = 0; i < safeFr; ++i) {
-                outL[i] = dryBufL[i] * fx.dryLevel + outL[i] * fx.wetLevel;
-                outR[i] = dryBufR[i] * fx.dryLevel + outR[i] * fx.wetLevel;
+                // Band 0 (low shelf)
+                float y0L = b0_0*dryL + b1_0*fx.eqZx[0][0][0] + b2_0*fx.eqZx[0][0][1]
+                                      - a1_0*fx.eqZy[0][0][0] - a2_0*fx.eqZy[0][0][1];
+                fx.eqZx[0][0][1] = fx.eqZx[0][0][0]; fx.eqZx[0][0][0] = dryL;
+                fx.eqZy[0][0][1] = fx.eqZy[0][0][0]; fx.eqZy[0][0][0] = y0L;
+                float y0R = b0_0*dryR + b1_0*fx.eqZx[0][1][0] + b2_0*fx.eqZx[0][1][1]
+                                      - a1_0*fx.eqZy[0][1][0] - a2_0*fx.eqZy[0][1][1];
+                fx.eqZx[0][1][1] = fx.eqZx[0][1][0]; fx.eqZx[0][1][0] = dryR;
+                fx.eqZy[0][1][1] = fx.eqZy[0][1][0]; fx.eqZy[0][1][0] = y0R;
+
+                // Band 1 (mid peaking)
+                float y1L = b0_1*y0L + b1_1*fx.eqZx[1][0][0] + b2_1*fx.eqZx[1][0][1]
+                                     - a1_1*fx.eqZy[1][0][0] - a2_1*fx.eqZy[1][0][1];
+                fx.eqZx[1][0][1] = fx.eqZx[1][0][0]; fx.eqZx[1][0][0] = y0L;
+                fx.eqZy[1][0][1] = fx.eqZy[1][0][0]; fx.eqZy[1][0][0] = y1L;
+                float y1R = b0_1*y0R + b1_1*fx.eqZx[1][1][0] + b2_1*fx.eqZx[1][1][1]
+                                     - a1_1*fx.eqZy[1][1][0] - a2_1*fx.eqZy[1][1][1];
+                fx.eqZx[1][1][1] = fx.eqZx[1][1][0]; fx.eqZx[1][1][0] = y0R;
+                fx.eqZy[1][1][1] = fx.eqZy[1][1][0]; fx.eqZy[1][1][0] = y1R;
+
+                // Band 2 (high shelf)
+                float y2L = b0_2*y1L + b1_2*fx.eqZx[2][0][0] + b2_2*fx.eqZx[2][0][1]
+                                     - a1_2*fx.eqZy[2][0][0] - a2_2*fx.eqZy[2][0][1];
+                fx.eqZx[2][0][1] = fx.eqZx[2][0][0]; fx.eqZx[2][0][0] = y1L;
+                fx.eqZy[2][0][1] = fx.eqZy[2][0][0]; fx.eqZy[2][0][0] = y2L;
+                float y2R = b0_2*y1R + b1_2*fx.eqZx[2][1][0] + b2_2*fx.eqZx[2][1][1]
+                                     - a1_2*fx.eqZy[2][1][0] - a2_2*fx.eqZy[2][1][1];
+                fx.eqZx[2][1][1] = fx.eqZx[2][1][0]; fx.eqZx[2][1][0] = y1R;
+                fx.eqZy[2][1][1] = fx.eqZy[2][1][0]; fx.eqZy[2][1][0] = y2R;
+
+                outL[i] = dryL * fx.dryLevel + y2L * fx.wetLevel;
+                outR[i] = dryR * fx.dryLevel + y2R * fx.wetLevel;
             }
         } else if (fx.type == 8) {
             // ── Compressor: peak envelope follower + gain computer ─────────

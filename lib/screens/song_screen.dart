@@ -21,6 +21,7 @@ enum _SongMenuAction {
   exportWav,
   showManual,
   autosave,
+  stabilityMode,
 }
 
 /// Song arrangement screen.
@@ -670,6 +671,25 @@ class _SongScreenState extends State<SongScreen> {
                         ],
                       ),
                     ),
+                    PopupMenuItem(
+                      value: _SongMenuAction.stabilityMode,
+                      child: Row(
+                        children: [
+                          Icon(
+                            state.stabilityModeEnabled
+                                ? Icons.check_box
+                                : Icons.check_box_outline_blank,
+                            size: 18,
+                            color: kColAccent,
+                          ),
+                          const SizedBox(width: 8),
+                          const Text(
+                            'Stability Mode (Screen Recording)',
+                            style: TextStyle(fontSize: 16),
+                          ),
+                        ],
+                      ),
+                    ),
                     const PopupMenuDivider(),
                     const PopupMenuItem(
                       value: _SongMenuAction.exportWav,
@@ -910,6 +930,9 @@ class _SongScreenState extends State<SongScreen> {
         break;
       case _SongMenuAction.autosave:
         state.setAutosaveEnabled(!state.autosaveEnabled);
+        break;
+      case _SongMenuAction.stabilityMode:
+        state.setStabilityMode(!state.stabilityModeEnabled);
         break;
     }
   }

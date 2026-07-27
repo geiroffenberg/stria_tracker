@@ -279,6 +279,12 @@ Java_com_metamind_stria_AudioEnginePlugin_nativeIsMasterLimiterEnabled(
 }
 
 JNIEXPORT void JNICALL
+Java_com_metamind_stria_AudioEnginePlugin_nativeSetStabilityMode(
+        JNIEnv*, jobject, jlong ptr, jboolean enabled) {
+    reinterpret_cast<AudioEngine*>(ptr)->setStabilityMode(enabled);
+}
+
+JNIEXPORT void JNICALL
 Java_com_metamind_stria_AudioEnginePlugin_nativeSetMasterVolumeLinear(
         JNIEnv*, jobject, jlong ptr, jfloat linearGain) {
     reinterpret_cast<AudioEngine*>(ptr)->setMasterVolumeLinear(linearGain);
