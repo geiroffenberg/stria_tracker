@@ -386,6 +386,44 @@ class _CompressorUiState {
   );
 }
 
+class _SidechainUiState {
+  final int sourceTrack; // -1 = none selected, 0..15 = track index
+  final double threshold; // 0..1 → −60..0 dBFS
+  final double duck; // 0..1 → 0-100% ducking depth
+  final double attack; // 0..1 → 0.1..200 ms
+  final double release; // 0..1 → 10..2000 ms
+  final double dry;
+  final double wet;
+
+  const _SidechainUiState({
+    this.sourceTrack = -1,
+    this.threshold = 0.3,
+    this.duck = 0.7,
+    this.attack = 0.05,
+    this.release = 0.3,
+    this.dry = 0.0,
+    this.wet = 1.0,
+  });
+
+  _SidechainUiState copyWith({
+    int? sourceTrack,
+    double? threshold,
+    double? duck,
+    double? attack,
+    double? release,
+    double? dry,
+    double? wet,
+  }) => _SidechainUiState(
+    sourceTrack: sourceTrack ?? this.sourceTrack,
+    threshold: threshold ?? this.threshold,
+    duck: duck ?? this.duck,
+    attack: attack ?? this.attack,
+    release: release ?? this.release,
+    dry: dry ?? this.dry,
+    wet: wet ?? this.wet,
+  );
+}
+
 /// Mixer screen — one channel strip per track.
 ///
 /// Pure UI scaffolding for now: faders/knobs/mute/solo are visual only.
@@ -412,6 +450,7 @@ class _MixerScreenState extends State<MixerScreen> {
   late List<List<_EqUiState>> _trackEqStates;
   late List<List<_CompressorUiState>> _trackCompressorStates;
   late List<List<_Eq5UiState>> _trackEq5States;
+  late List<List<_SidechainUiState>> _trackSidechainStates;
   final List<String?> _masterInserts = List<String?>.filled(kInsertSlots, null);
   final List<bool> _masterBypassed = List<bool>.filled(kInsertSlots, false);
   final List<_ReverbUiState> _masterReverbStates = List.generate(
@@ -457,6 +496,10 @@ class _MixerScreenState extends State<MixerScreen> {
   final List<_Eq5UiState> _masterEq5States = List.generate(
     kInsertSlots,
     (_) => const _Eq5UiState(),
+  );
+  final List<_SidechainUiState> _masterSidechainStates = List.generate(
+    kInsertSlots,
+    (_) => const _SidechainUiState(),
   );
   late bool _insertsInitialized;
   late int _seenSongStateVersion;
@@ -1169,6 +1212,52 @@ class _MixerScreenState extends State<MixerScreen> {
     );
   }
 
+  Future<void> _openSidechainEditor({
+    required bool onMaster,
+    int? trackIdx,
+    required int slotIdx,
+  }) async {
+    final initialBypass = onMaster
+        ? _masterBypassed[slotIdx]
+        : _trackBypassed[trackIdx!][slotIdx];
+    final initialState = onMaster
+        ? _masterSidechainStates[slotIdx]
+        : _trackSidechainStates[trackIdx!][slotIdx];
+    final trackCount = _inserts.length;
+    await showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: kBgTrackHeader,
+      isScrollControlled: true,
+      builder: (_) => _SidechainEffectEditor(
+        onMaster: onMaster,
+        trackIdx: trackIdx,
+        slotIdx: slotIdx,
+        trackCount: trackCount,
+        ownTrackIdx: trackIdx,
+        initialBypass: initialBypass,
+        initialState: initialState,
+        onBypassChanged: (b) => setState(() {
+          if (onMaster) {
+            _masterBypassed[slotIdx] = b;
+          } else {
+            _trackBypassed[trackIdx!][slotIdx] = b;
+          }
+        }),
+        onParamsChanged: (s) => setState(() {
+          if (onMaster) {
+            _masterSidechainStates[slotIdx] = s;
+          } else {
+            _trackSidechainStates[trackIdx!][slotIdx] = s;
+          }
+        }),
+        onDelete: () {
+          _clearInsertSlot(onMaster: onMaster, trackIdx: trackIdx, slotIdx: slotIdx);
+          Navigator.of(context).pop();
+        },
+      ),
+    );
+  }
+
   void _ensureSized(int n) {
     if (_insertsInitialized && _inserts.length == n) return;
     _inserts = List.generate(
@@ -1253,6 +1342,13 @@ class _MixerScreenState extends State<MixerScreen> {
         (_) => const _Eq5UiState(),
       ),
     );
+    _trackSidechainStates = List.generate(
+      n,
+      (_) => List<_SidechainUiState>.generate(
+        kInsertSlots,
+        (_) => const _SidechainUiState(),
+      ),
+    );
     _insertsInitialized = true;
   }
 
@@ -1269,6 +1365,7 @@ class _MixerScreenState extends State<MixerScreen> {
     _trackEq5States[trackIdx][slotIdx] = const _Eq5UiState();
     _trackEqStates[trackIdx][slotIdx] = const _EqUiState();
     _trackCompressorStates[trackIdx][slotIdx] = const _CompressorUiState();
+    _trackSidechainStates[trackIdx][slotIdx] = const _SidechainUiState();
   }
 
   void resetMasterInsertState() {
@@ -1286,6 +1383,7 @@ class _MixerScreenState extends State<MixerScreen> {
       _masterEq5States[slot] = const _Eq5UiState();
       _masterEqStates[slot] = const _EqUiState();
       _masterCompressorStates[slot] = const _CompressorUiState();
+      _masterSidechainStates[slot] = const _SidechainUiState();
     }
   }
 
@@ -1313,6 +1411,7 @@ class _MixerScreenState extends State<MixerScreen> {
         _masterEq5States[slotIdx] = const _Eq5UiState();
         _masterEqStates[slotIdx] = const _EqUiState();
         _masterCompressorStates[slotIdx] = const _CompressorUiState();
+        _masterSidechainStates[slotIdx] = const _SidechainUiState();
       } else {
         _inserts[trackIdx!][slotIdx] = null;
         resetTrackInsertSlotState(trackIdx, slotIdx);
@@ -1347,6 +1446,7 @@ class _MixerScreenState extends State<MixerScreen> {
     _swapListEntries(_masterEq5States, a, b);
     _swapListEntries(_masterEqStates, a, b);
     _swapListEntries(_masterCompressorStates, a, b);
+    _swapListEntries(_masterSidechainStates, a, b);
   }
 
   void _swapTrackSlotState(int trackIdx, int a, int b) {
@@ -1363,6 +1463,7 @@ class _MixerScreenState extends State<MixerScreen> {
     _swapListEntries(_trackEq5States[trackIdx], a, b);
     _swapListEntries(_trackEqStates[trackIdx], a, b);
     _swapListEntries(_trackCompressorStates[trackIdx], a, b);
+    _swapListEntries(_trackSidechainStates[trackIdx], a, b);
   }
 
   // Pushes the effect currently occupying [slot] (master or track) to the
@@ -1652,6 +1753,30 @@ class _MixerScreenState extends State<MixerScreen> {
                 s.makeup,
                 s.knee,
               ));
+      case 'SIDECHAIN':
+        final s = onMaster
+            ? _masterSidechainStates[slot]
+            : _trackSidechainStates[trackIdx!][slot];
+        await setEffect(10, s.wet);
+        await setMix(s.dry, s.wet);
+        await (onMaster
+            ? AudioEngine.instance.setMasterSidechainParams(
+                slot,
+                s.sourceTrack,
+                s.threshold,
+                s.duck,
+                s.attack,
+                s.release,
+              )
+            : AudioEngine.instance.setTrackSidechainParams(
+                trackIdx!,
+                slot,
+                s.sourceTrack,
+                s.threshold,
+                s.duck,
+                s.attack,
+                s.release,
+              ));
     }
 
     final bypass = onMaster
@@ -1819,6 +1944,19 @@ class _MixerScreenState extends State<MixerScreen> {
             'knee': c.knee,
             'dry': c.dry,
             'wet': c.wet,
+          };
+        case 'SIDECHAIN':
+          final sc = onMaster
+              ? _masterSidechainStates[s]
+              : _trackSidechainStates[t!][s];
+          p = {
+            'sourceTrack': sc.sourceTrack,
+            'threshold': sc.threshold,
+            'duck': sc.duck,
+            'attack': sc.attack,
+            'release': sc.release,
+            'dry': sc.dry,
+            'wet': sc.wet,
           };
         default:
           p = {};
@@ -2031,6 +2169,21 @@ class _MixerScreenState extends State<MixerScreen> {
             _masterCompressorStates[s] = cp;
           } else {
             _trackCompressorStates[t!][s] = cp;
+          }
+        case 'SIDECHAIN':
+          final sc = _SidechainUiState(
+            sourceTrack: iv(data, 'sourceTrack', -1),
+            threshold: d(data, 'threshold', 0.3),
+            duck: d(data, 'duck', 0.7),
+            attack: d(data, 'attack', 0.05),
+            release: d(data, 'release', 0.3),
+            dry: d(data, 'dry', 0.0),
+            wet: d(data, 'wet', 1.0),
+          );
+          if (onMaster) {
+            _masterSidechainStates[s] = sc;
+          } else {
+            _trackSidechainStates[t!][s] = sc;
           }
       }
     }
@@ -2281,6 +2434,14 @@ class _MixerScreenState extends State<MixerScreen> {
       }
       if (currentFx == 'COMPRESSOR') {
         await _openCompressorEditor(
+          onMaster: false,
+          trackIdx: trackIdx,
+          slotIdx: slotIdx,
+        );
+        return;
+      }
+      if (currentFx == 'SIDECHAIN') {
+        await _openSidechainEditor(
           onMaster: false,
           trackIdx: trackIdx,
           slotIdx: slotIdx,
@@ -2596,6 +2757,34 @@ class _MixerScreenState extends State<MixerScreen> {
             trackIdx: trackIdx,
             slotIdx: slotIdx,
           );
+        } else if (picked == 'SIDECHAIN') {
+          final sc = _trackSidechainStates[trackIdx][slotIdx];
+          await AudioEngine.instance.setTrackInsertEffect(
+            trackIdx,
+            slotIdx,
+            10,
+            sc.wet,
+          );
+          await AudioEngine.instance.setTrackInsertMix(
+            trackIdx,
+            slotIdx,
+            sc.dry,
+            sc.wet,
+          );
+          await AudioEngine.instance.setTrackSidechainParams(
+            trackIdx,
+            slotIdx,
+            sc.sourceTrack,
+            sc.threshold,
+            sc.duck,
+            sc.attack,
+            sc.release,
+          );
+          await _openSidechainEditor(
+            onMaster: false,
+            trackIdx: trackIdx,
+            slotIdx: slotIdx,
+          );
         } else {
           // Non-implemented inserts are UI-only for now.
           await AudioEngine.instance.setTrackInsertEffect(
@@ -2657,6 +2846,10 @@ class _MixerScreenState extends State<MixerScreen> {
       }
       if (currentFx == 'COMPRESSOR') {
         await _openCompressorEditor(onMaster: true, slotIdx: slotIdx);
+        return;
+      }
+      if (currentFx == 'SIDECHAIN') {
+        await _openSidechainEditor(onMaster: true, slotIdx: slotIdx);
         return;
       }
 
@@ -2835,6 +3028,23 @@ class _MixerScreenState extends State<MixerScreen> {
             cs.knee,
           );
           await _openCompressorEditor(onMaster: true, slotIdx: slotIdx);
+        } else if (picked == 'SIDECHAIN') {
+          final sc = _masterSidechainStates[slotIdx];
+          await AudioEngine.instance.setMasterInsertEffect(slotIdx, 10, sc.wet);
+          await AudioEngine.instance.setMasterInsertMix(
+            slotIdx,
+            sc.dry,
+            sc.wet,
+          );
+          await AudioEngine.instance.setMasterSidechainParams(
+            slotIdx,
+            sc.sourceTrack,
+            sc.threshold,
+            sc.duck,
+            sc.attack,
+            sc.release,
+          );
+          await _openSidechainEditor(onMaster: true, slotIdx: slotIdx);
         } else {
           await AudioEngine.instance.setMasterInsertEffect(slotIdx, -1, 0.0);
         }
@@ -2852,6 +3062,7 @@ class _FxPicker extends StatelessWidget {
     'EQ',
       'EQ-5',
     'COMPRESSOR',
+    'SIDECHAIN',
     'REVERB',
     'DELAY',
     'CHORUS',
@@ -6292,6 +6503,318 @@ class _CompressorEffectEditorState extends State<_CompressorEffectEditor> {
                     displayText: _makeupLabel(),
                     onChanged: (v) {
                       setState(() => _makeup = v);
+                      _updateParams();
+                    },
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 14),
+                  child: _ReverbSlider(
+                    label: 'DRY',
+                    value: _dry,
+                    onChanged: (v) {
+                      setState(() => _dry = v);
+                      _updateParams();
+                    },
+                  ),
+                ),
+                _ReverbSlider(
+                  label: 'WET',
+                  value: _wet,
+                  onChanged: (v) {
+                    setState(() => _wet = v);
+                    _updateParams();
+                  },
+                ),
+                _DeleteInsertButton(onDelete: widget.onDelete),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _SidechainEffectEditor extends StatefulWidget {
+  final bool onMaster;
+  final int? trackIdx;
+  final int slotIdx;
+  final int trackCount;
+  final int? ownTrackIdx; // null on master (no exclusion)
+  final bool initialBypass;
+  final _SidechainUiState initialState;
+  final ValueChanged<bool> onBypassChanged;
+  final ValueChanged<_SidechainUiState> onParamsChanged;
+  final VoidCallback onDelete;
+
+  const _SidechainEffectEditor({
+    required this.onMaster,
+    this.trackIdx,
+    required this.slotIdx,
+    required this.trackCount,
+    this.ownTrackIdx,
+    required this.initialBypass,
+    required this.initialState,
+    required this.onBypassChanged,
+    required this.onParamsChanged,
+    required this.onDelete,
+  });
+
+  @override
+  State<_SidechainEffectEditor> createState() =>
+      _SidechainEffectEditorState();
+}
+
+class _SidechainEffectEditorState extends State<_SidechainEffectEditor> {
+  late int _sourceTrack;
+  late double _threshold, _duck, _attack, _release, _dry, _wet;
+  late bool _bypass;
+
+  @override
+  void initState() {
+    super.initState();
+    _sourceTrack = widget.initialState.sourceTrack;
+    _threshold = widget.initialState.threshold;
+    _duck = widget.initialState.duck;
+    _attack = widget.initialState.attack;
+    _release = widget.initialState.release;
+    _dry = widget.initialState.dry;
+    _wet = widget.initialState.wet;
+    _bypass = widget.initialBypass;
+  }
+
+  void _toggleBypass() {
+    setState(() => _bypass = !_bypass);
+    widget.onBypassChanged(_bypass);
+    if (widget.onMaster) {
+      AudioEngine.instance.setMasterInsertBypass(widget.slotIdx, _bypass);
+    } else {
+      AudioEngine.instance.setTrackInsertBypass(
+        widget.trackIdx ?? 0,
+        widget.slotIdx,
+        _bypass,
+      );
+    }
+  }
+
+  void _updateParams() {
+    final s = _SidechainUiState(
+      sourceTrack: _sourceTrack,
+      threshold: _threshold,
+      duck: _duck,
+      attack: _attack,
+      release: _release,
+      dry: _dry,
+      wet: _wet,
+    );
+    widget.onParamsChanged(s);
+    if (widget.onMaster) {
+      AudioEngine.instance.setMasterSidechainParams(
+        widget.slotIdx,
+        _sourceTrack,
+        _threshold,
+        _duck,
+        _attack,
+        _release,
+      );
+      AudioEngine.instance.setMasterInsertMix(widget.slotIdx, _dry, _wet);
+    } else {
+      AudioEngine.instance.setTrackSidechainParams(
+        widget.trackIdx ?? 0,
+        widget.slotIdx,
+        _sourceTrack,
+        _threshold,
+        _duck,
+        _attack,
+        _release,
+      );
+      AudioEngine.instance.setTrackInsertMix(
+        widget.trackIdx ?? 0,
+        widget.slotIdx,
+        _dry,
+        _wet,
+      );
+    }
+  }
+
+  String _thresholdLabel() {
+    final db = -60.0 + _threshold * 60.0;
+    return '${db.toStringAsFixed(1)} dBFS';
+  }
+
+  String _attackLabel() {
+    final ms = 0.1 * math.pow(2000.0, _attack);
+    return ms < 10 ? '${ms.toStringAsFixed(1)} ms' : '${ms.round()} ms';
+  }
+
+  String _releaseLabel() {
+    final ms = 10.0 * math.pow(200.0, _release);
+    return ms < 100 ? '${ms.toStringAsFixed(1)} ms' : '${ms.round()} ms';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bottomInset = MediaQuery.of(context).padding.bottom;
+    return SafeArea(
+      top: false,
+      child: Container(
+        color: kBgColor,
+        child: SingleChildScrollView(
+          padding: EdgeInsets.fromLTRB(12, 16, 12, bottomInset + 28),
+          child: Container(
+            padding: const EdgeInsets.fromLTRB(14, 14, 14, 20),
+            decoration: BoxDecoration(
+              color: kBgTrackHeader,
+              border: Border.all(color: kColInactive.withAlpha(80)),
+              borderRadius: BorderRadius.circular(4),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                // Header + bypass
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 16),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          'SIDECHAIN',
+                          style: kStyleHeader.copyWith(
+                            fontSize: 18,
+                            color: _bypass ? kColInactive : kColAccent,
+                            letterSpacing: 1.8,
+                          ),
+                        ),
+                      ),
+                      GestureDetector(
+                        onTap: _toggleBypass,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 5,
+                          ),
+                          decoration: BoxDecoration(
+                            color: (_bypass ? kColInactive : kColAccent)
+                                .withAlpha(40),
+                            border: Border.all(
+                              color: _bypass ? kColInactive : kColAccent,
+                            ),
+                            borderRadius: BorderRadius.circular(2),
+                          ),
+                          child: Text(
+                            _bypass ? 'BYP' : 'ON',
+                            style: kStyleHeader.copyWith(
+                              fontSize: 10,
+                              color: _bypass ? kColInactive : kColAccent,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                // Source track picker
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'LISTEN TO',
+                        style: kStyleHeader.copyWith(
+                          fontSize: 12,
+                          color: kColHeader,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Wrap(
+                        spacing: 6,
+                        runSpacing: 6,
+                        children: [
+                          for (int i = 0; i < widget.trackCount; i++)
+                            if (i != widget.ownTrackIdx)
+                              GestureDetector(
+                                onTap: () {
+                                  setState(() => _sourceTrack = i);
+                                  _updateParams();
+                                },
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 10,
+                                    vertical: 5,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: _sourceTrack == i
+                                        ? kColAccent.withAlpha(40)
+                                        : Colors.transparent,
+                                    border: Border.all(
+                                      color: _sourceTrack == i
+                                          ? kColAccent
+                                          : kColInactive,
+                                    ),
+                                    borderRadius: BorderRadius.circular(2),
+                                  ),
+                                  child: Text(
+                                    'T${(i + 1).toString().padLeft(2, '0')}',
+                                    style: kStyleHeader.copyWith(
+                                      fontSize: 10,
+                                      color: _sourceTrack == i
+                                          ? kColAccent
+                                          : kColInactive,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 14),
+                  child: _ReverbSlider(
+                    label: 'THRESH',
+                    value: _threshold,
+                    displayText: _thresholdLabel(),
+                    onChanged: (v) {
+                      setState(() => _threshold = v);
+                      _updateParams();
+                    },
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 14),
+                  child: _ReverbSlider(
+                    label: 'DUCK',
+                    value: _duck,
+                    onChanged: (v) {
+                      setState(() => _duck = v);
+                      _updateParams();
+                    },
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 14),
+                  child: _ReverbSlider(
+                    label: 'ATTACK',
+                    value: _attack,
+                    displayText: _attackLabel(),
+                    onChanged: (v) {
+                      setState(() => _attack = v);
+                      _updateParams();
+                    },
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 14),
+                  child: _ReverbSlider(
+                    label: 'RELEASE',
+                    value: _release,
+                    displayText: _releaseLabel(),
+                    onChanged: (v) {
+                      setState(() => _release = v);
                       _updateParams();
                     },
                   ),

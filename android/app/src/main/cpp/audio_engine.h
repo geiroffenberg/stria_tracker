@@ -419,6 +419,16 @@ struct InsertEffect {
     int   cmpKnee      = 0;      // 0=hard, 1=soft (±6 dB)
     float cmpEnvL      = 0.0f;   // envelope follower state left
     float cmpEnvR      = 0.0f;   // envelope follower state right
+
+    // Sidechain Ducker (type == 10) — listens to another track's raw signal
+    // (captured once per callback into AudioEngine::mSidechainSnapshotL/R,
+    // see processEffects()) and reduces THIS slot's own signal in response.
+    int   scSourceTrack = -1;   // 0..kMaxVoices-1 = track to listen to; -1 = none (pass-through)
+    float scThreshold   = 0.3f; // 0..1 → −60..0 dBFS (same mapping as compressor threshold)
+    float scDuck        = 0.7f; // 0..1 → 0-100% ducking depth
+    float scAttack      = 0.05f;// 0..1 → 0.1..200 ms (log, same mapping as compressor attack)
+    float scRelease     = 0.3f; // 0..1 → 10..2000 ms (log, same mapping as compressor release)
+    float scEnv         = 0.0f; // envelope follower state (source-signal loudness, linked L/R)
 };
 
 /**
@@ -618,6 +628,11 @@ public:
     void setTrackCompressorParams(int trackIdx, int slotIdx, float threshold, float ratio, float attack, float release, float makeup, int knee);
     void setMasterCompressorParams(int slotIdx, float threshold, float ratio, float attack, float release, float makeup, int knee);
 
+    /// Configure sidechain ducker parameters on a track/master insert effect slot (type 10).
+    /// sourceTrack: 0-15 = track index to listen to; -1 = none selected (pass-through, no ducking).
+    void setTrackSidechainParams(int trackIdx, int slotIdx, int sourceTrack, float threshold, float duck, float attack, float release);
+    void setMasterSidechainParams(int slotIdx, int sourceTrack, float threshold, float duck, float attack, float release);
+
     /// Assign a sample file to an instrument slot for sampler playback.
     /// Pass empty path to clear assignment.
     bool setSamplerSample(int slot, const std::string& path);
@@ -788,6 +803,12 @@ private:
     bool  mTrackSolo[kMaxVoices];   // true = this track is soloed
     std::array<std::vector<float>, kMaxVoices> mTrackBusL;
     std::array<std::vector<float>, kMaxVoices> mTrackBusR;
+    // Per-callback snapshot of each track's raw bus (pre-insert-FX, pre-gain)
+    // signal, captured once before track insert-FX processing begins so the
+    // Sidechain Ducker effect (type 10) can listen to any other track's
+    // signal regardless of the order tracks are processed in below.
+    std::array<std::vector<float>, kMaxVoices> mSidechainSnapshotL;
+    std::array<std::vector<float>, kMaxVoices> mSidechainSnapshotR;
     std::vector<float>               mMasterBusL;
     std::vector<float>               mMasterBusR;
     std::vector<float>               mFxWetL;

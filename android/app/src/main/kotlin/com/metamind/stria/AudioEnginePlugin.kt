@@ -527,6 +527,27 @@ class AudioEnginePlugin : FlutterPlugin, MethodCallHandler {
                 if (enginePtr != 0L) nativeSetMasterCompressorParams(enginePtr, slotIdx, threshold.toFloat(), ratio.toFloat(), attack.toFloat(), release.toFloat(), makeup.toFloat(), knee)
                 result.success(null)
             }
+            "setTrackSidechainParams" -> {
+                val trackIdx    = call.argument<Int>("trackIdx") ?: 0
+                val slotIdx     = call.argument<Int>("slotIdx") ?: 0
+                val sourceTrack = call.argument<Int>("sourceTrack") ?: -1
+                val threshold   = call.argument<Double>("threshold") ?: 0.3
+                val duck        = call.argument<Double>("duck") ?: 0.7
+                val attack      = call.argument<Double>("attack") ?: 0.05
+                val release     = call.argument<Double>("release") ?: 0.3
+                if (enginePtr != 0L) nativeSetTrackSidechainParams(enginePtr, trackIdx, slotIdx, sourceTrack, threshold.toFloat(), duck.toFloat(), attack.toFloat(), release.toFloat())
+                result.success(null)
+            }
+            "setMasterSidechainParams" -> {
+                val slotIdx     = call.argument<Int>("slotIdx") ?: 0
+                val sourceTrack = call.argument<Int>("sourceTrack") ?: -1
+                val threshold   = call.argument<Double>("threshold") ?: 0.3
+                val duck        = call.argument<Double>("duck") ?: 0.7
+                val attack      = call.argument<Double>("attack") ?: 0.05
+                val release     = call.argument<Double>("release") ?: 0.3
+                if (enginePtr != 0L) nativeSetMasterSidechainParams(enginePtr, slotIdx, sourceTrack, threshold.toFloat(), duck.toFloat(), attack.toFloat(), release.toFloat())
+                result.success(null)
+            }
             "setSamplerSample" -> {
                 val slot = call.argument<Int>("slot") ?: -1
                 val path = call.argument<String>("path")
@@ -722,6 +743,8 @@ class AudioEnginePlugin : FlutterPlugin, MethodCallHandler {
     private external fun nativeSetMasterEqParams(ptr: Long, slotIdx: Int, lowGain: Float, lowFreq: Float, midGain: Float, midFreq: Float, midQ: Float, highGain: Float, highFreq: Float)
     private external fun nativeSetTrackCompressorParams(ptr: Long, trackIdx: Int, slotIdx: Int, threshold: Float, ratio: Float, attack: Float, release: Float, makeup: Float, knee: Int)
     private external fun nativeSetMasterCompressorParams(ptr: Long, slotIdx: Int, threshold: Float, ratio: Float, attack: Float, release: Float, makeup: Float, knee: Int)
+    private external fun nativeSetTrackSidechainParams(ptr: Long, trackIdx: Int, slotIdx: Int, sourceTrack: Int, threshold: Float, duck: Float, attack: Float, release: Float)
+    private external fun nativeSetMasterSidechainParams(ptr: Long, slotIdx: Int, sourceTrack: Int, threshold: Float, duck: Float, attack: Float, release: Float)
     private external fun nativeSetSamplerSample(ptr: Long, slot: Int, path: String): Boolean
     private external fun nativeUpdateStretch(ptr: Long, slot: Int, enabled: Boolean, beats: Int, bpm: Float, preservePitch: Boolean)
     private external fun nativeOpenRecordingStream(ptr: Long)

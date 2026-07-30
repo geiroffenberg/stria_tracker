@@ -1605,6 +1605,51 @@ class AppState extends ChangeNotifier {
               i('knee', 0),
             );
           }
+        case 'SIDECHAIN':
+          final typeCode = 10;
+          final wet = d('wet', 1.0);
+          if (onMaster) {
+            await AudioEngine.instance.setMasterInsertEffect(
+              slot,
+              typeCode,
+              wet,
+            );
+            await AudioEngine.instance.setMasterInsertMix(
+              slot,
+              d('dry', 0.0),
+              wet,
+            );
+            await AudioEngine.instance.setMasterSidechainParams(
+              slot,
+              i('sourceTrack', -1),
+              d('threshold', 0.3),
+              d('duck', 0.7),
+              d('attack', 0.05),
+              d('release', 0.3),
+            );
+          } else {
+            await AudioEngine.instance.setTrackInsertEffect(
+              trackIdx!,
+              slot,
+              typeCode,
+              wet,
+            );
+            await AudioEngine.instance.setTrackInsertMix(
+              trackIdx,
+              slot,
+              d('dry', 0.0),
+              wet,
+            );
+            await AudioEngine.instance.setTrackSidechainParams(
+              trackIdx,
+              slot,
+              i('sourceTrack', -1),
+              d('threshold', 0.3),
+              d('duck', 0.7),
+              d('attack', 0.05),
+              d('release', 0.3),
+            );
+          }
       }
 
       if (bypass) {

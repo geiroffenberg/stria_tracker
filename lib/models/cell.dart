@@ -379,6 +379,20 @@ String fxInsertFunctionNameForEffect(String? effectName, int function) {
           return 'Makeup gain';
       }
       break;
+    case 'SIDECHAIN':
+      switch (function) {
+        case 2:
+          return 'Source track';
+        case 3:
+          return 'Threshold';
+        case 4:
+          return 'Duck amount';
+        case 8:
+          return 'Attack';
+        case 9:
+          return 'Release';
+      }
+      break;
   }
   return fxInsertFunctionName(function);
 }
@@ -508,6 +522,20 @@ String fxInsertFunctionShortLabelForEffect(String? effectName, int function) {
           return 'MAKEUP';
       }
       break;
+    case 'SIDECHAIN':
+      switch (function) {
+        case 2:
+          return 'SRC';
+        case 3:
+          return 'THRESH';
+        case 4:
+          return 'DUCK';
+        case 8:
+          return 'ATTACK';
+        case 9:
+          return 'RELEASE';
+      }
+      break;
   }
 
   return fxInsertFunctionName(function).toUpperCase();
@@ -533,6 +561,8 @@ bool fxInsertFunctionIsUsedForEffect(String? effectName, int function) {
       return function >= 3 && function <= 4;
     case 'LIMITER':
       return function == 3;
+    case 'SIDECHAIN':
+      return (function >= 2 && function <= 4) || function == 8 || function == 9;
     default:
       // Unknown effect: keep full function set visible for safety.
       return function >= 0 && function <= 9;

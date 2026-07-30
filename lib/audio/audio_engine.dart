@@ -614,6 +614,35 @@ class AudioEngine {
     });
   }
 
+  Future<void> setTrackSidechainParams(int trackIdx, int slotIdx,
+      int sourceTrack, double threshold, double duck, double attack,
+      double release) async {
+    if (!_initialised) return;
+    await _channel.invokeMethod('setTrackSidechainParams', {
+      'trackIdx': trackIdx,
+      'slotIdx': slotIdx,
+      'sourceTrack': sourceTrack,
+      'threshold': threshold,
+      'duck': duck,
+      'attack': attack,
+      'release': release,
+    });
+  }
+
+  Future<void> setMasterSidechainParams(int slotIdx,
+      int sourceTrack, double threshold, double duck, double attack,
+      double release) async {
+    if (!_initialised) return;
+    await _channel.invokeMethod('setMasterSidechainParams', {
+      'slotIdx': slotIdx,
+      'sourceTrack': sourceTrack,
+      'threshold': threshold,
+      'duck': duck,
+      'attack': attack,
+      'release': release,
+    });
+  }
+
   /// [slot] is 0-based instrument index.
   /// Pass null or empty [path] to clear sample assignment.
   /// Returns true on success, false if the file could not be loaded.

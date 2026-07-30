@@ -292,6 +292,13 @@ void applyInsertFxCommand(InsertEffect& fx, int function, int value) {
         fx.cmpAttack    = 0.1f; fx.cmpRelease = 0.2f;
         fx.cmpMakeup    = 0.0f; fx.cmpKnee    = 0;
         fx.cmpEnvL      = 0.0f; fx.cmpEnvR    = 0.0f;
+        // Sidechain ducker defaults
+        fx.scSourceTrack = -1;
+        fx.scThreshold   = 0.3f;
+        fx.scDuck        = 0.7f;
+        fx.scAttack      = 0.05f;
+        fx.scRelease     = 0.3f;
+        fx.scEnv         = 0.0f;
         return;
     }
     switch (function) {
@@ -407,6 +414,16 @@ void applyInsertFxCommand(InsertEffect& fx, int function, int value) {
             case 5: fx.cmpMakeup    = fxValueToUnit(value); break;
             case 8: fx.cmpAttack    = fxValueToUnit(value); break;
             case 9: fx.cmpRelease   = fxValueToUnit(value); break;
+            default: break;
+        }
+    } else if (fx.type == 10) {
+        // Sidechain ducker
+        switch (function) {
+            case 2: fx.scSourceTrack = std::clamp(value, 0, 99) * kMaxVoices / 100; break;
+            case 3: fx.scThreshold   = fxValueToUnit(value); break;
+            case 4: fx.scDuck        = fxValueToUnit(value); break;
+            case 8: fx.scAttack      = fxValueToUnit(value); break;
+            case 9: fx.scRelease     = fxValueToUnit(value); break;
             default: break;
         }
     }
@@ -1801,6 +1818,12 @@ void AudioEngine::setMasterInsertEffect(int slotIdx, int effectType, float initi
     }
     fx.cmpEnvL = 0.0f;
     fx.cmpEnvR = 0.0f;
+    fx.scSourceTrack = -1;
+    fx.scThreshold = 0.3f;
+    fx.scDuck = 0.7f;
+    fx.scAttack = 0.05f;
+    fx.scRelease = 0.3f;
+    fx.scEnv = 0.0f;
 }
 
 void AudioEngine::setMasterInsertMix(int slotIdx, float dryLevel, float wetLevel) {
@@ -1935,6 +1958,12 @@ void AudioEngine::setTrackInsertEffect(int trackIdx, int slotIdx, int effectType
     }
     fx.cmpEnvL = 0.0f;
     fx.cmpEnvR = 0.0f;
+    fx.scSourceTrack = -1;
+    fx.scThreshold = 0.3f;
+    fx.scDuck = 0.7f;
+    fx.scAttack = 0.05f;
+    fx.scRelease = 0.3f;
+    fx.scEnv = 0.0f;
 }
 
 void AudioEngine::setTrackInsertMix(int trackIdx, int slotIdx, float dryLevel, float wetLevel) {
@@ -2164,6 +2193,33 @@ void AudioEngine::setMasterCompressorParams(int slotIdx,
     if (slotIdx < 0 || slotIdx >= kMaxInsertSlots) return;
     std::lock_guard<std::mutex> lock(mVoiceMutex);
     applyCompressorParams(mMasterInserts[slotIdx], threshold, ratio, attack, release, makeup, knee);
+}
+
+static void applySidechainParams(InsertEffect& fx, int sourceTrack,
+                                 float threshold, float duck,
+                                 float attack, float release) {
+    fx.scSourceTrack = (sourceTrack >= 0 && sourceTrack < kMaxVoices) ? sourceTrack : -1;
+    fx.scThreshold = std::clamp(threshold, 0.0f, 1.0f);
+    fx.scDuck      = std::clamp(duck, 0.0f, 1.0f);
+    fx.scAttack    = std::clamp(attack, 0.0f, 1.0f);
+    fx.scRelease   = std::clamp(release, 0.0f, 1.0f);
+}
+
+void AudioEngine::setTrackSidechainParams(int trackIdx, int slotIdx,
+                                          int sourceTrack, float threshold,
+                                          float duck, float attack, float release) {
+    if (trackIdx < 0 || trackIdx >= kMaxVoices) return;
+    if (slotIdx < 0 || slotIdx >= kMaxInsertSlots) return;
+    std::lock_guard<std::mutex> lock(mVoiceMutex);
+    applySidechainParams(mTrackInserts[trackIdx][slotIdx], sourceTrack, threshold, duck, attack, release);
+}
+
+void AudioEngine::setMasterSidechainParams(int slotIdx, int sourceTrack,
+                                           float threshold, float duck,
+                                           float attack, float release) {
+    if (slotIdx < 0 || slotIdx >= kMaxInsertSlots) return;
+    std::lock_guard<std::mutex> lock(mVoiceMutex);
+    applySidechainParams(mMasterInserts[slotIdx], sourceTrack, threshold, duck, attack, release);
 }
 
 void AudioEngine::processEffects(float* outL, float* outR, int numFrames, InsertEffect* effects) {
@@ -2581,6 +2637,50 @@ void AudioEngine::processEffects(float* outL, float* outR, int numFrames, Insert
                     }
                 }
                 const float gainLin = std::pow(10.0f, gainDB / 20.0f) * makeupLin;
+
+                outL[i] = outL[i] * fx.dryLevel + outL[i] * gainLin * fx.wetLevel;
+                outR[i] = outR[i] * fx.dryLevel + outR[i] * gainLin * fx.wetLevel;
+            }
+        } else if (fx.type == 10) {
+            // ── Sidechain Ducker ────────────────────────────────────────
+            // Envelope-follows another track's raw per-callback signal
+            // (mSidechainSnapshotL/R, captured before any track's insert FX
+            // run this callback \u2014 see onAudioReady) and reduces THIS slot's
+            // own signal in response. No source selected \u2192 pass through
+            // unchanged (skip to the next slot).
+            if (fx.scSourceTrack < 0 || fx.scSourceTrack >= kMaxVoices) continue;
+            const auto& srcBufL = mSidechainSnapshotL[fx.scSourceTrack];
+            const auto& srcBufR = mSidechainSnapshotR[fx.scSourceTrack];
+            if (static_cast<int>(srcBufL.size()) < numFrames) continue;
+
+            const float sr = mCachedSampleRate > 0.0f ? mCachedSampleRate : 48000.0f;
+            // threshold: 0..1 \u2192 \u221260..0 dBFS (same mapping as the Compressor)
+            const float thrDB   = -60.0f + fx.scThreshold * 60.0f;
+            // attack/release: 0..1 \u2192 same log mappings as the Compressor
+            const float attMs   = 0.1f * std::pow(2000.0f, fx.scAttack);
+            const float relMs   = 10.0f * std::pow(200.0f, fx.scRelease);
+            const float attCoef = std::exp(-1.0f / (sr * attMs * 0.001f));
+            const float relCoef = std::exp(-1.0f / (sr * relMs * 0.001f));
+            const float duckAmt = std::clamp(fx.scDuck, 0.0f, 1.0f);
+
+            for (int i = 0; i < numFrames; ++i) {
+                // Peak envelope of the source (sidechain) signal.
+                const float peak = std::max(std::abs(srcBufL[i]), std::abs(srcBufR[i]));
+                fx.scEnv = peak > fx.scEnv
+                    ? attCoef * fx.scEnv + (1.0f - attCoef) * peak
+                    : relCoef * fx.scEnv + (1.0f - relCoef) * peak;
+
+                // Gain reduction ramps from 0 (at threshold) up to duckAmt
+                // over a fixed 24 dB range above threshold.
+                float gainReduction = 0.0f;
+                if (fx.scEnv > 1e-6f) {
+                    const float envDB = 20.0f * std::log10(fx.scEnv);
+                    if (envDB > thrDB) {
+                        const float overDB = std::min(envDB - thrDB, 24.0f);
+                        gainReduction = (overDB / 24.0f) * duckAmt;
+                    }
+                }
+                const float gainLin = 1.0f - std::clamp(gainReduction, 0.0f, 1.0f);
 
                 outL[i] = outL[i] * fx.dryLevel + outL[i] * gainLin * fx.wetLevel;
                 outR[i] = outR[i] * fx.dryLevel + outR[i] * gainLin * fx.wetLevel;
@@ -3840,6 +3940,18 @@ oboe::DataCallbackResult AudioEngine::onAudioReady(
             v.phase += phaseInc;
             if (v.phase >= twoPi) v.phase -= twoPi;
         }
+    }
+
+    // Snapshot each track's raw (pre-insert-FX, pre-gain) bus signal for this
+    // callback so Sidechain Ducker insert effects (type 10) on ANY track can
+    // listen to it, regardless of the order tracks are processed in below.
+    for (int t = 0; t < kMaxVoices; ++t) {
+        if (static_cast<int>(mSidechainSnapshotL[t].size()) < numFrames) {
+            mSidechainSnapshotL[t].resize(numFrames);
+            mSidechainSnapshotR[t].resize(numFrames);
+        }
+        std::copy_n(mTrackBusL[t].data(), numFrames, mSidechainSnapshotL[t].data());
+        std::copy_n(mTrackBusR[t].data(), numFrames, mSidechainSnapshotR[t].data());
     }
 
     // Apply track insert effects, then route via send configuration.

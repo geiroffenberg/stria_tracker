@@ -438,6 +438,20 @@ Java_com_metamind_stria_AudioEnginePlugin_nativeSetMasterCompressorParams(
     reinterpret_cast<AudioEngine*>(ptr)->setMasterCompressorParams(slotIdx, threshold, ratio, attack, release, makeup, knee);
 }
 
+JNIEXPORT void JNICALL
+Java_com_metamind_stria_AudioEnginePlugin_nativeSetTrackSidechainParams(
+        JNIEnv*, jobject, jlong ptr, jint trackIdx, jint slotIdx,
+        jint sourceTrack, jfloat threshold, jfloat duck, jfloat attack, jfloat release) {
+    reinterpret_cast<AudioEngine*>(ptr)->setTrackSidechainParams(trackIdx, slotIdx, sourceTrack, threshold, duck, attack, release);
+}
+
+JNIEXPORT void JNICALL
+Java_com_metamind_stria_AudioEnginePlugin_nativeSetMasterSidechainParams(
+        JNIEnv*, jobject, jlong ptr, jint slotIdx,
+        jint sourceTrack, jfloat threshold, jfloat duck, jfloat attack, jfloat release) {
+    reinterpret_cast<AudioEngine*>(ptr)->setMasterSidechainParams(slotIdx, sourceTrack, threshold, duck, attack, release);
+}
+
 JNIEXPORT jboolean JNICALL
 Java_com_metamind_stria_AudioEnginePlugin_nativeSetSamplerSample(
         JNIEnv* env, jobject, jlong ptr, jint slot, jstring path) {
