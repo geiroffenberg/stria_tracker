@@ -583,6 +583,9 @@ FX commands are entered in the FX column of a pattern cell. Each command takes a
 | `SLD` | XY | Slide Down. X = lines to slide over (1–9), Y = semitones down (1–9). Works on hold rows. |
 | `SLU` | XY | Slide Up. X = lines to slide over (1–9), Y = semitones up (1–9). Works on hold rows. |
 | `SWN` | 00–99 | Swing override (pattern-global). Directly sets the pattern's swing amount for the rest of this playthrough; resets to the pattern's snapshot swing at pattern start / loop start. |
+| `SN1` | 00–99 | Send to channel 14. 00 = reset send, 01–99 = send percentage. Carries through hold rows until note-off. |
+| `SN2` | 00–99 | Send to channel 15. 00 = reset send, 01–99 = send percentage. Carries through hold rows until note-off. |
+| `SN3` | 00–99 | Send to channel 16. 00 = reset send, 01–99 = send percentage. Carries through hold rows until note-off. |
 | `TRE` | XY | Tremolo. X = speed (0–9), Y = depth (0–9). Sine-wave volume LFO. Carries through hold rows. |
 | `VIB` | XY | Vibrato. X = speed (0–9), Y = depth (0–9). Pitch LFO. Carries through hold rows. |
 | `VOL` | 00–99 | Override volume. Carries through hold rows until note-off. |
@@ -613,6 +616,40 @@ Both commands automatically reset to the pattern's own saved value (the value sh
 Because it stacks, several `BPM` commands across a pattern can build a gradual tempo ramp (e.g. speeding up into a drop), and `BPM 00` is a quick way to snap back to the base tempo mid-pattern without waiting for a loop.
 
 **SWN** (`00`–`99`) simply overrides the pattern's swing percentage directly — no +/- encoding, the value you enter *is* the new swing amount until the next `SWN` command, pattern restart, or loop.
+
+#### SN1 / SN2 / SN3 — Send Channels
+
+**SN1**, **SN2**, and **SN3** route a track's signal to auxiliary send channels (14, 15, and 16 respectively) for creating send-based effects chains like reverb or delay:
+
+- `SN1` sends to **channel 14**
+- `SN2` sends to **channel 15**
+- `SN3` sends to **channel 16**
+
+**Value encoding:**
+
+| Value | Meaning |
+|---|---|
+| `00` | Reset send (stop sending to the auxiliary channel) |
+| `01`–`99` | Send percentage (1–99%) of the signal to the auxiliary channel while maintaining the track's normal routing |
+
+**Carry behaviour:**
+
+Unlike most FX commands, `SN1/SN2/SN3` are **sticky**: they persist through subsequent hold rows and only reset when:
+- Explicitly reset with `SN1 00`, `SN2 00`, or `SN3 00`
+- A note-off (`===`) is encountered
+- The pattern loops back to its start
+
+This allows you to apply a send to multiple notes without re-entering the command on every row:
+
+```
+Row 1:  C-4 kick       | SN3 60  ← send to channel 16 at 60%
+Row 2:  ... hold...    | (send continues automatically)
+Row 3:  ... hold...    | (send continues automatically)
+Row 4:  === note-off   | (send resets)
+Row 5:  C-4 kick       | (no send, back to normal routing)
+```
+
+**Common use case:** Place a reverb or delay insert effect on channel 14, 15, or 16, then use `SN1`/`SN2`/`SN3` to send specific instruments or pattern sections to it.
 
 #### RET — Retrigger Volume Curves
 

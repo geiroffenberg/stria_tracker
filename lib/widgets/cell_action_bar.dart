@@ -742,6 +742,9 @@ class _FxCmdActions extends StatelessWidget {
     kFxGAT,
     kFxBPM,
     kFxSWN,
+    kFxSN1,
+    kFxSN2,
+    kFxSN3,
   ];
 
   final AppState state;

@@ -114,6 +114,7 @@ class AudioEngine {
     List<int> mixerCommandData = const [],
     List<int> insertFxCommandData = const [],
     List<int> pitchRampData = const [],
+    List<int> sendRoutingCommandData = const [],
   }) async {
     if (!_initialised) return;
     await _channel.invokeMethod('enqueuePlaybackRow', {
@@ -128,6 +129,7 @@ class AudioEngine {
       'mixerCommandData': mixerCommandData,
       'insertFxCommandData': insertFxCommandData,
       'pitchRampData': pitchRampData,
+      'sendRoutingCommandData': sendRoutingCommandData,
     });
   }
 

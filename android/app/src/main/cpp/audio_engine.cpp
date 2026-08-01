@@ -597,6 +597,7 @@ bool AudioEngine::open() {
     mPendingSliceCommands.reserve(kEventReserve);
     mPendingMixerCommands.reserve(kEventReserve);
     mPendingInsertFxCommands.reserve(kEventReserve);
+    mPendingSendRoutingCommands.reserve(kEventReserve);
 
     // Pre-reserve each voice's Karplus delay line so startKarplusVoice()
     // (called from the audio thread via pending events) never allocates.
@@ -1533,6 +1534,7 @@ void AudioEngine::applyQueuedPlaybackRowLocked(const QueuedPlaybackRow& row) {
     if (!row.sliceCommandData.empty()) queueSliceCommandsLocked(row.sliceCommandData);
     if (!row.mixerCommandData.empty()) queueMixerCommandsLocked(row.mixerCommandData);
     if (!row.insertFxCommandData.empty()) queueInsertFxCommandsLocked(row.insertFxCommandData);
+    if (!row.sendRoutingCommandData.empty()) queueSendRoutingCommandsLocked(row.sendRoutingCommandData);
     if (!row.pitchRampData.empty()) applyPitchRampsLocked(row.pitchRampData);
 }
 
@@ -1761,6 +1763,21 @@ void AudioEngine::queueInsertFxCommandsLocked(const std::vector<int>& data) {
         const int function = std::clamp(data[i + 2], 0, 9);
         const int value = std::clamp(data[i + 3], 0, 99);
         mPendingInsertFxCommands.push_back({0, trackIdx, slotIdx, function, value});
+    }
+}
+
+void AudioEngine::queueSendRoutingCommands(const std::vector<int>& data) {
+    std::lock_guard<std::mutex> lock(mVoiceMutex);
+    queueSendRoutingCommandsLocked(data);
+}
+
+void AudioEngine::queueSendRoutingCommandsLocked(const std::vector<int>& data) {
+    // data format: groups of 3 ints — [trackIdx, destChannel, percent].
+    for (size_t i = 0; i + 2 < data.size(); i += 3) {
+        const int trackIdx = std::clamp(data[i], 0, kMaxVoices - 1);
+        const int destChannel = std::clamp(data[i + 1], 0, kMaxVoices);
+        const int percent = std::clamp(data[i + 2], 0, 99);
+        mPendingSendRoutingCommands.push_back({0, trackIdx, destChannel, percent});
     }
 }
 
@@ -3075,6 +3092,17 @@ oboe::DataCallbackResult AudioEngine::onAudioReady(
         mPendingInsertFxCommands.clear();
     }
 
+    // Process aux-send changes (SN1/SN2/SN3) at row start — row-accurate,
+    // parallel percentage send (separate from mTrackSendChannel's full reroute).
+    if (!mPendingSendRoutingCommands.empty()) {
+        for (auto& ev : mPendingSendRoutingCommands) {
+            if (ev.trackIdx < 0 || ev.trackIdx >= kMaxVoices) continue;
+            mTrackAuxSendDest[ev.trackIdx] = std::clamp(ev.destChannel, 0, kMaxVoices);
+            mTrackAuxSendPercent[ev.trackIdx] = std::clamp(ev.percent, 0, 99);
+        }
+        mPendingSendRoutingCommands.clear();
+    }
+
     // Prepare per-track buses for insert processing.
     for (int track = 0; track < kMaxVoices; ++track) {
         if (static_cast<int>(mTrackBusL[track].size()) < numFrames) {
@@ -3959,16 +3987,22 @@ oboe::DataCallbackResult AudioEngine::onAudioReady(
     // Send routing rules:
     //   mTrackSendChannel[track] == 0  → direct to master output
     //   mTrackSendChannel[track] == N  → accumulate into track N-1's bus
+    //   (mTrackAuxSendDest/Percent additionally layer a PARALLEL percentage
+    //    copy into another destination — see below — without altering the
+    //    above; the track's normal output is unaffected by an aux send.)
     //
     // Two-pass approach:
     //   Pass 1: for each track, apply its own insert FX, then either:
     //           a) sum straight into `out[]` (direct-to-master), or
     //           b) accumulate into the destination track's bus (send).
+    //           Also accumulate any active aux-send percentage into its
+    //           destination bus, on top of (a)/(b) above.
     //   Pass 2: for any track bus that received sends (is a send destination),
     //           apply that track's insert FX to the accumulated signal and
     //           sum the result into master.
     //
-    // We detect send destinations by scanning mTrackSendChannel once.
+    // We detect send destinations by scanning mTrackSendChannel and
+    // mTrackAuxSendDest once.
 
     // Determine which tracks are send destinations.
     std::array<bool, kMaxVoices> isSendDest{};
@@ -3976,6 +4010,10 @@ oboe::DataCallbackResult AudioEngine::onAudioReady(
         const int dest = mTrackSendChannel[t];
         if (dest > 0 && dest <= kMaxVoices && (dest - 1) != t) {
             isSendDest[dest - 1] = true;
+        }
+        const int auxDest = mTrackAuxSendDest[t];
+        if (auxDest > 0 && auxDest <= kMaxVoices && mTrackAuxSendPercent[t] > 0 && (auxDest - 1) != t) {
+            isSendDest[auxDest - 1] = true;
         }
     }
 
@@ -4052,6 +4090,19 @@ oboe::DataCallbackResult AudioEngine::onAudioReady(
             for (int i = 0; i < numFrames; ++i) {
                 mTrackBusL[di][i] += mTrackBusL[track][i];
                 mTrackBusR[di][i] += mTrackBusR[track][i];
+            }
+        }
+
+        // Aux send (SN1/SN2/SN3): PARALLEL percentage copy into another
+        // destination bus, independent of the routing above.
+        const int auxDest = mTrackAuxSendDest[track];
+        const int auxPercent = mTrackAuxSendPercent[track];
+        if (auxDest > 0 && auxDest <= kMaxVoices && auxPercent > 0 && (auxDest - 1) != track) {
+            const float sendGain = auxPercent / 100.0f;
+            const int adi = auxDest - 1;
+            for (int i = 0; i < numFrames; ++i) {
+                mTrackBusL[adi][i] += mTrackBusL[track][i] * sendGain;
+                mTrackBusR[adi][i] += mTrackBusR[track][i] * sendGain;
             }
         }
     }

@@ -107,6 +107,8 @@ class AudioEnginePlugin : FlutterPlugin, MethodCallHandler {
                 val insertFxCommandData = call.argument<List<Int>>("insertFxCommandData") ?: emptyList()
                 @Suppress("UNCHECKED_CAST")
                 val pitchRampData = call.argument<List<Int>>("pitchRampData") ?: emptyList()
+                @Suppress("UNCHECKED_CAST")
+                val sendRoutingCommandData = call.argument<List<Int>>("sendRoutingCommandData") ?: emptyList()
                 if (enginePtr != 0L) {
                     nativeEnqueuePlaybackRow(
                         enginePtr,
@@ -121,6 +123,7 @@ class AudioEnginePlugin : FlutterPlugin, MethodCallHandler {
                         mixerCommandData.toIntArray(),
                         insertFxCommandData.toIntArray(),
                         pitchRampData.toIntArray(),
+                        sendRoutingCommandData.toIntArray(),
                     )
                 }
                 result.success(null)
@@ -157,6 +160,8 @@ class AudioEnginePlugin : FlutterPlugin, MethodCallHandler {
                         val insertFxCommandData = (row["insertFxCommandData"] as? List<Int>) ?: emptyList()
                         @Suppress("UNCHECKED_CAST")
                         val pitchRampData = (row["pitchRampData"] as? List<Int>) ?: emptyList()
+                        @Suppress("UNCHECKED_CAST")
+                        val sendRoutingCommandData = (row["sendRoutingCommandData"] as? List<Int>) ?: emptyList()
                         nativeEnqueuePlaybackRow(
                             enginePtr,
                             lineSamples,
@@ -170,6 +175,7 @@ class AudioEnginePlugin : FlutterPlugin, MethodCallHandler {
                             mixerCommandData.toIntArray(),
                             insertFxCommandData.toIntArray(),
                             pitchRampData.toIntArray(),
+                            sendRoutingCommandData.toIntArray(),
                         )
                     }
                 }
@@ -203,6 +209,8 @@ class AudioEnginePlugin : FlutterPlugin, MethodCallHandler {
                         val insertFxCommandData = (row["insertFxCommandData"] as? List<Int>) ?: emptyList()
                         @Suppress("UNCHECKED_CAST")
                         val pitchRampData = (row["pitchRampData"] as? List<Int>) ?: emptyList()
+                        @Suppress("UNCHECKED_CAST")
+                        val sendRoutingCommandData = (row["sendRoutingCommandData"] as? List<Int>) ?: emptyList()
                         nativeAppendPendingRow(
                             enginePtr,
                             lineSamples,
@@ -216,6 +224,7 @@ class AudioEnginePlugin : FlutterPlugin, MethodCallHandler {
                             mixerCommandData.toIntArray(),
                             insertFxCommandData.toIntArray(),
                             pitchRampData.toIntArray(),
+                            sendRoutingCommandData.toIntArray(),
                         )
                     }
                 }
@@ -688,6 +697,7 @@ class AudioEnginePlugin : FlutterPlugin, MethodCallHandler {
         mixerCommandData: IntArray,
         insertFxCommandData: IntArray,
         pitchRampData: IntArray,
+        sendRoutingCommandData: IntArray,
     )
     private external fun nativeBeginPendingRows(ptr: Long)
     private external fun nativeAppendPendingRow(
@@ -703,6 +713,7 @@ class AudioEnginePlugin : FlutterPlugin, MethodCallHandler {
         mixerCommandData: IntArray,
         insertFxCommandData: IntArray,
         pitchRampData: IntArray,
+        sendRoutingCommandData: IntArray,
     )
     private external fun nativeSetRowData(ptr: Long, data: IntArray)
     private external fun nativeKillVoices(ptr: Long, mask: IntArray)

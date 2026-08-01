@@ -85,6 +85,8 @@ class _ScheduledPlaybackRow {
 
   /// Linear pitch ramp commands for SLU/SLD: [trackIdx, targetMidiNote, durationSamples, ...].
   final List<int> pitchRampData;
+  /// Row-accurate send-routing changes from SN1/SN2/SN3: [trackIdx, destChannel, ...].
+  final List<int> sendRoutingCommandData;
   final int lineSamples;
 
   const _ScheduledPlaybackRow({
@@ -98,6 +100,7 @@ class _ScheduledPlaybackRow {
     required this.mixerCommandData,
     required this.insertFxCommandData,
     required this.pitchRampData,
+    required this.sendRoutingCommandData,
     required this.lineSamples,
   });
 }
@@ -119,6 +122,8 @@ class _TrackCarry {
   ({List<int> cycle, int notesPerLine, int phase})? arp;
   ({int startNote, int endNote, int totalLines, int linesElapsed})? slide;
   Map<int, int> instrumentParams = <int, int>{};
+  int? sendChannel; // 14, 15, or 16 (from SN1/SN2/SN3); null = no active send
+  int? sendPercent; // 1-99 (from SN1/SN2/SN3 value); null = no active send
 }
 
 /// Per-pattern undo / redo history. Snapshots are JSON strings of the
@@ -427,6 +432,9 @@ class AppState extends ChangeNotifier {
   // Playback carry state, per track. One record per pattern track.
   List<_TrackCarry> _trackCarry = const [];
   int _carryPatternIndex = -1;
+  // Set by _triggerCurrentRow() when _trackCarry was just (re)created this
+  // call, so the send-routing baseline for every track gets re-emitted.
+  bool _sendRoutingCarryWasReset = false;
   // When true, suppresses the automatic carry reset that normally happens
   // at row 0. Set only while _buildScheduledRows() is building a seamless
   // loop-pass continuation, so tracks holding/ringing a note across the
@@ -1901,6 +1909,14 @@ class AppState extends ChangeNotifier {
     final tracks = currentPattern.tracks;
     final routing = List.generate(tracks.length, (i) => tracks[i].sendChannel);
     AudioEngine.instance.setSendRouting(routing);
+  }
+
+  /// Build the static full-reroute send array (mixer-screen "send channel"
+  /// knob only). SN1/SN2/SN3 no longer affect this — they drive a separate,
+  /// row-accurate percentage aux-send instead (see sendRoutingCommandData).
+  List<int> _buildStaticSendRouting() {
+    final tracks = currentPattern.tracks;
+    return List.generate(tracks.length, (i) => tracks[i].sendChannel);
   }
 
   // ── Cell selection ───────────────────────────────────────────────────────
@@ -4959,6 +4975,9 @@ class AppState extends ChangeNotifier {
       endRow: endRow,
     );
     _nextPassScheduled = false;
+    // Update send routing based on carry state from row building.
+    final sendRouting = _buildStaticSendRouting();
+    await AudioEngine.instance.setSendRouting(sendRouting);
     await AudioEngine.instance.enqueueAllPlaybackRows(
       loop: _loopPlaybackEnabled,
       rows: scheduledRows
@@ -4975,6 +4994,7 @@ class AppState extends ChangeNotifier {
               'mixerCommandData': r.mixerCommandData,
               'insertFxCommandData': r.insertFxCommandData,
               'pitchRampData': r.pitchRampData,
+              'sendRoutingCommandData': r.sendRoutingCommandData,
             },
           )
           .toList(),
@@ -4990,6 +5010,9 @@ class AppState extends ChangeNotifier {
       endRow: _playbackEndRow,
       continueCarry: true,
     );
+    // Update send routing based on carry state from row building.
+    final sendRouting = _buildStaticSendRouting();
+    await AudioEngine.instance.setSendRouting(sendRouting);
     await AudioEngine.instance.scheduleNextLoopRows(
       rows
           .map(
@@ -5005,6 +5028,7 @@ class AppState extends ChangeNotifier {
               'mixerCommandData': r.mixerCommandData,
               'insertFxCommandData': r.insertFxCommandData,
               'pitchRampData': r.pitchRampData,
+              'sendRoutingCommandData': r.sendRoutingCommandData,
             },
           )
           .toList(),
@@ -5129,8 +5153,11 @@ class AppState extends ChangeNotifier {
     // Restore state.
     playheadRow = originalPlayheadRow;
     _playheadArrangementSlot = originalPlayheadSlot;
+    // Capture send routing from carry state before it's wiped below.
+    final sendRouting = _buildStaticSendRouting();
     _resetInstrumentCarry();
 
+    await AudioEngine.instance.setSendRouting(sendRouting);
     // Upload to native — all rows in one channel call to avoid per-row
     // Dart→Kotlin→JNI overhead that caused multi-second play latency.
     await AudioEngine.instance.enqueueAllPlaybackRows(
@@ -5149,6 +5176,7 @@ class AppState extends ChangeNotifier {
               'mixerCommandData': r.mixerCommandData,
               'insertFxCommandData': r.insertFxCommandData,
               'pitchRampData': r.pitchRampData,
+              'sendRoutingCommandData': r.sendRoutingCommandData,
             },
           )
           .toList(),
@@ -5304,6 +5332,7 @@ class AppState extends ChangeNotifier {
     }
 
     final rng = math.Random();
+    _sendRoutingCarryWasReset = false;
 
     final PatternModel pattern;
     final int patternIdx;
@@ -5323,6 +5352,7 @@ class AppState extends ChangeNotifier {
         pattern.tracks.length,
         (_) => _TrackCarry(),
       );
+      _sendRoutingCarryWasReset = true;
     }
 
     // BPM FX: reset the running effective tempo to this pattern's own
@@ -5357,6 +5387,19 @@ class AppState extends ChangeNotifier {
     final List<int> mixerCommandQueue = [];
     // Pending own-channel insert FX events: [trackIdx, slotIdx, function, value, ...]
     final List<int> insertFxCommandQueue = [];
+    // Pending aux-send changes from SN1/SN2/SN3: [trackIdx, destChannel, percent, ...]
+    // destChannel 0 = no send. This is a PARALLEL percentage send — the track's
+    // normal output (to master, or its own static reroute) is unaffected;
+    // this just adds an extra `percent`% copy into the destination channel's
+    // bus. Row-accurate — applied at row start on the native side.
+    final List<int> sendRoutingCommandQueue = [];
+    if (_sendRoutingCarryWasReset) {
+      for (int i = 0; i < pattern.tracks.length; i++) {
+        sendRoutingCommandQueue.add(i);
+        sendRoutingCommandQueue.add(0);
+        sendRoutingCommandQueue.add(0);
+      }
+    }
     // Pending RET events: flat list [sampleOffset, trackIdx, note, volume, ...]
     // passed directly to the C++ engine for sample-accurate firing.
     final List<int> retrigQueue = [];
@@ -5566,6 +5609,33 @@ class AppState extends ChangeNotifier {
             _trackCarry[t].treDepth = treDepthNorm;
             _trackCarry[t].treMode = treMode;
           }
+          // SN1/SN2/SN3: parallel aux-send percentage to channel 14/15/16,
+          // with carry persistence. Value 00 resets the send (percent 0),
+          // 01-99 sets the send percentage. The track's normal output keeps
+          // playing unaffected — this only adds an extra percentage copy.
+          if (fx.command == kFxSN1 || fx.command == kFxSN2 || fx.command == kFxSN3) {
+            if (fx.value == 0) {
+              // Reset send: clear carry values
+              _trackCarry[t].sendChannel = null;
+              _trackCarry[t].sendPercent = null;
+              sendRoutingCommandQueue.add(t);
+              sendRoutingCommandQueue.add(0);
+              sendRoutingCommandQueue.add(0);
+            } else if (fx.value != null && fx.value! > 0) {
+              // Activate send with percentage
+              if (fx.command == kFxSN1) {
+                _trackCarry[t].sendChannel = 14; // channel 14 for SN1
+              } else if (fx.command == kFxSN2) {
+                _trackCarry[t].sendChannel = 15; // channel 15 for SN2
+              } else {
+                _trackCarry[t].sendChannel = 16; // channel 16 for SN3
+              }
+              _trackCarry[t].sendPercent = fx.value!.clamp(1, 99);
+              sendRoutingCommandQueue.add(t);
+              sendRoutingCommandQueue.add(_trackCarry[t].sendChannel!);
+              sendRoutingCommandQueue.add(_trackCarry[t].sendPercent!);
+            }
+          }
           if (fx.command == kFxRET) {
             final value = (fx.value ?? 0).clamp(0, 99);
             retrigVolumeMode = (value ~/ 10).clamp(0, 9);
@@ -5735,6 +5805,12 @@ class AppState extends ChangeNotifier {
       } else if (noteCmd == -2) {
         _trackCarry[t].note = null;
         _trackCarry[t].volume = null;
+        // Clear send carry on note-off (===)
+        _trackCarry[t].sendChannel = null;
+        _trackCarry[t].sendPercent = null;
+        sendRoutingCommandQueue.add(t);
+        sendRoutingCommandQueue.add(0);
+        sendRoutingCommandQueue.add(0);
       }
 
       final retBaseNote = _trackCarry[t].note;
@@ -6014,6 +6090,7 @@ class AppState extends ChangeNotifier {
       mixerCommandData: List<int>.unmodifiable(mixerCommandQueue),
       insertFxCommandData: List<int>.unmodifiable(insertFxCommandQueue),
       pitchRampData: List<int>.unmodifiable(pitchRampQueue),
+      sendRoutingCommandData: List<int>.unmodifiable(sendRoutingCommandQueue),
       lineSamples: lineSamples,
     );
 

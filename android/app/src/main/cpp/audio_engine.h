@@ -294,6 +294,17 @@ struct InsertFxCommandEvent {
     int     value;        ///< 0-99 parameter value
 };
 
+/// A pending aux-send percentage change (from SN1/SN2/SN3 FX commands).
+/// This is a PARALLEL send: the source track's normal output (to master, or
+/// its own static send-channel reroute) is unaffected; this just adds an
+/// extra `percent`% copy of its signal into destChannel's bus.
+struct SendRoutingCommandEvent {
+    int32_t sampleTarget; ///< fire when mSubRowSampleCounter >= this value (currently 0 = immediate)
+    int     trackIdx;     ///< source track whose aux send changes
+    int     destChannel;  ///< 0=none, 1-16=aux send destination (1-based)
+    int     percent;      ///< 0-99, percentage of signal sent to destChannel
+};
+
 struct QueuedPlaybackRow {
     std::vector<int> rowData;
     std::vector<int> immediateKillMask;
@@ -307,6 +318,8 @@ struct QueuedPlaybackRow {
     /// Linear pitch ramp commands: groups of 3 ints — [trackIdx, targetMidiNote, durationSamples].
     /// Applied at row-fire time to start smooth cent-level slides (SLU/SLD).
     std::vector<int> pitchRampData;
+    /// Send-routing changes: groups of 2 ints — [trackIdx, destChannel]. From SN1/SN2/SN3.
+    std::vector<int> sendRoutingCommandData;
     int32_t lineSamples = 0;
 };
 
@@ -551,6 +564,10 @@ public:
     /// [data] is packed in groups of 4: [trackIdx, slotIdx, function, value].
     void queueInsertFxCommands(const std::vector<int>& data);
 
+    /// Queue row-accurate send-routing changes (SN1/SN2/SN3 FX commands).
+    /// [data] is packed in groups of 2: [trackIdx, destChannel].
+    void queueSendRoutingCommands(const std::vector<int>& data);
+
     /// Configure an insert effect on the master bus.
     /// slotIdx: 0-5 (6 insert slots)
     /// effectType: -1=empty, 0=reverb
@@ -747,6 +764,7 @@ private:
     std::vector<SliceCommandEvent> mPendingSliceCommands;
     std::vector<MixerCommandEvent>  mPendingMixerCommands;
     std::vector<InsertFxCommandEvent> mPendingInsertFxCommands;
+    std::vector<SendRoutingCommandEvent> mPendingSendRoutingCommands;
     
     // Mixer state (master channel: mute, volume)
     std::atomic<bool>   mMasterMute{false};  // true = muted, false = unmuted
@@ -797,6 +815,11 @@ private:
     InsertEffect                     mTrackInserts[kMaxVoices][kMaxInsertSlots];
     std::array<bool, kMaxVoices>     mPreviewBypassTrackInserts{};
     std::array<int, kMaxVoices>      mTrackSendChannel{}; // 0=master, 1..kMaxVoices=send to that channel (1-based)
+    // Aux-send (SN1/SN2/SN3): PARALLEL percentage send, separate from the
+    // full-reroute mTrackSendChannel above. 0=none, 1..kMaxVoices=destination
+    // (1-based); percent is 0-99.
+    std::array<int, kMaxVoices>      mTrackAuxSendDest{};
+    std::array<int, kMaxVoices>      mTrackAuxSendPercent{};
     // Per-track bus-level mixer state (applied in routing pass, set via MixerCommandEvent)
     float mTrackVolume[kMaxVoices]; // 0..1, 1.0 = unity
     bool  mTrackMute[kMaxVoices];   // true = silenced
@@ -834,6 +857,7 @@ private:
     void queueSliceCommandsLocked(const std::vector<int>& data);
     void queueMixerCommandsLocked(const std::vector<int>& data);
     void queueInsertFxCommandsLocked(const std::vector<int>& data);
+    void queueSendRoutingCommandsLocked(const std::vector<int>& data);
     void applyPitchRampsLocked(const std::vector<int>& data);
     void applyQueuedPlaybackRowLocked(const QueuedPlaybackRow& row);
     bool primeNextQueuedPlaybackRowLocked();

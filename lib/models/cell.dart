@@ -80,6 +80,9 @@ const Map<int, String> kFxCommandNames = {
   208: 'GAT', // gate: XY speed+depth, square wave volume LFO
   209: 'BPM', // tempo nudge: 00=reset, 01-50=+1..+50, 51-99=-49..-1
   210: 'SWN', // swing override: 00-99, resets to pattern swing at start/loop
+  211: 'SN1', // send to channel 14: 00=reset, 01-99=percentage
+  212: 'SN2', // send to channel 15: 00=reset, 01-99=percentage
+  213: 'SN3', // send to channel 16: 00=reset, 01-99=percentage
 };
 
 /// Fixed command ID → full description string. Same key space as kFxCommandNames.
@@ -126,6 +129,9 @@ const Map<int, String> kFxCommandDescriptions = {
   208: 'Gate — XY: X=speed (0-9), Y=depth (0-9), square wave volume gate',
   209: 'Tempo — 00=reset to pattern BPM, 01-50=+1..+50, 51-99=-49..-1 (stacks on current tempo)',
   210: 'Swing — 00-99: overrides pattern swing amount (resets to pattern swing at start/loop)',
+  211: 'Send 1 — send to channel 14: 00=reset, 01-99=send percentage (carries through hold rows)',
+  212: 'Send 2 — send to channel 15: 00=reset, 01-99=send percentage (carries through hold rows)',
+  213: 'Send 3 — send to channel 16: 00=reset, 01-99=send percentage (carries through hold rows)',
   // ── Add new FX descriptions below ────────────────────────────────────
 };
 
@@ -154,7 +160,10 @@ const int kFxTRE = 207; // tremolo: XY speed+depth, sine wave volume LFO
 const int kFxGAT = 208; // gate: XY speed+depth, square wave volume LFO
 const int kFxBPM = 209; // tempo nudge: 00=reset, 01-50=+1..+50, 51-99=-49..-1
 const int kFxSWN = 210; // swing override: 00-99, resets to pattern swing at start/loop
-// → To add a new FX: pick an ID > 210, add to kFxCommandNames + kFxCommandDescriptions
+const int kFxSN1 = 211; // send to channel 14: 00=reset, 01-99=percentage
+const int kFxSN2 = 212; // send to channel 15: 00=reset, 01-99=percentage
+const int kFxSN3 = 213; // send to channel 16: 00=reset, 01-99=percentage
+// → To add a new FX: pick an ID > 213, add to kFxCommandNames + kFxCommandDescriptions
 const int kFxInsertStart = 340;
 const int kFxInsertEnd = 399; // 6 slots × 10 functions (0–9) = 60 commands
 

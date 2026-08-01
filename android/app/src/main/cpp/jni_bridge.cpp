@@ -91,7 +91,8 @@ Java_com_metamind_stria_AudioEnginePlugin_nativeEnqueuePlaybackRow(
         jintArray sliceCommandData,
         jintArray mixerCommandData,
         jintArray insertFxCommandData,
-        jintArray pitchRampData) {
+        jintArray pitchRampData,
+        jintArray sendRoutingCommandData) {
     auto toVector = [env](jintArray array) {
         jsize len = env->GetArrayLength(array);
         jint* elms = env->GetIntArrayElements(array, nullptr);
@@ -111,6 +112,7 @@ Java_com_metamind_stria_AudioEnginePlugin_nativeEnqueuePlaybackRow(
     row.mixerCommandData = toVector(mixerCommandData);
     row.insertFxCommandData = toVector(insertFxCommandData);
     row.pitchRampData = toVector(pitchRampData);
+    row.sendRoutingCommandData = toVector(sendRoutingCommandData);
     reinterpret_cast<AudioEngine*>(ptr)->enqueuePlaybackRow(row);
 }
 
@@ -135,7 +137,8 @@ Java_com_metamind_stria_AudioEnginePlugin_nativeAppendPendingRow(
         jintArray sliceCommandData,
         jintArray mixerCommandData,
         jintArray insertFxCommandData,
-        jintArray pitchRampData) {
+        jintArray pitchRampData,
+        jintArray sendRoutingCommandData) {
     auto toVector = [env](jintArray array) {
         jsize len = env->GetArrayLength(array);
         jint* elms = env->GetIntArrayElements(array, nullptr);
@@ -155,6 +158,7 @@ Java_com_metamind_stria_AudioEnginePlugin_nativeAppendPendingRow(
     row.mixerCommandData = toVector(mixerCommandData);
     row.insertFxCommandData = toVector(insertFxCommandData);
     row.pitchRampData = toVector(pitchRampData);
+    row.sendRoutingCommandData = toVector(sendRoutingCommandData);
     reinterpret_cast<AudioEngine*>(ptr)->appendPendingRow(row);
 }
 
