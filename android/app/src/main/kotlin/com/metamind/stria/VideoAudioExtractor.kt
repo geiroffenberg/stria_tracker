@@ -16,11 +16,11 @@ import java.nio.ByteOrder
  * MediaExtractor + MediaCodec. No external libraries required.
  *
  * Output: 16-bit signed PCM, mono, WAV file in the app cache dir.
- * Maximum duration: [maxDurationMs] milliseconds (default 10 s).
+ * Maximum duration: [maxDurationMs] milliseconds (default 30 s).
  */
 object VideoAudioExtractor {
 
-    private const val DEFAULT_MAX_MS = 10_000L
+    private const val DEFAULT_MAX_MS = 30_000L
     private const val TIMEOUT_US = 10_000L // dequeue timeout
 
     /**
