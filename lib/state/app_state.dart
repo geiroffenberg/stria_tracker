@@ -4631,7 +4631,30 @@ class AppState extends ChangeNotifier {
     final clamped = value.round().clamp(20, 300);
     currentPattern.bpm = clamped.toDouble();
     _restartPlayheadTimerIfNeeded();
+    
+    // Re-apply stretch to all samplers with stretch enabled so they
+    // recalculate their target length based on the new BPM.
+    unawaited(_reapplyStretchForBpmChange());
+    
     notifyListeners();
+  }
+
+  /// Re-bake all active stretched samplers when BPM changes.
+  Future<void> _reapplyStretchForBpmChange() async {
+    for (var i = 0; i < instruments.length; i++) {
+      final ins = instruments[i];
+      if (ins.type == InstrumentType.sampler &&
+          ins.sampler.stretchEnabled &&
+          ins.sampler.samplePath != null) {
+        await AudioEngine.instance.updateStretch(
+          slot: i,
+          enabled: true,
+          beats: ins.sampler.stretchBeats,
+          bpm: bpm,
+          preservePitch: ins.sampler.stretchPreservePitch,
+        );
+      }
+    }
   }
 
   void setBeats(int value) {
@@ -7841,6 +7864,25 @@ class AppState extends ChangeNotifier {
     try {
       // Keep app-managed local copies of used sampler files for this song.
       await _persistSamplerAssetsForSong();
+      
+      // Persist may have re-initialized sampler slots in the audio engine
+      // (via setSamplerSample), which clears stretch buffers. Re-apply
+      // stretch for any samplers that have it enabled.
+      for (var i = 0; i < instruments.length; i++) {
+        final ins = instruments[i];
+        if (ins.type == InstrumentType.sampler &&
+            ins.sampler.stretchEnabled &&
+            ins.sampler.samplePath != null) {
+          await AudioEngine.instance.updateStretch(
+            slot: i,
+            enabled: ins.sampler.stretchEnabled,
+            beats: ins.sampler.stretchBeats,
+            bpm: bpm,
+            preservePitch: ins.sampler.stretchPreservePitch,
+          );
+        }
+      }
+      
       // For SAF projects, samplePath is kept as the full local cache path
       // in memory (so waveform display works), but the JSON must store only
       // the bare filename so the file can be re-read from SAF on reload.
@@ -8145,6 +8187,24 @@ class AppState extends ChangeNotifier {
           }
         }
       }
+
+      // Re-apply stretch settings to the audio engine for all loaded samplers.
+      // (setSamplerSample() reinitializes the sampler slot and clears stretch buffers.)
+      for (var i = 0; i < instruments.length; i++) {
+        final ins = instruments[i];
+        if (ins.type == InstrumentType.sampler &&
+            ins.sampler.stretchEnabled &&
+            ins.sampler.samplePath != null) {
+          await AudioEngine.instance.updateStretch(
+            slot: i,
+            enabled: ins.sampler.stretchEnabled,
+            beats: ins.sampler.stretchBeats,
+            bpm: bpm,
+            preservePitch: ins.sampler.stretchPreservePitch,
+          );
+        }
+      }
+
       _resetSongScopedState();
 
       // Restore insert snapshot from the loaded JSON (reset cleared it).
