@@ -4316,6 +4316,20 @@ class AppState extends ChangeNotifier {
     _captureStartStates();
     isPlaying = true;
 
+    // If starting playback from a different pattern/BPM than currently applied,
+    // re-apply stretch for all active samplers so they use the correct tempo.
+    if (_playbackFollowsSong && song.patterns.isNotEmpty) {
+      final pattern = song.patterns[_playheadArrangementSlot.clamp(
+        0,
+        song.patterns.length - 1,
+      )];
+      final playbackBpm = pattern.bpm ?? 120.0;
+      final currentBpm = bpm;
+      if ((playbackBpm - currentBpm).abs() > 1.0) {
+        unawaited(_reapplyStretchForBpmChange());
+      }
+    }
+
     if (_playbackFollowsSong) {
       await _loadNativeSongPlaybackQueue(
         startSlot: _playheadArrangementSlot,
@@ -6122,10 +6136,25 @@ class AppState extends ChangeNotifier {
 
   void _syncCurrentPatternToSongPlayhead() {
     if (song.patterns.isEmpty) return;
+    
+    // Capture old BPM before switching pattern
+    final oldBpm = _currentPatternIndex >= 0 && _currentPatternIndex < song.patterns.length
+        ? song.patterns[_currentPatternIndex].bpm ?? 120.0
+        : 120.0;
+    
     _currentPatternIndex = _playheadArrangementSlot.clamp(
       0,
       song.patterns.length - 1,
     );
+    
+    final newBpm = song.patterns[_currentPatternIndex].bpm ?? 120.0;
+    
+    // If BPM changed between patterns during playback, re-apply stretch
+    // so all stretched samplers adapt to the new tempo.
+    if ((newBpm - oldBpm).abs() > 1.0) {
+      unawaited(_reapplyStretchForBpmChange());
+    }
+    
     _clampSelectionToPattern();
   }
 
