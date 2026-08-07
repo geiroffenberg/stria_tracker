@@ -4309,26 +4309,20 @@ class AppState extends ChangeNotifier {
         0,
         song.patterns.length - 1,
       );
+      _currentPatternIndex = _playheadArrangementSlot;
+
+      // Always re-bake stretch against the pattern we're about to play —
+      // _currentPatternIndex may already have been updated by a prior
+      // selectPattern()/selectSongPattern() call, so there's no reliable
+      // "old" BPM to diff against here.
+      await _reapplyStretchForBpmChange();
+
       _syncCurrentPatternToSongPlayhead();
       playheadRow = 0;
     }
     _resetInstrumentCarry();
     _captureStartStates();
     isPlaying = true;
-
-    // If starting playback from a different pattern/BPM than currently applied,
-    // re-apply stretch for all active samplers so they use the correct tempo.
-    if (_playbackFollowsSong && song.patterns.isNotEmpty) {
-      final pattern = song.patterns[_playheadArrangementSlot.clamp(
-        0,
-        song.patterns.length - 1,
-      )];
-      final playbackBpm = pattern.bpm ?? 120.0;
-      final currentBpm = bpm;
-      if ((playbackBpm - currentBpm).abs() > 1.0) {
-        unawaited(_reapplyStretchForBpmChange());
-      }
-    }
 
     if (_playbackFollowsSong) {
       await _loadNativeSongPlaybackQueue(
