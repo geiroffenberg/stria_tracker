@@ -3332,7 +3332,7 @@ oboe::DataCallbackResult AudioEngine::onAudioReady(
                 }
 
                 const float interpSample = hermite4(v.samplePos);
-                float dry = interpSample * v.level * v.instrumentVolume * v.sampleGain * envGain * treAmpMod;
+                float dry = interpSample * v.instrumentVolume * v.sampleGain * envGain * treAmpMod;
 
                 // Anti-click retrigger tail: blend in the fading remnant of
                 // whatever this voice was outputting right before it was
@@ -3414,6 +3414,8 @@ oboe::DataCallbackResult AudioEngine::onAudioReady(
                         dry = v.samplerLpLow;
                     }
                 }
+
+                dry *= v.level;
 
                 const float pan01 = std::clamp(v.pan, 0.0f, 1.0f);
                 const float angle = pan01 * 1.57079632679f;
@@ -3923,7 +3925,7 @@ oboe::DataCallbackResult AudioEngine::onAudioReady(
             const float oscMix = osc * v.osc1Gain
                 + (v.osc2On ? osc2Raw * v.osc2Gain : 0.0f)
                 + (v.osc3On ? osc3Raw * v.osc3Gain : 0.0f);
-            float dry = oscMix * v.gain * v.envLevel * v.level * v.instrumentVolume * 0.15f * lfoAmpMod;
+            float dry = oscMix * v.gain * v.envLevel * v.instrumentVolume * 0.15f * lfoAmpMod;
 
             // Drive: boost then soft-clip (Doidic formula: x/(1+|x|)).
             if (v.drive > 0.001f) {
@@ -3956,6 +3958,7 @@ oboe::DataCallbackResult AudioEngine::onAudioReady(
                 case 2:  sample = v.filterBand; break; // band-pass
                 default: sample = v.filterLow;  break; // low-pass
             }
+            sample *= v.level;
 
             // Equal-power panning for a mono voice into stereo output.
             const float pan01 = std::clamp(v.pan, 0.0f, 1.0f);

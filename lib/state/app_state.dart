@@ -4235,6 +4235,7 @@ class AppState extends ChangeNotifier {
     required int waveCmd,
     required int instrumentTypeCmd,
     required List<int> synthParams,
+    int volume = 255,
   }) {
     final rowData = List<int>.filled(_audioVoiceCount * _audioRowStride, 0);
     for (int track = 0; track < _audioVoiceCount; track++) {
@@ -4252,7 +4253,7 @@ class AppState extends ChangeNotifier {
     final targetBase =
         voiceIdx.clamp(0, _audioVoiceCount - 1) * _audioRowStride;
     rowData[targetBase] = note;
-    rowData[targetBase + 1] = 255;
+    rowData[targetBase + 1] = volume.clamp(0, 255);
     rowData[targetBase + 2] = 128;
     rowData[targetBase + 3] = waveCmd;
     rowData[targetBase + 4] = instrumentTypeCmd;
@@ -5461,6 +5462,11 @@ class AppState extends ChangeNotifier {
       int volCmd = (_trackCarry.length > t && _trackCarry[t].volFx != null)
           ? _trackCarry[t].volFx!
           : (track.mixerVolume.clamp(0.0, 1.0) * 255).round();
+      // Whether this row has a reason to overwrite v.level in the engine.
+      // Hold/empty rows must NOT touch v.level, or a mid-note VL=00 gets
+      // stomped by the mixer default on every subsequent hold row.
+      bool volExplicit =
+          _trackCarry.length > t && _trackCarry[t].volFx != null;
       int panCmd = (_trackCarry.length > t && _trackCarry[t].panFx != null)
           ? _trackCarry[t].panFx!
           : (((track.mixerPan.clamp(-1.0, 1.0) + 1.0) / 2.0) * 255).round();
@@ -5559,6 +5565,7 @@ class AppState extends ChangeNotifier {
         if (cell.volume != null) {
           volCmd = ui99ToAudio255(cell.volume!);
           _trackCarry[t].volume = volCmd;
+          volExplicit = true;
         }
 
         for (final fx in cell.fxSlots) {
@@ -5614,6 +5621,7 @@ class AppState extends ChangeNotifier {
           if (fx.command == kFxVOL && fx.value != null) {
             volCmd = ui99ToAudio255(fx.value!.clamp(0, 99));
             _trackCarry[t].volFx = volCmd;
+            volExplicit = true;
           }
           if (fx.command == kFxVIB && fx.value != null) {
             // XY: X = speed (tens digit, 0-9), Y = depth (ones digit, 0-9).
@@ -6036,13 +6044,19 @@ class AppState extends ChangeNotifier {
         finalVol = (volCmd * atten).round().clamp(0, 255);
       }
 
+      // Only overwrite the engine's v.level when this row actually intends to
+      // change it (note-on, explicit VL cell, or VOL FX). Hold/empty rows must
+      // send -1 so the note keeps its per-note volume until the next real event.
+      if (noteCmd >= 0) volExplicit = true;
+      final int emittedVol = volExplicit ? finalVol : -1;
+
       // Queue delayed note if applicable. C++ will convert delayPct to sample offset.
       if (delayPct > 0 && noteCmd >= 0 && !song.masterMute) {
         delayQueue.addAll([delayPct, t, noteCmd, finalVol]);
       }
 
       rowData.add(finalNote);
-      rowData.add(finalVol);
+      rowData.add(emittedVol);
       rowData.add(panCmd);
       rowData.add(waveCmd);
       rowData.add(instrumentTypeCmd);
@@ -6954,6 +6968,11 @@ class AppState extends ChangeNotifier {
       if (midi >= 12 && midi <= 20) midiToSend = 60;
     }
 
+    // Respect the cell's own VL value (matches the "80" implied default
+    // shown in cellDisplay for notes with no explicit volume set) instead
+    // of always previewing at full volume.
+    final previewVolume255 = _ui99ToAudio255(cell.volume ?? 80);
+
     final noteOff = _buildPreviewRowData(
       voiceIdx: previewVoice,
       note: -2,
@@ -6967,6 +6986,7 @@ class AppState extends ChangeNotifier {
       waveCmd: waveCmd,
       instrumentTypeCmd: instrumentTypeCmd,
       synthParams: synthParams,
+      volume: previewVolume255,
     );
 
     await _primeAudioForPreview();
