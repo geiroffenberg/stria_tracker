@@ -17,6 +17,7 @@ FX commands are entered in the FX column of a pattern cell. Each command takes a
 | `PAN` | 00–99 | Set stereo pan (00 = full left, 50 = centre, 99 = full right). Carries through hold rows. |
 | `RAN` | 01–99 | Random active slice — chance % to override the slice with a random one |
 | `RET` | XY | Retrigger. X = volume curve mode, Y = number of retrigs per line |
+| `RNI` | 01–99 | Random instrument. Randomizes the active instrument slot between current and the specified upper limit. Rerolls on note-on only; carries through hold rows. |
 | `REV` | — | Reverse — play sample/slice backwards |
 | `SLC` | XY | Slice player. X = play mode (0 = slice only, 1 = play through), Y = slice number (1–9) |
 | `SLD` | XY | Slide Down. X = lines to slide over (1–9), Y = semitones down (1–9). Works on hold rows. |
@@ -138,6 +139,34 @@ The Y digit controls **notes per line**:
 - `ARC 17` — Mode 1 (linear, 1 octave), 7 notes per line. Plays 3-note sequence 2+ times per line.
 - `ARC 45` — Mode 4 (bidirectional, 1 octave), 5 notes per line. Plays swell (up-down) 5 times per line.
 - `ARC 79` — Mode 7 (random, 1 octave), 9 notes per line. Random notes fill the line.
+
+### RNI — Random Instrument
+
+**RNI** randomizes the active instrument slot on each note-on, allowing you to cycle through a range of different instruments from a single pattern cell. This is useful for adding variation and organic unpredictability without duplicating rows.
+
+**How it works:**
+
+- Place `RNI XY` on a pattern cell (where XY is the **upper limit** of the instrument range, `01`–`99`)
+- On a note-on row, RNI picks a random instrument slot between the current instrument and the specified upper limit
+- The randomized instrument is used immediately for that note, including all its parameters (pitch, wave, synth parameters, etc.)
+- On **hold rows** (rows with `...`), the randomly-chosen instrument carries forward automatically — no re-roll happens
+- Only when a new note-on occurs does a new randomization happen
+
+**Example:**
+
+```
+Row 1:  C-4 kick (01)  | RNI 03
+Row 2:  ... hold...    |
+Row 3:  D-4 kick (01)  | RNI 03
+```
+
+On row 1, RNI randomly picks one of: instrument 01, 02, or 03. Let's say it picks 02. The note plays with instrument 02's full sound.
+
+On row 2 (hold row), the same instrument (02) continues automatically without re-rolling.
+
+On row 3 (new note-on), RNI re-rolls and might pick 01, 02, or 03 again — different from row 1.
+
+**Common use case:** Assign 3–4 variations of the same drum (e.g. 4 slightly-different kick samples on slots 01–04), place them on a single track with `RNI 04`, and let the pattern randomly cycle through them for natural swing and variation.
 
 ### SLU / SLD — Pitch Slide Detail
 
