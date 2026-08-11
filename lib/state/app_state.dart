@@ -5505,6 +5505,7 @@ class AppState extends ChangeNotifier {
       int arcOctaveLayers = 0;
       int arcNotesPerLine = 0;
       int? chancePct;
+      int? rniUpperLimit; // RNI: upper instrument limit for random selection
       // SLU/SLD: set when slide FX is found on a note row this tick.
       ({int endNote, int totalLines})? pendingSlide;
 
@@ -5614,6 +5615,11 @@ class AppState extends ChangeNotifier {
           }
           if (fx.command == kFxRAN && fx.value != null) {
             ranChancePct = fx.value!.clamp(0, 99);
+          }
+          if (fx.command == kFxRNI && fx.value != null) {
+            // fx.value is a 1-indexed instrument number (01-99); convert to
+            // 0-indexed slot to match currentSlot's indexing.
+            rniUpperLimit = (fx.value! - 1).clamp(0, 99);
           }
           if (fx.command == kFxREV) {
             samplerReverse = true;
@@ -5775,8 +5781,22 @@ class AppState extends ChangeNotifier {
           }
         }
 
+        // RNI: random instrument selection from current to specified upper limit.
+        // Applied before synth params fetch so the randomized instrument is used.
+        if (rniUpperLimit != null && noteCmd >= 0) {
+          final minSlot = math.min(currentSlot, rniUpperLimit).clamp(0, instruments.length - 1);
+          final maxSlot = math.max(currentSlot, rniUpperLimit).clamp(0, instruments.length - 1);
+          currentSlot = minSlot + rng.nextInt((maxSlot - minSlot + 1));
+          waveCmd = _waveCodeForInstrumentSlot(currentSlot);
+          instrumentTypeCmd = _instrumentTypeCodeForSlot(currentSlot);
+          synthParams = _synthParamsForInstrumentSlot(currentSlot);
+          // Carry the randomized slot forward so hold rows keep sending this
+          // instrument instead of reverting to the typed IN value.
+          _trackCarry[t].instrument = currentSlot;
+        }
+
         // RAN: probabilistic random active slice override (sampler only).
-        // Applied after SL so RAN can override an explicit slice selection.
+        // Applied after RNI and SL so RAN can override an explicit slice selection.
         if (ranChancePct != null && ranChancePct > 0 && noteCmd >= 0) {
           final instr = instruments[currentSlot];
           if (instr.type == InstrumentType.sampler) {

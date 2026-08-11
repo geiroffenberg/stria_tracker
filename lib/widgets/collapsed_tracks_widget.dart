@@ -593,6 +593,11 @@ class _MiniCellState extends State<_MiniCell> {
       // Empty or normal cell: just select
       _select(state);
     }
+    // Preview note on tap — for note cells and drum pills (drum note is implicit).
+    // previewCellNoteOneShot reads the live cell, so it no-ops if there's no note yet.
+    if (widget.column == CellColumn.note || widget.drumPill) {
+      state.previewCellNoteOneShot(widget.row);
+    }
   }
 
   void _onDragStart(AppState state) {

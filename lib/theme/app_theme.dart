@@ -492,6 +492,35 @@ const TrackerPalette kPaletteLight = TrackerPalette(
   colComplement: Color(0xFFAA3300),
 );
 
+const TrackerPalette kPaletteLight2 = TrackerPalette(
+  name: 'Paper 2',
+  previewColor: Color.fromARGB(255, 255, 249, 215),
+  brightness: Brightness.light,
+  bgColor: Color.fromARGB(255, 255, 249, 215),
+  bgBeat: Color.fromARGB(255, 255, 249, 215),
+  bgBar: Color.fromARGB(255, 255, 249, 215),
+  bgSelected: Color.fromARGB(255, 255, 249, 215),
+  bgPlayhead: Color(0xFFB4CFF0),
+  bgHeader: Color.fromARGB(255, 255, 249, 215),
+  bgTrackHeader: Color.fromARGB(255, 255, 249, 215),
+  bgTopNav: Color.fromARGB(255, 255, 249, 215),
+  colNote: Color(0xFF0A0A0A),
+  colInst: Color(0xFF1A3A7A),
+  colVol: Color(0xFF1A5A1A),
+  colPan: Color(0xFF1A5A1A),
+  colFxCmd: Color(0xFF7A1A1A),
+  colFxVal: Color(0xFF9A3030),
+  colEmpty: Color(0xFFBBBBBB),
+  colRowNum: Color(0xFF888888),
+  colHeader: Color(0xFF222222),
+  colAccent: Color(0xFF0A0A0A),
+  colActive: Color(0xFF1A4488),
+  colInactive: Color(0xFFAAAAAA),
+  colSelection: Color(0xFF1A6AFF),
+  colPlayBtn: Color(0xFF1A4488),
+  colComplement: Color(0xFFAA3300),
+);
+
 /// All available palettes in display order.
 const List<TrackerPalette> kAllPalettes = [
   kPaletteBlue,
@@ -509,6 +538,7 @@ const List<TrackerPalette> kAllPalettes = [
   kPaletteBaby,
   kPaletteMono,
   kPaletteLight,
+  kPaletteLight2,
 ];
 
 // ── Active palette — set once at startup, updated by palette picker ───────────

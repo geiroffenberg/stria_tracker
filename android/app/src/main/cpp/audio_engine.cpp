@@ -1243,6 +1243,7 @@ void AudioEngine::triggerRowLocked(const std::vector<int>& rowData) {
             v.karplusBuf.clear();
             v.karplusBodyState = 0.0f;
             v.karplusBodyState2 = 0.0f;
+            const int prevSampleSlot = v.sampleSlot;
             v.sampleSlot = std::clamp(wave, 0, static_cast<int>(mSamplerSlots.size()) - 1);
             v.loopMode   = std::clamp(drive, 0, 2);
             v.sampleReverse = (reverse != 0);
@@ -1293,11 +1294,16 @@ void AudioEngine::triggerRowLocked(const std::vector<int>& rowData) {
                 }
                 const auto& s = mSamplerSlots[v.sampleSlot];
                 if (!s.mono.empty()) {
-                    // Anti-click: if this voice is already sounding, capture
-                    // its last output as a short fading tail instead of
-                    // letting the jump to the new note's silent attack start
-                    // produce an instantaneous (clicking) discontinuity.
-                    if (v.sampleActive) {
+                    // Anti-click: if this voice is already sounding *the same
+                    // sample slot*, capture its last output as a short fading
+                    // tail instead of letting the jump to the new note's silent
+                    // attack start produce an instantaneous (clicking)
+                    // discontinuity. Skipped when switching to a different
+                    // instrument/slot (e.g. RNI) — blending in a different
+                    // sample's decaying tail is audible as a foreign-sample
+                    // artifact rather than a click, so we rely on the normal
+                    // attack envelope instead.
+                    if (v.sampleActive && v.sampleSlot == prevSampleSlot) {
                         constexpr float kDeclickTailMs = 3.0f;
                         v.declickTailGain0 = v.sampleLastOutput;
                         v.declickTailFramesTotal = std::max(

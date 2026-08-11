@@ -628,6 +628,7 @@ class _NumericActions extends StatelessWidget {
         kFxBPM =>
           '00=reset to pattern BPM, 01-50=+1..+50, 51-99=-49..-1 (stacks)',
         kFxSWN => '00-99: overrides pattern swing (resets at start/loop)',
+        kFxRNI => 'Y=upper limit (pick random instrument from current to Y)',
         _ => null,
       };
     }
@@ -745,6 +746,7 @@ class _FxCmdActions extends StatelessWidget {
     kFxSN1,
     kFxSN2,
     kFxSN3,
+    kFxRNI,
   ];
 
   final AppState state;
