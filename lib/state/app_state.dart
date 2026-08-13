@@ -5347,6 +5347,21 @@ class AppState extends ChangeNotifier {
     }
   }
 
+  /// Finds the instrument slot (0-based) that would be carrying into row 0
+  /// of [pattern] for track [t] — i.e. the last explicit instrument command
+  /// found scanning backward from the last row. Falls back to 0 if the
+  /// track never sets an instrument anywhere in the pattern.
+  int _lastInstrumentSlotForTrack(PatternModel pattern, int t) {
+    final cells = pattern.tracks[t].cells;
+    for (int row = cells.length - 1; row >= 0; row--) {
+      final instrument = cells[row].instrument;
+      if (instrument != null && instrument > 0) {
+        return (instrument - 1).clamp(0, instruments.length - 1);
+      }
+    }
+    return 0;
+  }
+
   /// Reads the current row from all tracks in the playing pattern and builds
   /// the packed note/volume/pan/wave + synth params for the audio engine.
   _ScheduledPlaybackRow _triggerCurrentRow() {
@@ -5380,9 +5395,14 @@ class AppState extends ChangeNotifier {
         _trackCarry.length != pattern.tracks.length ||
         (playheadRow == 0 && !_suppressCarryResetAtRowZero)) {
       _carryPatternIndex = patternIdx;
+      // Seed with the last instrument each track actually used (wrapping
+      // from the end of the pattern) instead of always defaulting to slot 0 —
+      // otherwise a fresh loop pass on a track with no instrument cell on
+      // row 0 would resend instrument 01's params to a still-sustaining
+      // voice from a different instrument, falsely retriggering it.
       _trackCarry = List<_TrackCarry>.generate(
         pattern.tracks.length,
-        (_) => _TrackCarry(),
+        (t) => _TrackCarry()..instrument = _lastInstrumentSlotForTrack(pattern, t),
       );
       _sendRoutingCarryWasReset = true;
     }
