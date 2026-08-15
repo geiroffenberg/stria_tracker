@@ -4732,6 +4732,42 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Copy the current pattern's beats to all EMPTY patterns only.
+  /// Returns the number of patterns affected (the current pattern is skipped).
+  int copyCurrentBeatsToAllEmptyPatterns() {
+    final beatsToCopy = currentPattern.beatCount;
+    int affected = 0;
+    for (final pattern in song.patterns) {
+      if (identical(pattern, currentPattern) || !pattern.isEmpty) continue;
+      pattern.beats = beatsToCopy;
+      pattern.syncTrackLengths();
+      affected++;
+    }
+    if (affected > 0) {
+      _restartPlayheadTimerIfNeeded();
+      notifyListeners();
+    }
+    return affected;
+  }
+
+  /// Copy the current pattern's lines-per-beat to all EMPTY patterns only.
+  /// Returns the number of patterns affected (the current pattern is skipped).
+  int copyCurrentLpbToAllEmptyPatterns() {
+    final lpbToCopy = currentPattern.lpb;
+    int affected = 0;
+    for (final pattern in song.patterns) {
+      if (identical(pattern, currentPattern) || !pattern.isEmpty) continue;
+      pattern.linesPerBeat = lpbToCopy;
+      pattern.syncTrackLengths();
+      affected++;
+    }
+    if (affected > 0) {
+      _restartPlayheadTimerIfNeeded();
+      notifyListeners();
+    }
+    return affected;
+  }
+
   // ── Pattern undo / redo / clear / reset ───────────────────────────────────
 
   /// True when the current pattern has at least one undoable edit on its stack.

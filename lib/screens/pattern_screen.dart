@@ -386,6 +386,32 @@ class _PatternMenuButton extends StatelessWidget {
           ),
         ),
         PopupMenuItem<String>(
+          value: 'copyBeatsAll',
+          child: Row(
+            children: [
+              Icon(Icons.view_module, size: 18, color: kColHeader),
+              const SizedBox(width: 10),
+              Text(
+                'Copy BEATS to all patterns',
+                style: kStyleBase.copyWith(fontSize: 14, color: kColHeader),
+              ),
+            ],
+          ),
+        ),
+        PopupMenuItem<String>(
+          value: 'copyLpbAll',
+          child: Row(
+            children: [
+              Icon(Icons.view_stream, size: 18, color: kColHeader),
+              const SizedBox(width: 10),
+              Text(
+                'Copy LPB to all empty patterns',
+                style: kStyleBase.copyWith(fontSize: 14, color: kColHeader),
+              ),
+            ],
+          ),
+        ),
+        PopupMenuItem<String>(
           value: 'copySwingAll',
           child: Row(
             children: [
@@ -476,6 +502,38 @@ class _PatternMenuButton extends StatelessWidget {
       case 'copyBpmAll':
         state.copyCurrentBpmToAllPatterns();
         break;
+      case 'copyBeatsAll': {
+        final affected = state.copyCurrentBeatsToAllEmptyPatterns();
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                affected == 0
+                    ? 'No empty patterns to update'
+                    : 'Updated $affected empty pattern${affected == 1 ? '' : 's'}',
+              ),
+              duration: const Duration(seconds: 3),
+            ),
+          );
+        }
+        break;
+      }
+      case 'copyLpbAll': {
+        final affected = state.copyCurrentLpbToAllEmptyPatterns();
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                affected == 0
+                    ? 'No empty patterns to update'
+                    : 'Updated $affected empty pattern${affected == 1 ? '' : 's'}',
+              ),
+              duration: const Duration(seconds: 3),
+            ),
+          );
+        }
+        break;
+      }
       case 'copySwingAll':
         state.copyCurrentSwingToAllPatterns();
         break;

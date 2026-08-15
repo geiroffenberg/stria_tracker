@@ -463,6 +463,93 @@ const TrackerPalette kPaletteMono = TrackerPalette(
   colComplement: Color(0xFFAAAAAA),
 );
 
+const TrackerPalette kPaletteMono2 = TrackerPalette(
+  name: 'Mono 2',
+  previewColor: Color(0xFF1FCFFF),
+  bgColor: Color(0xFF010101),
+  bgBeat: Color(0xFF141414),
+  bgBar: Color(0xFF222222),
+  bgSelected: Color(0xFF252525),
+  bgPlayhead: Color(0xFF383838),
+  bgHeader: Color(0xFF0A0A0A),
+  bgTrackHeader: Color(0xFF0D0D0D),
+  bgTopNav: Color(0xFF0C0C0C),
+  // Neon blue ramp
+  colNote: Color(0xFF1FCFFF),
+  colInst: Color(0xFF19A8DC),
+  colVol: Color(0xFF1786B8),
+  colPan: Color(0xFF1786B8),
+  colFxCmd: Color(0xFF5FDDFF),
+  colFxVal: Color(0xFFACEBFF),
+  colEmpty: Color(0xFF1C4A5E),
+  colRowNum: Color(0xFF3A6A88),
+  colHeader: Color(0xFF7CD8FF),
+  colAccent: Color(0xFF1FCFFF),
+  colActive: Color(0xFF19A8DC),
+  colInactive: Color(0xFF2E5B70),
+  colSelection: Color(0xFFFFFFFF),
+  colPlayBtn: Color(0xFF1FCFFF),
+  colComplement: Color(0xFF1C7090),
+);
+
+const TrackerPalette kPaletteMono3 = TrackerPalette(
+  name: 'Mono 3',
+  previewColor: Color(0xFF39FF14),
+  bgColor: Color(0xFF010101),
+  bgBeat: Color(0xFF141414),
+  bgBar: Color(0xFF222222),
+  bgSelected: Color(0xFF252525),
+  bgPlayhead: Color(0xFF383838),
+  bgHeader: Color(0xFF0A0A0A),
+  bgTrackHeader: Color(0xFF0D0D0D),
+  bgTopNav: Color(0xFF0C0C0C),
+  // Neon green ramp
+  colNote: Color(0xFF39FF14),
+  colInst: Color(0xFF2DCE12),
+  colVol: Color(0xFF26A80E),
+  colPan: Color(0xFF26A80E),
+  colFxCmd: Color(0xFF7DFF5E),
+  colFxVal: Color(0xFFC4FFB3),
+  colEmpty: Color(0xFF2A5020),
+  colRowNum: Color(0xFF537F3E),
+  colHeader: Color(0xFFA8FF8A),
+  colAccent: Color(0xFF39FF14),
+  colActive: Color(0xFF2DCE12),
+  colInactive: Color(0xFF3A652E),
+  colSelection: Color(0xFFFFFFFF),
+  colPlayBtn: Color(0xFF39FF14),
+  colComplement: Color(0xFF3E9129),
+);
+
+const TrackerPalette kPaletteMono4 = TrackerPalette(
+  name: 'Mono 4',
+  previewColor: Color(0xFFFFEE00),
+  bgColor: Color(0xFF010101),
+  bgBeat: Color(0xFF141414),
+  bgBar: Color(0xFF222222),
+  bgSelected: Color(0xFF252525),
+  bgPlayhead: Color(0xFF383838),
+  bgHeader: Color(0xFF0A0A0A),
+  bgTrackHeader: Color(0xFF0D0D0D),
+  bgTopNav: Color(0xFF0C0C0C),
+  // Neon yellow ramp
+  colNote: Color(0xFFFFEE00),
+  colInst: Color(0xFFD8C900),
+  colVol: Color(0xFFB7AB00),
+  colPan: Color(0xFFB7AB00),
+  colFxCmd: Color(0xFFFFF066),
+  colFxVal: Color(0xFFFFF8B3),
+  colEmpty: Color(0xFF665E2A),
+  colRowNum: Color(0xFFA39A3D),
+  colHeader: Color(0xFFFFEB80),
+  colAccent: Color(0xFFFFEE00),
+  colActive: Color(0xFFD8C900),
+  colInactive: Color(0xFF6E6635),
+  colSelection: Color(0xFFFFFFFF),
+  colPlayBtn: Color(0xFFFFEE00),
+  colComplement: Color(0xFF9A8F43),
+);
+
 const TrackerPalette kPaletteLight = TrackerPalette(
   name: 'Paper',
   previewColor: Color.fromARGB(255, 252, 251, 251),
@@ -521,6 +608,37 @@ const TrackerPalette kPaletteLight2 = TrackerPalette(
   colComplement: Color(0xFFAA3300),
 );
 
+const TrackerPalette kPalettePaper3 = TrackerPalette(
+  name: 'Paper 3',
+  previewColor: Color(0xFFEBDCB4),
+  brightness: Brightness.light,
+  // Aged yellow paper backgrounds, muted rather than saturated
+  bgColor: Color(0xFFF3E8CB),
+  bgBeat: Color(0xFFEBDDBC),
+  bgBar: Color(0xFFE0CFA8),
+  bgSelected: Color(0xFFC6D3E8),
+  bgPlayhead: Color(0xFFAFCBEE),
+  bgHeader: Color(0xFFF1E5C4),
+  bgTrackHeader: Color(0xFFEBDDBC),
+  bgTopNav: Color(0xFFE5D5B4),
+  // Blue ink-pen text and editing colours
+  colNote: Color(0xFF1A3C8C),
+  colInst: Color(0xFF335AB8),
+  colVol: Color(0xFF1E5C8A),
+  colPan: Color(0xFF1E5C8A),
+  colFxCmd: Color(0xFF205073),
+  colFxVal: Color(0xFF3C78B2),
+  colEmpty: Color(0xFF91A1B8),
+  colRowNum: Color(0xFF7C8EAA),
+  colHeader: Color(0xFF26365C),
+  colAccent: Color(0xFF1A3C8C),
+  colActive: Color(0xFF2454B8),
+  colInactive: Color(0xFF7C8EAA),
+  colSelection: Color(0xFF2454E8),
+  colPlayBtn: Color(0xFF1E4A90),
+  colComplement: Color(0xFFA54B2A),
+);
+
 /// All available palettes in display order.
 const List<TrackerPalette> kAllPalettes = [
   kPaletteBlue,
@@ -537,8 +655,12 @@ const List<TrackerPalette> kAllPalettes = [
   kPaletteAutumn,
   kPaletteBaby,
   kPaletteMono,
+  kPaletteMono2,
+  kPaletteMono3,
+  kPaletteMono4,
   kPaletteLight,
   kPaletteLight2,
+  kPalettePaper3,
 ];
 
 // ── Active palette — set once at startup, updated by palette picker ───────────
