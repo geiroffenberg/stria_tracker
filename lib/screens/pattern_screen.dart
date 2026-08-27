@@ -499,9 +499,22 @@ class _PatternMenuButton extends StatelessWidget {
       case 'swing':
         if (context.mounted) await _showSwingDialog(context);
         break;
-      case 'copyBpmAll':
-        state.copyCurrentBpmToAllPatterns();
+      case 'copyBpmAll': {
+        final affected = state.copyCurrentBpmToAllPatterns();
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                affected == 0
+                    ? 'Current pattern is the only one'
+                    : 'Updated $affected pattern${affected == 1 ? '' : 's'} with BPM ${state.bpm.round()}',
+              ),
+              duration: const Duration(seconds: 3),
+            ),
+          );
+        }
         break;
+      }
       case 'copyBeatsAll': {
         final affected = state.copyCurrentBeatsToAllEmptyPatterns();
         if (context.mounted) {
@@ -534,9 +547,22 @@ class _PatternMenuButton extends StatelessWidget {
         }
         break;
       }
-      case 'copySwingAll':
-        state.copyCurrentSwingToAllPatterns();
+      case 'copySwingAll': {
+        final affected = state.copyCurrentSwingToAllPatterns();
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                affected == 0
+                    ? 'Current pattern is the only one'
+                    : 'Updated $affected pattern${affected == 1 ? '' : 's'} with Swing ${state.currentPatternSwing.round()}%',
+              ),
+              duration: const Duration(seconds: 3),
+            ),
+          );
+        }
         break;
+      }
       case 'follow':
         state.toggleFollowPlayhead();
         break;

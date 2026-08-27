@@ -4727,28 +4727,49 @@ class AppState extends ChangeNotifier {
   }
 
   /// Copy the current pattern's BPM to all other patterns.
-  void copyCurrentBpmToAllPatterns() {
+  /// Returns the number of patterns affected (the current pattern is skipped).
+  int copyCurrentBpmToAllPatterns() {
+    // Ensure all 99 pattern slots exist (patterns are lazily created).
+    _ensurePatternSlot(kMaxSongPatterns - 1);
+    
     final bpmToCopy = currentPattern.bpm ?? 120.0;
+    int affected = 0;
     for (final pattern in song.patterns) {
+      if (identical(pattern, currentPattern)) continue;
       pattern.bpm = bpmToCopy;
+      affected++;
     }
-    _restartPlayheadTimerIfNeeded();
-    notifyListeners();
+    if (affected > 0) {
+      notifyListeners();
+    }
+    return affected;
   }
 
   /// Copy the current pattern's Swing to all other patterns.
-  void copyCurrentSwingToAllPatterns() {
+  /// Returns the number of patterns affected (the current pattern is skipped).
+  int copyCurrentSwingToAllPatterns() {
+    // Ensure all 99 pattern slots exist (patterns are lazily created).
+    _ensurePatternSlot(kMaxSongPatterns - 1);
+    
     final swingToCopy = currentPattern.swing;
+    int affected = 0;
     for (final pattern in song.patterns) {
+      if (identical(pattern, currentPattern)) continue;
       pattern.swing = swingToCopy;
+      affected++;
     }
-    _restartPlayheadTimerIfNeeded();
-    notifyListeners();
+    if (affected > 0) {
+      notifyListeners();
+    }
+    return affected;
   }
 
   /// Copy the current pattern's beats to all EMPTY patterns only.
   /// Returns the number of patterns affected (the current pattern is skipped).
   int copyCurrentBeatsToAllEmptyPatterns() {
+    // Ensure all 99 pattern slots exist (patterns are lazily created).
+    _ensurePatternSlot(kMaxSongPatterns - 1);
+    
     final beatsToCopy = currentPattern.beatCount;
     int affected = 0;
     for (final pattern in song.patterns) {
@@ -4767,6 +4788,9 @@ class AppState extends ChangeNotifier {
   /// Copy the current pattern's lines-per-beat to all EMPTY patterns only.
   /// Returns the number of patterns affected (the current pattern is skipped).
   int copyCurrentLpbToAllEmptyPatterns() {
+    // Ensure all 99 pattern slots exist (patterns are lazily created).
+    _ensurePatternSlot(kMaxSongPatterns - 1);
+    
     final lpbToCopy = currentPattern.lpb;
     int affected = 0;
     for (final pattern in song.patterns) {
