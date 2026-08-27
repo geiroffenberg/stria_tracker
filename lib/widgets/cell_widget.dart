@@ -25,15 +25,24 @@ String cellDisplay(CellColumn column, TrackerCell cell) {
     case CellColumn.fx0cmd:
       return fxCommandName(cell.fxSlots[0].command);
     case CellColumn.fx0val:
-      return FxSlot.fxValueDisplay(cell.fxSlots[0].value, command: cell.fxSlots[0].command);
+      return FxSlot.fxValueDisplay(
+        cell.fxSlots[0].value,
+        command: cell.fxSlots[0].command,
+      );
     case CellColumn.fx1cmd:
       return fxCommandName(cell.fxSlots[1].command);
     case CellColumn.fx1val:
-      return FxSlot.fxValueDisplay(cell.fxSlots[1].value, command: cell.fxSlots[1].command);
+      return FxSlot.fxValueDisplay(
+        cell.fxSlots[1].value,
+        command: cell.fxSlots[1].command,
+      );
     case CellColumn.fx2cmd:
       return fxCommandName(cell.fxSlots[2].command);
     case CellColumn.fx2val:
-      return FxSlot.fxValueDisplay(cell.fxSlots[2].value, command: cell.fxSlots[2].command);
+      return FxSlot.fxValueDisplay(
+        cell.fxSlots[2].value,
+        command: cell.fxSlots[2].command,
+      );
   }
 }
 
@@ -60,7 +69,38 @@ bool cellIsEmpty(CellColumn column, TrackerCell cell) {
   }
 }
 
-/// One interactive cell widget — tap to select, vertical drag to change value.
+/// True when [cell]'s [column] holds a value the user can edit from the
+/// action bar (i.e. the slider / ± controls should be enabled).
+///
+/// Differs from [cellIsEmpty] only for the volume column: a row with a real
+/// note has an implied (audible) volume of 80 even when no value was set
+/// explicitly (see [cellDisplay]), so it is treated as editable too. This
+/// lets a single tap on such a "shows 80" cell open the action bar and
+/// change its volume directly, instead of it being read as empty.
+bool cellIsEditable(CellColumn column, TrackerCell cell) {
+  switch (column) {
+    case CellColumn.note:
+      return !cell.note.isEmpty;
+    case CellColumn.instrument:
+      return cell.instrument != null;
+    case CellColumn.volume:
+      return cell.volume != null || cell.note.isNote;
+    case CellColumn.fx0cmd:
+      return cell.fxSlots[0].command != null;
+    case CellColumn.fx0val:
+      return cell.fxSlots[0].value != null;
+    case CellColumn.fx1cmd:
+      return cell.fxSlots[1].command != null;
+    case CellColumn.fx1val:
+      return cell.fxSlots[1].value != null;
+    case CellColumn.fx2cmd:
+      return cell.fxSlots[2].command != null;
+    case CellColumn.fx2val:
+      return cell.fxSlots[2].value != null;
+  }
+}
+
+/// One interactive cell widget — tap to select, double-tap to enter data.
 class CellWidget extends StatefulWidget {
   final int trackIndex;
   final int row;
@@ -82,9 +122,6 @@ class CellWidget extends StatefulWidget {
 }
 
 class _CellWidgetState extends State<CellWidget> {
-  double _dragAccum = 0.0;
-  static const double _pixelsPerStep = 11.0;
-
   // Manual double-tap detection (avoids GestureDetector's 300ms onTap delay).
   DateTime? _lastTapTime;
   static const Duration _doubleTapWindow = Duration(milliseconds: 300);
@@ -95,21 +132,34 @@ class _CellWidgetState extends State<CellWidget> {
     _lastTapTime = now;
 
     if (last != null && now.difference(last) < _doubleTapWindow) {
-      // Double-tap: reset to default.
+      // Double-tap: enter the column's default value (recalls the last
+      // note / instrument / fx, etc). Only writes into an empty cell so a
+      // double-tap never clobbers existing data. The selection/action bar
+      // opens right here so the double-tap's two taps both land on the cell
+      // itself (a single-tap menu opening would swallow the second tap).
       _lastTapTime = null;
-      state.resetColumnToDefault(widget.row, widget.column);
-      state.selectCell(widget.row, widget.column);
+      if (cellIsEmpty(widget.column, widget.cell)) {
+        state.insertDefaultValue(widget.row, widget.column);
+      }
+      // selectCellKeep, not selectCell: the first tap of this double-tap may
+      // have already selected the cell, so a toggling call here would
+      // immediately deselect it again.
+      state.selectCellKeep(widget.row, widget.column);
+      if (widget.column == CellColumn.note) {
+        state.previewCellNoteOneShot(widget.row);
+      }
       return;
     }
 
-    // Single tap: immediate response.
-    final empty = cellIsEmpty(widget.column, widget.cell);
-    if (empty) {
-      state.insertDefaultValue(widget.row, widget.column);
-    }
-    state.selectCell(widget.row, widget.column);
-    if (widget.column == CellColumn.note) {
-      state.previewCellNoteOneShot(widget.row);
+    // Single tap: selecting a cell is only meaningful if it can be acted on,
+    // so a cell that already holds data opens its context/action bar right
+    // away (stable — re-tapping it keeps the menu open). An empty cell is
+    // selected passively: no menu and no data written, which keeps stray
+    // scroll taps safe and leaves the double-tap free to enter data.
+    if (cellIsEditable(widget.column, widget.cell)) {
+      state.selectCellKeep(widget.row, widget.column);
+    } else {
+      state.selectCell(widget.row, widget.column);
     }
   }
 
@@ -139,29 +189,13 @@ class _CellWidgetState extends State<CellWidget> {
         state.selectedColumn == widget.column;
     final interactionsEnabled = !state.isBoxSelecting;
 
+    // No vertical-drag handling here: a cell must never claim the vertical
+    // axis, or it blocks the pattern grid's vertical scroll (the same way
+    // horizontal scroll is never blocked). Value nudging happens via the
+    // action bar's slider/+- controls after selecting the cell instead.
     final cell = GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: interactionsEnabled ? () => _handleTap(state) : null,
-      onVerticalDragStart: interactionsEnabled ? (_) {
-        if (cellIsEmpty(widget.column, widget.cell)) {
-          state.insertDefaultValue(widget.row, widget.column);
-        }
-        if (cellIsEmpty(widget.column, widget.cell)) return;
-        _dragAccum = 0.0;
-        state.selectCell(widget.row, widget.column);
-      } : null,
-      onVerticalDragUpdate: interactionsEnabled ? (d) {
-        if (cellIsEmpty(widget.column, widget.cell)) return;
-        _dragAccum -= d.delta.dy;
-        final steps = (_dragAccum / _pixelsPerStep).truncate();
-        if (steps != 0) {
-          _dragAccum -= steps * _pixelsPerStep;
-          state.nudgeCell(widget.row, widget.column, steps);
-          if (widget.column == CellColumn.note) {
-            state.previewCellNoteOneShot(widget.row);
-          }
-        }
-      } : null,
       child: Container(
         decoration: (widget.isSelected || isBoxSelected)
             ? BoxDecoration(

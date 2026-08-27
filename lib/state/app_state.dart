@@ -1932,6 +1932,20 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Selects [column]'s cell at [row] without toggling it off — used when
+  /// opening the action bar for a cell that already holds data. Tapping an
+  /// already-selected cell should keep it selected (and the menu open)
+  /// rather than dismissing it.
+  void selectCellKeep(int row, CellColumn column) {
+    selectedCell = CellPosition(row, column);
+    _selectedRowStart = null;
+    _selectedRowEnd = null;
+    _boxSelection = null;
+    _isBoxSelecting = false;
+    _selectedColumn = null;
+    notifyListeners();
+  }
+
   void clearSelection() {
     selectedCell = null;
     _selectedRowStart = null;

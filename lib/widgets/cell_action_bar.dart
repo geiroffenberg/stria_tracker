@@ -5,7 +5,7 @@ import '../models/instrument_model.dart';
 import '../models/note_value.dart';
 import '../state/app_state.dart';
 import '../theme/app_theme.dart';
-import 'cell_widget.dart' show cellDisplay, cellIsEmpty;
+import 'cell_widget.dart' show cellDisplay, cellIsEditable;
 
 /// Context-sensitive action bar shown at the bottom of the pattern editor.
 ///
@@ -205,10 +205,7 @@ class _ColumnActions extends StatelessWidget {
           ]
         : [
             _ActionBtn(label: '+1', onTap: () => state.nudgeColumn(column, 1)),
-            _ActionBtn(
-              label: '-1',
-              onTap: () => state.nudgeColumn(column, -1),
-            ),
+            _ActionBtn(label: '-1', onTap: () => state.nudgeColumn(column, -1)),
             _ActionBtn(
               label: '+10',
               onTap: () => state.nudgeColumn(column, 10),
@@ -429,7 +426,10 @@ class _NumericActions extends StatelessWidget {
       case CellColumn.instrument:
         return cell.instrument ?? 0;
       case CellColumn.volume:
-        return cell.volume ?? 0;
+        // A row with a real note but no explicit volume plays at the implied
+        // default (80) — surface that so the slider isn't sitting at 0 for a
+        // value the cell visibly shows as "80".
+        return cell.volume ?? (cell.note.isNote ? 80 : 0);
       case CellColumn.fx0val:
         return cell.fxSlots[0].value ?? 0;
       case CellColumn.fx1val:
@@ -498,7 +498,7 @@ class _NumericActions extends StatelessWidget {
     // Determine if this is a hex input (only ARP uses hex format)
     final fxCmd = _fxCommandForCell(state.currentTrack.cells[row]);
     final isHex = _isFxValColumn && fxCmd == 0; // kFxARP = 0
-    
+
     final String initText = isHex
         ? current.toRadixString(16).toUpperCase().padLeft(2, '0')
         : current.toString().padLeft(2, '0');
@@ -594,7 +594,10 @@ class _NumericActions extends StatelessWidget {
   Widget build(BuildContext context) {
     final track = state.currentTrack;
     final cell = track.cells[row];
-    final empty = cellIsEmpty(column, cell);
+    // A volume cell on a row with a note has an implied value (see
+    // cellIsEditable) so it is editable straight away; a truly empty cell is
+    // read-only and instead offers a "SET" button.
+    final empty = !cellIsEditable(column, cell);
     final display = cellDisplay(column, cell);
     final color = columnColor(column);
     final value = _readValue(cell);

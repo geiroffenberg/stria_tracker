@@ -525,48 +525,51 @@ class _MiniCell extends StatefulWidget {
 }
 
 class _MiniCellState extends State<_MiniCell> {
-  double _dragAccum = 0.0;
-  static const double _pixelsPerStep = 11.0;
   static const int _defaultNoteScrollIndex = 49; // C-4
 
   DateTime? _lastTapTime;
   static const Duration _doubleTapWindow = Duration(milliseconds: 300);
 
-  void _select(AppState state) {
+  /// Selects the tile's track as current and selects the cell. When
+  /// [openMenu] is true (cell already holds data) it uses a non-toggling
+  /// selection so re-tapping keeps the action bar open.
+  void _selectOnly(AppState state, {bool openMenu = false}) {
     if (state.currentTrackIndex != widget.trackIndex) {
       state.selectTrack(widget.trackIndex);
     }
-    if (widget.column == CellColumn.note && widget.cell.note.isEmpty) {
-      state.setNote(
+    if (openMenu) {
+      state.selectCellKeep(widget.row, widget.column);
+    } else {
+      state.selectCell(widget.row, widget.column);
+    }
+  }
+
+  /// Selects the tile AND writes the column's default value into an empty
+  /// cell. Used by double-tap to actually enter data; never clobbers an
+  /// already-filled cell.
+  void _enterDefault(AppState state) {
+    // openMenu: true — the first tap of this double-tap may have already
+    // selected the cell, so a toggling select here would deselect it again.
+    _selectOnly(state, openMenu: true);
+    if (!cellIsEmpty(widget.column, widget.cell)) return; // never overwrite
+    if (widget.drumPill && widget.column == CellColumn.instrument) {
+      // Drum mode: seed with this track's own instrument number + C-4 note.
+      final trackInstrument = widget.trackIndex + 1;
+      state.currentTrack.writeColumnValue(
         widget.row,
-        NoteValue.fromScrollIndex(_defaultNoteScrollIndex),
+        widget.column,
+        trackInstrument,
       );
-    }
-    if (widget.column == CellColumn.instrument &&
-        cellIsEmpty(widget.column, widget.cell)) {
-      // Drum mode: auto-fill with the track number (1-based)
-      if (widget.drumPill) {
-        final trackInstrument =
-            widget.trackIndex + 1; // 1-based track = 1-based instrument
-        state.currentTrack.writeColumnValue(
+      state.updateLastInstrument(trackInstrument);
+      if (widget.cell.note.isEmpty) {
+        state.setNote(
           widget.row,
-          widget.column,
-          trackInstrument,
+          NoteValue.fromScrollIndex(_defaultNoteScrollIndex),
         );
-        state.updateLastInstrument(trackInstrument);
-        // Also auto-fill the note with C-4 if empty
-        if (widget.cell.note.isEmpty) {
-          state.setNote(
-            widget.row,
-            NoteValue.fromScrollIndex(_defaultNoteScrollIndex),
-          );
-        }
-      } else {
-        // Normal mode: use last instrument value
-        state.insertDefaultValue(widget.row, widget.column);
       }
+    } else {
+      state.insertDefaultValue(widget.row, widget.column);
     }
-    state.selectCell(widget.row, widget.column);
   }
 
   void _handleTap(AppState state) {
@@ -575,51 +578,28 @@ class _MiniCellState extends State<_MiniCell> {
     _lastTapTime = now;
 
     if (last != null && now.difference(last) < _doubleTapWindow) {
+      // Double-tap: enter the default value. Selection/action bar opens here
+      // so the second tap isn't swallowed by a first-tap menu popup.
       _lastTapTime = null;
-      // Double-tap: always clear the cell
-      state.clearCellInTrack(widget.row, widget.trackIndex);
+      _enterDefault(state);
+      if (widget.column == CellColumn.note || widget.drumPill) {
+        state.previewCellNoteOneShot(widget.row);
+      }
       return;
     }
 
-    // Single tap:
-    // Drum mode on non-empty cell: cycle velocity
-    // Otherwise: just select
+    // Single tap: selecting a cell is only meaningful for acting on it, so a
+    // cell that already holds data opens its action bar right away (stable —
+    // re-tapping keeps it open). Drum mode on a non-empty pill also cycles
+    // velocity. An empty cell is selected passively: no menu, no data write,
+    // keeping stray scroll taps safe and leaving the double-tap to enter data.
+    final hasData = cellIsEditable(widget.column, widget.cell);
     if (widget.drumPill &&
         widget.cell.instrument != null &&
         !widget.cell.note.isOff) {
-      // Non-empty drum cell: cycle velocity
       state.cycleDrumVelocity(widget.row, widget.trackIndex);
-    } else {
-      // Empty or normal cell: just select
-      _select(state);
     }
-    // Preview note on tap — for note cells and drum pills (drum note is implicit).
-    // previewCellNoteOneShot reads the live cell, so it no-ops if there's no note yet.
-    if (widget.column == CellColumn.note || widget.drumPill) {
-      state.previewCellNoteOneShot(widget.row);
-    }
-  }
-
-  void _onDragStart(AppState state) {
-    if (cellIsEmpty(widget.column, widget.cell)) {
-      _select(state);
-      state.insertDefaultValue(widget.row, widget.column);
-    }
-    _dragAccum = 0.0;
-    _select(state);
-  }
-
-  void _onDragUpdate(AppState state, DragUpdateDetails d) {
-    _dragAccum -= d.delta.dy;
-    final steps = (_dragAccum / _pixelsPerStep).truncate();
-    if (steps != 0) {
-      _dragAccum -= steps * _pixelsPerStep;
-      state.nudgeCell(widget.row, widget.column, steps);
-      // Preview note when editing note cells
-      if (widget.column == CellColumn.note) {
-        state.previewCellNoteOneShot(widget.row);
-      }
-    }
+    _selectOnly(state, openMenu: hasData);
   }
 
   @override
@@ -635,11 +615,12 @@ class _MiniCellState extends State<_MiniCell> {
         ? _buildDrumPill(isBoxSelected)
         : _buildTextCell(isBoxSelected);
 
+    // No vertical-drag handling here: a cell must never claim the vertical
+    // axis, or it blocks the grid's vertical scroll. Value nudging happens
+    // via the action bar's slider/+- controls after selecting the cell.
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: () => _handleTap(state),
-      onVerticalDragStart: (_) => _onDragStart(state),
-      onVerticalDragUpdate: (d) => _onDragUpdate(state, d),
       child: child,
     );
   }
