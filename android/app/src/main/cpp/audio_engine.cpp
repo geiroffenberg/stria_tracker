@@ -82,6 +82,8 @@ void startKarplusVoice(Voice& v, int midiNote, int sampleRate) {
     v.filterEnvStage = EnvelopeStage::Idle;
     v.envLevel = 0.0f;
     v.filterEnvLevel = 0.0f;
+    v.synthQuickFadeActive = false;
+    v.pendingSynthNote = -1;
     // Karplus's own dedicated amp envelope + tone filter: always retrigger
     // fresh on a new pluck (Karplus fully re-excites the string every note,
     // unlike the generic synth's legato-aware continuity).
@@ -213,6 +215,8 @@ void startDrumVoice(Voice& v, int sampleRate) {
     v.filterEnvStage = EnvelopeStage::Idle;
     v.envLevel       = 0.0f;
     v.filterEnvLevel = 0.0f;
+    v.synthQuickFadeActive = false;
+    v.pendingSynthNote = -1;
 }
 
 float fxValueToUnit(int value) {
@@ -653,6 +657,8 @@ void AudioEngine::stop() {
                 v.noteHeld          = false;
                 v.envStage          = EnvelopeStage::Idle;
                 v.envLevel          = 0.0f;
+                v.synthQuickFadeActive = false;
+                v.pendingSynthNote  = -1;
                 v.filterEnvStage    = EnvelopeStage::Idle;
                 v.filterEnvLevel    = 0.0f;
                 v.midiNote          = -1;
@@ -1388,6 +1394,8 @@ void AudioEngine::triggerRowLocked(const std::vector<int>& rowData) {
             v.filterEnvStage = EnvelopeStage::Idle;
             v.gain = 0.0f;
             v.gainTarget = 0.0f;
+            v.synthQuickFadeActive = false;
+            v.pendingSynthNote = -1;
             v.pendingWaveform = -1;
             continue;
         }
@@ -1438,38 +1446,56 @@ void AudioEngine::triggerRowLocked(const std::vector<int>& rowData) {
         }
 
         if (n >= 0) {
-            // Note on: change pitch but keep phase to avoid discontinuity click
-            v.midiNote   = n;
-            // Apply detune: detuneNorm 0.5 = 0 semitones, 0 = -12 st, 1 = +12 st
-            const float detuneSemitones = (v.detuneNorm - 0.5f) * 24.0f;
-            v.targetFreq = static_cast<float>(midiToFreq(n)) *
-                std::pow(2.0f, detuneSemitones / 12.0f);
-            if (v.currentFreq <= 0.0f || v.glideSec <= 0.0f) {
-                v.currentFreq = v.targetFreq;
-            }
-            // Cancel any in-flight SLU/SLD pitch ramp — new note takes over.
-            v.pitchRampSamplesLeft = 0;
-            // Only reset filter state when the voice is effectively idle.
-            // Resetting during an overlapping retrigger causes discontinuities (clicks).
             const bool voiceWasActive =
                 (v.envStage != EnvelopeStage::Idle) ||
                 (v.gain > 1e-4f) ||
                 (v.gainTarget > 1e-4f);
-            if (!voiceWasActive) {
+            // Guard against a stale flag left behind by a hard reset (stop/
+            // KIL/mode switch) that bypassed the fade's own completion code
+            // — without this, a stuck synthQuickFadeActive would silently
+            // swallow every future note-on on this track.
+            if (v.synthQuickFadeActive && v.envStage != EnvelopeStage::Release) {
+                v.synthQuickFadeActive = false;
+                v.pendingSynthNote = -1;
+            }
+            if (v.synthQuickFadeActive) {
+                // Already fading out a previous retrigger — just update
+                // which note plays once that fade completes.
+                v.pendingSynthNote = n;
+            } else if (voiceWasActive) {
+                // Still audible: jumping straight into a new Attack stage
+                // keeps the old envLevel but snaps the oscillator to the new
+                // pitch instantly — audible as a click on sustained notes.
+                // Defer instead: force a fast fixed-time "mini OFF" fade to
+                // true silence (old pitch/phase keep ringing meanwhile), and
+                // apply the new note once envLevel actually reaches zero
+                // (see EnvelopeStage::Release case in onAudioReady).
+                v.synthQuickFadeActive = true;
+                v.pendingSynthNote = n;
+                v.noteHeld = false;
+                v.envStage = EnvelopeStage::Release;
+                v.filterEnvStage = EnvelopeStage::Release;
+            } else {
+                // Voice genuinely idle — apply immediately, no gap needed.
+                v.midiNote   = n;
+                const float detuneSemitones = (v.detuneNorm - 0.5f) * 24.0f;
+                v.targetFreq = static_cast<float>(midiToFreq(n)) *
+                    std::pow(2.0f, detuneSemitones / 12.0f);
+                if (v.currentFreq <= 0.0f || v.glideSec <= 0.0f) {
+                    v.currentFreq = v.targetFreq;
+                }
+                // Cancel any in-flight SLU/SLD pitch ramp — new note takes over.
+                v.pitchRampSamplesLeft = 0;
                 v.filterLow = 0.0f;
                 v.filterBand = 0.0f;
-            }
-            // Keep envelope continuity for overlapping retriggers to avoid
-            // hard amplitude/cutoff discontinuities (clicks).
-            if (!voiceWasActive) {
                 v.envLevel       = 0.0f;
                 v.filterEnvLevel = 0.0f;
+                v.noteHeld   = true;
+                v.envStage   = EnvelopeStage::Attack;
+                v.filterEnvStage = EnvelopeStage::Attack;
+                v.gainTarget = 1.0f;
+                v.sampleActive = false;
             }
-            v.noteHeld   = true;
-            v.envStage   = EnvelopeStage::Attack;
-            v.filterEnvStage = EnvelopeStage::Attack;
-            v.gainTarget = 1.0f;
-            v.sampleActive = false;
         } else if (pitchOnly) {
             // Pitch-only update: retune the currently held voice without
             // retriggering amp/filter envelopes.
@@ -1485,6 +1511,8 @@ void AudioEngine::triggerRowLocked(const std::vector<int>& rowData) {
         } else if (n == -2) {
             // Note off
             v.noteHeld = false;
+            v.synthQuickFadeActive = false;
+            v.pendingSynthNote = -1;
             if (v.envStage != EnvelopeStage::Idle) {
                 v.envStage = EnvelopeStage::Release;
             }
@@ -1596,6 +1624,8 @@ void AudioEngine::killVoicesLocked(const std::vector<int>& killMask) {
         // Trigger note-off: move to release stage without clearing the voice.
         v.noteHeld = false;
         v.envStage = EnvelopeStage::Release;
+        v.synthQuickFadeActive = false;
+        v.pendingSynthNote = -1;
         if (v.samplerMode) v.sampleActive = false;
         if (v.karplusMode && v.karplusEnvStage != EnvelopeStage::Idle) {
             v.karplusEnvStage = EnvelopeStage::Release;
@@ -2868,6 +2898,8 @@ oboe::DataCallbackResult AudioEngine::onAudioReady(
                 v.filterEnvStage = EnvelopeStage::Idle;
                 v.gain = 0.0f;
                 v.gainTarget = 0.0f;
+                v.synthQuickFadeActive = false;
+                v.pendingSynthNote = -1;
                 v.pendingWaveform = -1;
             } else if (v.karplusMode) {
                 startKarplusVoice(v, ev.note, sampleRate);
@@ -2875,30 +2907,43 @@ oboe::DataCallbackResult AudioEngine::onAudioReady(
                 startDrumVoice(v, sampleRate);
                 v.midiNote = ev.note;
             } else {
-                v.midiNote = ev.note;
-                const float detuneSemitones = (v.detuneNorm - 0.5f) * 24.0f;
-                v.targetFreq = static_cast<float>(midiToFreq(ev.note)) *
-                    std::pow(2.0f, detuneSemitones / 12.0f);
-                if (v.currentFreq <= 0.0f || v.glideSec <= 0.0f) {
-                    v.currentFreq = v.targetFreq;
-                }
                 const bool voiceWasActive =
                     (v.envStage != EnvelopeStage::Idle) ||
                     (v.gain > 1e-4f) ||
                     (v.gainTarget > 1e-4f);
-                if (!voiceWasActive) {
+                // Deferred "mini OFF" retrigger — see main note-on path in
+                // triggerRowLocked for the full rationale (incl. the stale-
+                // flag guard below).
+                if (v.synthQuickFadeActive && v.envStage != EnvelopeStage::Release) {
+                    v.synthQuickFadeActive = false;
+                    v.pendingSynthNote = -1;
+                }
+                if (v.synthQuickFadeActive) {
+                    v.pendingSynthNote = ev.note;
+                } else if (voiceWasActive) {
+                    v.synthQuickFadeActive = true;
+                    v.pendingSynthNote = ev.note;
+                    v.noteHeld = false;
+                    v.envStage = EnvelopeStage::Release;
+                    v.filterEnvStage = EnvelopeStage::Release;
+                } else {
+                    v.midiNote = ev.note;
+                    const float detuneSemitones = (v.detuneNorm - 0.5f) * 24.0f;
+                    v.targetFreq = static_cast<float>(midiToFreq(ev.note)) *
+                        std::pow(2.0f, detuneSemitones / 12.0f);
+                    if (v.currentFreq <= 0.0f || v.glideSec <= 0.0f) {
+                        v.currentFreq = v.targetFreq;
+                    }
                     v.filterLow  = 0.0f;
                     v.filterBand = 0.0f;
-                }
-                if (!voiceWasActive) {
                     v.envLevel       = 0.0f;
                     v.filterEnvLevel = 0.0f;
+                    v.noteHeld       = true;
+                    v.envStage       = EnvelopeStage::Attack;
+                    v.filterEnvStage = EnvelopeStage::Attack;
+                    v.gainTarget     = 1.0f;
+                    v.sampleActive   = false;
                 }
-                v.noteHeld       = true;
-                v.envStage       = EnvelopeStage::Attack;
-                v.filterEnvStage = EnvelopeStage::Attack;
-                v.gainTarget     = 1.0f;
-                v.sampleActive   = false;
             }
         }
         mPendingDelays.erase(
@@ -3055,6 +3100,8 @@ oboe::DataCallbackResult AudioEngine::onAudioReady(
             v.gain = 0.0f;
             v.envStage = EnvelopeStage::Idle;
             v.envLevel = 0.0f;
+            v.synthQuickFadeActive = false;
+            v.pendingSynthNote = -1;
             v.filterEnvStage = EnvelopeStage::Idle;
             v.filterEnvLevel = 0.0f;
             v.noteHeld = false;
@@ -3789,6 +3836,10 @@ oboe::DataCallbackResult AudioEngine::onAudioReady(
         const float atkK = poleK(static_cast<float>(sampleRate), v.attackSec);
         const float decK = poleK(static_cast<float>(sampleRate), v.decaySec);
         const float relK = poleK(static_cast<float>(sampleRate), v.releaseSec);
+        // Fixed ~3ms fade used only for the synth "mini OFF" deferred
+        // retrigger (synthQuickFadeActive) — independent of the user's own
+        // Release setting, which may be far too slow for a snappy retrigger.
+        const float quickRelK = poleK(static_cast<float>(sampleRate), 0.003f);
         const float fatkK = poleK(static_cast<float>(sampleRate), v.filterAttackSec);
         const float fdecK = poleK(static_cast<float>(sampleRate), v.filterDecaySec);
         const float frelK = poleK(static_cast<float>(sampleRate), v.filterReleaseSec);
@@ -3859,17 +3910,40 @@ oboe::DataCallbackResult AudioEngine::onAudioReady(
                         v.envStage = EnvelopeStage::Release;
                     }
                     break;
-                case EnvelopeStage::Release:
-                    v.envLevel += relK * (0.0f - v.envLevel);
+                case EnvelopeStage::Release: {
+                    v.envLevel += (v.synthQuickFadeActive ? quickRelK : relK) * (0.0f - v.envLevel);
                     if (v.envLevel < 1e-4f) {
                         v.envLevel = 0.0f;
-                        v.envStage = EnvelopeStage::Idle;
-                        v.midiNote = -1;
-                        v.gainTarget = 0.0f;
-                        v.gain = 0.0f;
+                        if (v.synthQuickFadeActive && v.pendingSynthNote >= 0) {
+                            // Truly silent now — apply the deferred note.
+                            const int note = v.pendingSynthNote;
+                            v.synthQuickFadeActive = false;
+                            v.pendingSynthNote = -1;
+                            v.midiNote = note;
+                            const float detuneSemitones = (v.detuneNorm - 0.5f) * 24.0f;
+                            v.targetFreq = static_cast<float>(midiToFreq(note)) *
+                                std::pow(2.0f, detuneSemitones / 12.0f);
+                            if (v.currentFreq <= 0.0f || v.glideSec <= 0.0f) {
+                                v.currentFreq = v.targetFreq;
+                            }
+                            v.pitchRampSamplesLeft = 0;
+                            v.filterLow = 0.0f;
+                            v.filterBand = 0.0f;
+                            v.filterEnvLevel = 0.0f;
+                            v.noteHeld = true;
+                            v.envStage = EnvelopeStage::Attack;
+                            v.filterEnvStage = EnvelopeStage::Attack;
+                            v.gainTarget = 1.0f;
+                        } else {
+                            v.envStage = EnvelopeStage::Idle;
+                            v.midiNote = -1;
+                            v.gainTarget = 0.0f;
+                            v.gain = 0.0f;
+                        }
                         continue;
                     }
                     break;
+                }
             }
 
             switch (v.filterEnvStage) {
