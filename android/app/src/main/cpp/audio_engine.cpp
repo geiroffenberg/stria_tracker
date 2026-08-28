@@ -1142,6 +1142,19 @@ void AudioEngine::triggerRowLocked(const std::vector<int>& rowData) {
         const bool isKarplus = (instrumentType == 2);
         const bool isDrum = (instrumentType == 3);
 
+        // Sub-buffer note alignment: any voice getting a genuine fresh
+        // trigger this row inherits the row boundary's exact sample offset
+        // within this callback (see Voice::triggerSkipFrames). Pitch-only
+        // retunes for sampler/synth are excluded — they don't restart
+        // envelopes and skipping their frames would just replace the old
+        // pitch's audio with silence.
+        const bool triggersNote = (n >= 0)
+            || ((isKarplus || isDrum) && pitchOnly);
+        if (triggersNote && mCurrentRowFireSampleOffset > 0) {
+            v.triggerSkipFrames = std::max(v.triggerSkipFrames,
+                                           mCurrentRowFireSampleOffset);
+        }
+
         const int clampedWave = std::clamp(wave, 0, 5);
         const bool waveChanging = (clampedWave != v.waveform);
 
@@ -2775,15 +2788,26 @@ oboe::DataCallbackResult AudioEngine::onAudioReady(
     // row it belongs to can end.
     // Events queued via queueArp()/queueRetrigs() fire at buffer granularity,
     // which is far more accurate than Dart Timer jitter.
+    // Snapshot BEFORE increment: used to compute each due event's / row
+    // boundary's exact sub-buffer offset so the affected voice's audible
+    // start can be aligned to that frame rather than snapped to frame 0.
+    const int32_t subRowAtBufStart = mSubRowSampleCounter;
     mSubRowSampleCounter += numFrames;
 
     if (!mPendingDelays.empty()) {
         for (auto& ev : mPendingDelays) {
             if (ev.sampleTarget < 0) continue; // already fired
             if (mSubRowSampleCounter < ev.sampleTarget) continue;
+            const int32_t origTarget = ev.sampleTarget;
             ev.sampleTarget = -1; // mark fired
             if (ev.trackIdx < 0 || ev.trackIdx >= static_cast<int>(mVoices.size())) continue;
             Voice& v = mVoices[ev.trackIdx];
+            // Anchor this voice's audible start to the exact sub-buffer frame
+            // where the delay fired (see triggerSkipFrames doc on Voice).
+            v.triggerSkipFrames = std::max(
+                v.triggerSkipFrames,
+                std::clamp(static_cast<int>(origTarget - subRowAtBufStart),
+                           0, numFrames - 1));
             if (ev.volume >= 0) {
                 v.level = static_cast<float>(ev.volume) / 255.0f;
             }
@@ -2872,10 +2896,17 @@ oboe::DataCallbackResult AudioEngine::onAudioReady(
         for (auto& ev : mPendingArp) {
             if (ev.sampleTarget < 0) continue; // already fired
             if (mSubRowSampleCounter < ev.sampleTarget) continue;
+            const int32_t origTarget = ev.sampleTarget;
             ev.sampleTarget = -1; // mark fired
             if (ev.trackIdx < 0 || ev.trackIdx >= static_cast<int>(mVoices.size())) continue;
             Voice& v = mVoices[ev.trackIdx];
             if (v.midiNote < 0) continue; // no active voice for this track
+            // Precomputed for the karplus/drum retrigger branches (skipped for
+            // pitch-only ARP where 0..evSkip would just create a silence gap
+            // in place of the old pitch's audio).
+            const int evSkip = std::clamp(
+                static_cast<int>(origTarget - subRowAtBufStart),
+                0, numFrames - 1);
             v.midiNote = ev.note;
             const float detuneSemitones = (v.detuneNorm - 0.5f) * 24.0f;
             if (v.samplerMode) {
@@ -2884,11 +2915,13 @@ oboe::DataCallbackResult AudioEngine::onAudioReady(
                 v.sampleStep = std::pow(2.0f, semis / 12.0f);
             } else if (v.karplusMode) {
                 startKarplusVoice(v, ev.note, sampleRate);
+                v.triggerSkipFrames = std::max(v.triggerSkipFrames, evSkip);
             } else if (v.drumMode) {
                 // Pitch-only ARP for drum synth: PITCH knob controls tuning,
                 // so retrigger the same one-shot rather than retuning it.
                 startDrumVoice(v, sampleRate);
                 v.midiNote = ev.note;
+                v.triggerSkipFrames = std::max(v.triggerSkipFrames, evSkip);
             } else {
                 // Pitch-only ARP for synth: retune oscillator without retrigger.
                 v.targetFreq = static_cast<float>(midiToFreq(ev.note)) *
@@ -2908,10 +2941,16 @@ oboe::DataCallbackResult AudioEngine::onAudioReady(
         for (auto& ev : mPendingRetrigs) {
             if (ev.sampleTarget < 0) continue; // already fired
             if (mSubRowSampleCounter < ev.sampleTarget) continue;
+            const int32_t origTarget = ev.sampleTarget;
             ev.sampleTarget = -1; // mark fired
             if (ev.trackIdx < 0 || ev.trackIdx >= static_cast<int>(mVoices.size())) continue;
             Voice& v = mVoices[ev.trackIdx];
             if (v.midiNote < 0) continue; // no active voice for this track
+            // Anchor retrigger start to its exact sub-buffer sample offset.
+            v.triggerSkipFrames = std::max(
+                v.triggerSkipFrames,
+                std::clamp(static_cast<int>(origTarget - subRowAtBufStart),
+                           0, numFrames - 1));
             // Update volume if supplied.
             if (ev.volume >= 0) {
                 v.level = static_cast<float>(ev.volume) / 255.0f;
@@ -3032,11 +3071,20 @@ oboe::DataCallbackResult AudioEngine::onAudioReady(
             // Always count the boundary so the Dart poller detects queue
             // exhaustion even when primeNextQueuedPlaybackRowLocked() fails.
             mPendingRowAdvances.fetch_add(1);
+            // Sub-buffer offset where this row boundary actually crossed:
+            // after the -= above, mPlayheadSampleCounter equals frames
+            // elapsed AFTER the boundary, so numFrames-that is frames FROM
+            // buffer start UP TO the boundary. Read by triggerRowLocked to
+            // stamp any freshly note-on'd voice's triggerSkipFrames.
+            mCurrentRowFireSampleOffset = std::clamp(
+                numFrames - static_cast<int>(mPlayheadSampleCounter),
+                0, numFrames - 1);
             if (!primeNextQueuedPlaybackRowLocked()) {
                 mPlayheadRunning.store(false);
                 break;
             }
         }
+        mCurrentRowFireSampleOffset = 0;
     }
 
     // Process slice commands (SLC) — set sampler boundaries at row start.
@@ -3213,7 +3261,9 @@ oboe::DataCallbackResult AudioEngine::onAudioReady(
             // milliseconds is the standard "de-click" floor used in samplers.
             const float minEnvFrames = 0.002f * static_cast<float>(sampleRate);
 
-            for (int i = 0; i < numFrames; ++i) {
+            // i starts at v.triggerSkipFrames so a note whose row/event fell
+            // mid-buffer is audibly aligned to its exact sample offset.
+            for (int i = v.triggerSkipFrames; i < numFrames; ++i) {
                 // ── Advance sampler LFO and compute its value for this frame ──
                 float lfoVal = 0.0f;
                 if (lfoActive) {
@@ -3462,7 +3512,8 @@ oboe::DataCallbackResult AudioEngine::onAudioReady(
             const float ampRelK = poleK(static_cast<float>(sampleRate), v.karplusAmpReleaseSec);
             const float filterDamp = std::max(0.05f, 1.0f - v.karplusFilterResonanceNorm * 0.95f);
 
-            for (int i = 0; i < numFrames; ++i) {
+            // i starts at v.triggerSkipFrames for sub-buffer note alignment.
+            for (int i = v.triggerSkipFrames; i < numFrames; ++i) {
                 v.gain += smoothK * (v.gainTarget - v.gain);
                 v.pan += panSmoothK * (v.panTarget - v.pan);
 
@@ -3611,7 +3662,8 @@ oboe::DataCallbackResult AudioEngine::onAudioReady(
                                              0.001f, 0.99f);
             const float noiseDamp = std::max(0.05f, 1.0f - v.drumResonanceNorm * 0.85f);
 
-            for (int i = 0; i < numFrames; ++i) {
+            // i starts at v.triggerSkipFrames for sub-buffer note alignment.
+            for (int i = v.triggerSkipFrames; i < numFrames; ++i) {
                 v.gain += smoothK * (v.gainTarget - v.gain);
                 v.pan  += panSmoothK * (v.panTarget - v.pan);
 
@@ -3718,7 +3770,8 @@ oboe::DataCallbackResult AudioEngine::onAudioReady(
         // content into mostly transients/clicks.
         const float damp = std::max(0.05f, 1.0f - (v.resonanceNorm * 0.95f));
 
-        for (int i = 0; i < numFrames; ++i) {
+        // i starts at v.triggerSkipFrames for sub-buffer note alignment.
+        for (int i = v.triggerSkipFrames; i < numFrames; ++i) {
             v.gain += smoothK * (v.gainTarget - v.gain);
             v.pan += panSmoothK * (v.panTarget - v.pan);
             if (v.pitchRampSamplesLeft > 0) {
@@ -4286,6 +4339,11 @@ oboe::DataCallbackResult AudioEngine::onAudioReady(
                     out + numFrames * 2);
             }
         }
+    }
+
+    // Reset per-voice sub-buffer note-alignment offsets for the next callback.
+    for (auto& v : mVoices) {
+        v.triggerSkipFrames = 0;
     }
 
     return oboe::DataCallbackResult::Continue;

@@ -204,6 +204,14 @@ struct Voice {
     int    declickTailFramesTotal = 1;
     int    declickTailFramesLeft  = 0;
 
+    // Sub-buffer offset (in frames within the current audio callback) where
+    // this voice's most recent trigger actually lands. Voice-render loops
+    // start iteration at this frame instead of 0, so a row/event whose true
+    // time falls mid-buffer becomes audibly aligned to that exact sample
+    // rather than snapping to frame 0 of the callback. Reset to 0 at the
+    // end of every callback.
+    int    triggerSkipFrames      = 0;
+
     // Sampler HP -> LP filter (in series). Bypassed entirely when samplerFilterOn == false.
     bool   samplerFilterOn   = false;
     float  samplerHpCutoff   = 0.0f;  // 0..1 (0 = bypass, 1 = closed)
@@ -788,6 +796,13 @@ private:
     int32_t                  mSubRowSampleCounter = 0;
     int32_t                  mPlayheadSampleCounter = 0;
     int32_t                  mLineSamplesPerRow = 0; // Set via setLineSamplesPerRow()
+    // Sub-buffer offset (frames within the current audio callback) at which
+    // the currently-firing row's boundary actually crossed. Set by
+    // onAudioReady immediately before priming each new row and read inside
+    // triggerRowLocked to tag any voices that get note-on'd with a
+    // corresponding triggerSkipFrames so their audio starts at the exact
+    // sample, not at frame 0 of the callback.
+    int32_t                  mCurrentRowFireSampleOffset = 0;
     std::atomic<int32_t>     mPendingRowAdvances{0};
     std::atomic<bool>        mPlayheadRunning{false};
     std::vector<QueuedPlaybackRow> mQueuedPlaybackRows;
