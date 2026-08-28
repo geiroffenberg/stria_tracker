@@ -1307,15 +1307,19 @@ void AudioEngine::triggerRowLocked(const std::vector<int>& rowData) {
                 }
                 const auto& s = mSamplerSlots[v.sampleSlot];
                 if (!s.mono.empty()) {
-                    // Anti-click: if this voice is already sounding *the same
-                    // sample slot*, capture its last output as a short fading
-                    // tail instead of letting the jump to the new note's silent
-                    // attack start produce an instantaneous (clicking)
-                    // discontinuity. Skipped when switching to a different
-                    // instrument/slot (e.g. RNI) — blending in a different
-                    // sample's decaying tail is audible as a foreign-sample
-                    // artifact rather than a click, so we rely on the normal
-                    // attack envelope instead.
+                    // If this voice is still actively sounding the SAME sample
+                    // slot, don't jump straight into the new note — summing a
+                    // fading remnant on top of the new note's own attack is
+                    // itself audible as a click (two unrelated waveform
+                    // snapshots overlapping). Instead: silence the old voice
+                    // now, let its last output fade out ALONE over a few ms,
+                    // and defer the new note's actual start until that tail
+                    // finishes — equivalent to manually inserting an OFF right
+                    // before the retrigger. Skipped when switching to a
+                    // different instrument/slot (e.g. RNI): blending a
+                    // different sample's tail is a foreign-sample artifact,
+                    // not a click fix, so that case just relies on the normal
+                    // attack envelope.
                     if (v.sampleActive && v.sampleSlot == prevSampleSlot) {
                         constexpr float kDeclickTailMs = 3.0f;
                         v.declickTailGain0 = v.sampleLastOutput;
@@ -1323,35 +1327,40 @@ void AudioEngine::triggerRowLocked(const std::vector<int>& rowData) {
                             1,
                             static_cast<int>(kDeclickTailMs * 0.001f * mCachedSampleRate));
                         v.declickTailFramesLeft = v.declickTailFramesTotal;
+                        v.sampleActive = false;
+                        v.pendingRetriggerNote = n;
+                        v.pendingRetriggerFireSample =
+                            mSubRowSampleCounter + v.declickTailFramesTotal;
+                    } else {
+                        v.midiNote = n;
+                        // Cancel any in-flight SLU/SLD step ramp — new note takes over.
+                        v.pitchRampSamplesLeft = 0;
+                        const float detuneSemitones = (v.detuneNorm - 0.5f) * 24.0f;
+                        const float semis = static_cast<float>(n - 60) + detuneSemitones;
+                        v.sampleStep = std::pow(2.0f, semis / 12.0f);
+                        const int sampleFrames = static_cast<int>(s.mono.size());
+                        const int startFrame = std::clamp(
+                            static_cast<int>(v.sampleStartNorm * static_cast<float>(sampleFrames - 1)),
+                            0, sampleFrames - 1);
+                        const int endFrame = std::clamp(
+                            static_cast<int>(v.sampleEndNorm * static_cast<float>(sampleFrames)),
+                            startFrame + 1, sampleFrames);
+                        v.samplePos = v.sampleReverse ? static_cast<double>(endFrame - 1)
+                                                      : static_cast<double>(startFrame);
+                        v.sampleElapsedFrames = 0.0;
+                        v.samplePingDir = v.sampleReverse;
+                        v.sampleActive = true;
+                        v.samplerReleaseActive = false;
+                        v.samplerReleaseStartFrames = 0.0;
+                        v.sampleHasEnteredLoopRegion = false;
+                        // Reset LFO phase so the modulation restarts with each note
+                        // (enables ramp-up / envelope-style long cycles).
+                        v.samplerLfoPhase = 0.0;
+                        v.samplerLfoRandVal = 0.0f;
+                        // Clear filter SVF state on note-on to avoid carryover thumps.
+                        v.samplerHpLow = v.samplerHpBand = 0.0f;
+                        v.samplerLpLow = v.samplerLpBand = 0.0f;
                     }
-                    v.midiNote = n;
-                    // Cancel any in-flight SLU/SLD step ramp — new note takes over.
-                    v.pitchRampSamplesLeft = 0;
-                    const float detuneSemitones = (v.detuneNorm - 0.5f) * 24.0f;
-                    const float semis = static_cast<float>(n - 60) + detuneSemitones;
-                    v.sampleStep = std::pow(2.0f, semis / 12.0f);
-                    const int sampleFrames = static_cast<int>(s.mono.size());
-                    const int startFrame = std::clamp(
-                        static_cast<int>(v.sampleStartNorm * static_cast<float>(sampleFrames - 1)),
-                        0, sampleFrames - 1);
-                    const int endFrame = std::clamp(
-                        static_cast<int>(v.sampleEndNorm * static_cast<float>(sampleFrames)),
-                        startFrame + 1, sampleFrames);
-                    v.samplePos = v.sampleReverse ? static_cast<double>(endFrame - 1)
-                                                  : static_cast<double>(startFrame);
-                    v.sampleElapsedFrames = 0.0;
-                    v.samplePingDir = v.sampleReverse;
-                    v.sampleActive = true;
-                    v.samplerReleaseActive = false;
-                    v.samplerReleaseStartFrames = 0.0;
-                    v.sampleHasEnteredLoopRegion = false;
-                    // Reset LFO phase so the modulation restarts with each note
-                    // (enables ramp-up / envelope-style long cycles).
-                    v.samplerLfoPhase = 0.0;
-                    v.samplerLfoRandVal = 0.0f;
-                    // Clear filter SVF state on note-on to avoid carryover thumps.
-                    v.samplerHpLow = v.samplerHpBand = 0.0f;
-                    v.samplerLpLow = v.samplerLpBand = 0.0f;
                 } else {
                     v.sampleActive = false;
                 }
@@ -2817,30 +2826,36 @@ oboe::DataCallbackResult AudioEngine::onAudioReady(
                     v.sampleSlot < static_cast<int>(mSamplerSlots.size())) {
                     const auto& s = mSamplerSlots[v.sampleSlot];
                     if (!s.mono.empty()) {
-                        // Anti-click: fade out whatever this voice was already
-                        // playing instead of jumping straight to the new hit.
+                        // If still actively sounding, defer to a "mini OFF"
+                        // instead of summing a fading tail on top of the new
+                        // note (see main note-on path in triggerRowLocked).
                         if (v.sampleActive) {
                             constexpr float kDeclickTailMs = 3.0f;
                             v.declickTailGain0 = v.sampleLastOutput;
                             v.declickTailFramesTotal = std::max(
                                 1, static_cast<int>(kDeclickTailMs * 0.001 * sampleRate));
                             v.declickTailFramesLeft = v.declickTailFramesTotal;
+                            v.sampleActive = false;
+                            v.pendingRetriggerNote = ev.note;
+                            v.pendingRetriggerFireSample =
+                                mSubRowSampleCounter + v.declickTailFramesTotal;
+                        } else {
+                            const int sampleFrames = static_cast<int>(s.mono.size());
+                            const int startFrame = std::clamp(
+                                static_cast<int>(v.sampleStartNorm * static_cast<float>(sampleFrames - 1)),
+                                0, sampleFrames - 1);
+                            const int endFrame = std::clamp(
+                                static_cast<int>(v.sampleEndNorm * static_cast<float>(sampleFrames)),
+                                startFrame + 1, sampleFrames);
+                            v.samplePos = v.sampleReverse ? static_cast<double>(endFrame - 1)
+                                                          : static_cast<double>(startFrame);
+                            v.sampleElapsedFrames = 0.0;
+                            v.samplePingDir = v.sampleReverse;
+                            const float detuneSemitones = (v.detuneNorm - 0.5f) * 24.0f;
+                            const float semis = static_cast<float>(ev.note - 60) + detuneSemitones;
+                            v.sampleStep = std::pow(2.0f, semis / 12.0f);
+                            v.sampleActive = true;
                         }
-                        const int sampleFrames = static_cast<int>(s.mono.size());
-                        const int startFrame = std::clamp(
-                            static_cast<int>(v.sampleStartNorm * static_cast<float>(sampleFrames - 1)),
-                            0, sampleFrames - 1);
-                        const int endFrame = std::clamp(
-                            static_cast<int>(v.sampleEndNorm * static_cast<float>(sampleFrames)),
-                            startFrame + 1, sampleFrames);
-                        v.samplePos = v.sampleReverse ? static_cast<double>(endFrame - 1)
-                                                      : static_cast<double>(startFrame);
-                        v.sampleElapsedFrames = 0.0;
-                        v.samplePingDir = v.sampleReverse;
-                        const float detuneSemitones = (v.detuneNorm - 0.5f) * 24.0f;
-                        const float semis = static_cast<float>(ev.note - 60) + detuneSemitones;
-                        v.sampleStep = std::pow(2.0f, semis / 12.0f);
-                        v.sampleActive = true;
                     } else {
                         v.sampleActive = false;
                     }
@@ -2962,17 +2977,15 @@ oboe::DataCallbackResult AudioEngine::onAudioReady(
                     v.sampleSlot < static_cast<int>(mSamplerSlots.size())) {
                     const auto& s = mSamplerSlots[v.sampleSlot];
                     if (!s.mono.empty()) {
-                        // Anti-click: fade out whatever this voice was already
-                        // playing instead of jumping straight to the new hit —
+                        // Anti-click: fade out whatever this voice last output —
                         // important here since R (retrig) can fire many times
-                        // per row on a long sample.
-                        if (v.sampleActive) {
-                            constexpr float kDeclickTailMs = 3.0f;
-                            v.declickTailGain0 = v.sampleLastOutput;
-                            v.declickTailFramesTotal = std::max(
-                                1, static_cast<int>(kDeclickTailMs * 0.001 * sampleRate));
-                            v.declickTailFramesLeft = v.declickTailFramesTotal;
-                        }
+                        // per row on a long sample. Not gated on sampleActive,
+                        // same reasoning as the main note-on path.
+                        constexpr float kDeclickTailMs = 3.0f;
+                        v.declickTailGain0 = v.sampleLastOutput;
+                        v.declickTailFramesTotal = std::max(
+                            1, static_cast<int>(kDeclickTailMs * 0.001 * sampleRate));
+                        v.declickTailFramesLeft = v.declickTailFramesTotal;
                         const int sampleFrames = static_cast<int>(s.mono.size());
                         const int startFrame = std::clamp(
                             static_cast<int>(v.sampleStartNorm * static_cast<float>(sampleFrames - 1)),
@@ -3170,7 +3183,28 @@ oboe::DataCallbackResult AudioEngine::onAudioReady(
     for (int trackIdx = 0; trackIdx < static_cast<int>(mVoices.size()); ++trackIdx) {
         auto& v = mVoices[trackIdx];
         if (v.samplerMode) {
-            if (!v.sampleActive || v.sampleSlot < 0 ||
+            if (!v.sampleActive) {
+                // Drain a standalone declick tail (deferred-retrigger "mini
+                // OFF" gap — see pendingRetriggerNote) with no underlying
+                // sample playback, so it never overlaps a live note.
+                if (v.declickTailFramesLeft > 0) {
+                    const float pan01 = std::clamp(v.pan, 0.0f, 1.0f);
+                    const float angle = pan01 * 1.57079632679f;
+                    const float leftGain  = std::cos(angle);
+                    const float rightGain = std::sin(angle);
+                    const int n = std::min(v.declickTailFramesLeft, numFrames);
+                    for (int i = 0; i < n; ++i) {
+                        const float tailFrac = static_cast<float>(v.declickTailFramesLeft) /
+                                                static_cast<float>(v.declickTailFramesTotal);
+                        const float dry = v.declickTailGain0 * tailFrac;
+                        mTrackBusL[trackIdx][i] += dry * leftGain;
+                        mTrackBusR[trackIdx][i] += dry * rightGain;
+                        --v.declickTailFramesLeft;
+                    }
+                }
+                continue;
+            }
+            if (v.sampleSlot < 0 ||
                 v.sampleSlot >= static_cast<int>(mSamplerSlots.size())) {
                 continue;
             }
@@ -4339,6 +4373,48 @@ oboe::DataCallbackResult AudioEngine::onAudioReady(
                     out + numFrames * 2);
             }
         }
+    }
+
+    // Fire deferred sampler retriggers whose "mini OFF" declick-tail gap has
+    // fully elapsed (see pendingRetriggerNote on Voice). Runs after the main
+    // mixing loop above so this callback's tail-drain (if any) already had a
+    // chance to render; the new note then starts cleanly at frame 0 of a
+    // future callback — never overlapping the fading tail.
+    for (auto& v : mVoices) {
+        if (v.pendingRetriggerNote < 0) continue;
+        if (mSubRowSampleCounter < v.pendingRetriggerFireSample) continue;
+        const int note = v.pendingRetriggerNote;
+        v.pendingRetriggerNote = -1;
+        if (!v.samplerMode || v.sampleSlot < 0 ||
+            v.sampleSlot >= static_cast<int>(mSamplerSlots.size())) {
+            continue;
+        }
+        const auto& s = mSamplerSlots[v.sampleSlot];
+        if (s.mono.empty()) continue;
+        v.midiNote = note;
+        v.pitchRampSamplesLeft = 0;
+        const float detuneSemitones = (v.detuneNorm - 0.5f) * 24.0f;
+        const float semis = static_cast<float>(note - 60) + detuneSemitones;
+        v.sampleStep = std::pow(2.0f, semis / 12.0f);
+        const int sampleFrames = static_cast<int>(s.mono.size());
+        const int startFrame = std::clamp(
+            static_cast<int>(v.sampleStartNorm * static_cast<float>(sampleFrames - 1)),
+            0, sampleFrames - 1);
+        const int endFrame = std::clamp(
+            static_cast<int>(v.sampleEndNorm * static_cast<float>(sampleFrames)),
+            startFrame + 1, sampleFrames);
+        v.samplePos = v.sampleReverse ? static_cast<double>(endFrame - 1)
+                                      : static_cast<double>(startFrame);
+        v.sampleElapsedFrames = 0.0;
+        v.samplePingDir = v.sampleReverse;
+        v.sampleActive = true;
+        v.samplerReleaseActive = false;
+        v.samplerReleaseStartFrames = 0.0;
+        v.sampleHasEnteredLoopRegion = false;
+        v.samplerLfoPhase = 0.0;
+        v.samplerLfoRandVal = 0.0f;
+        v.samplerHpLow = v.samplerHpBand = 0.0f;
+        v.samplerLpLow = v.samplerLpBand = 0.0f;
     }
 
     // Reset per-voice sub-buffer note-alignment offsets for the next callback.

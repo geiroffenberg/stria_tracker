@@ -204,6 +204,15 @@ struct Voice {
     int    declickTailFramesTotal = 1;
     int    declickTailFramesLeft  = 0;
 
+    // Deferred sampler retrigger: when a note-on interrupts a still-active
+    // voice on the same sample slot, the old voice is silenced immediately
+    // and its declick tail fades out ALONE (not summed with the new note's
+    // attack — see onAudioReady). The new note's own start is deferred until
+    // that tail finishes, exactly like manually inserting an OFF right
+    // before the retrigger. -1 = nothing pending.
+    int     pendingRetriggerNote       = -1;
+    int32_t pendingRetriggerFireSample = 0;
+
     // Sub-buffer offset (in frames within the current audio callback) where
     // this voice's most recent trigger actually lands. Voice-render loops
     // start iteration at this frame instead of 0, so a row/event whose true
