@@ -27,11 +27,27 @@ C-4    01     75    PAN  50
 
 Multiple FX slots per cell are supported.
 
-## Note Entry
+## Cell Interaction
+
+### Tap Behavior
+
+| Tap | Action |
+|---|---|
+| **Single tap** (on a cell with data) | Opens the action bar with controls for editing that field (slider, ±, or picker). Cell remains selected. Re-tapping toggles the action bar. |
+| **Single tap** (on an empty cell) | Selects the cell passively (no action bar). Leaves the double-tap free to enter data. |
+| **Double tap** (on any cell) | If empty: enters the column's default value (the previous note/instrument/effect you used). If already filled: still opens the action bar. Either way, the selection/action bar opens immediately, ready to edit. |
+
+### Note Entry
 
 - Notes are entered in chromatic order. The note picker scrolls through the 10 available octaves (0–9).
 - `OFF` sends a note-off (stops the current note on that track).
 - `---` leaves the field empty (the previous note continues to hold).
+
+**Fast entry workflow:**
+1. Double-tap an empty NOTE cell → it fills with the last note you entered (e.g., `C-4`).
+2. Double-tap an empty INST cell → it fills with the last instrument (e.g., `01`).
+3. Double-tap an empty VOL cell → it fills with the last volume (e.g., `80`).
+4. Use the action bar sliders/buttons to adjust, or double-tap the next cell to move on.
 
 ## Pattern Settings
 
