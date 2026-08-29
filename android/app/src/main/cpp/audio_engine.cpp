@@ -652,6 +652,7 @@ void AudioEngine::stop() {
             mPreviewBypassTrackInserts.fill(false);
             for (auto& v : mVoices) {
                 v.gainTarget        = 0.0f;
+                v.gain              = 0.0f;   // hard stop: silence now, not just target (midiNote=-1 below would otherwise freeze gain via the render loop's skip gate)
                 v.pendingWaveform   = -1;   // cancel any mid-swap; prevents re-trigger after stop
                 v.pendingGainTarget = 0.0f;
                 v.noteHeld          = false;
