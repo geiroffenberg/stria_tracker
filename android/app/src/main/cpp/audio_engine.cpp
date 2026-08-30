@@ -630,6 +630,30 @@ void AudioEngine::start() {
             // clearQueuedPlaybackRows()) lets the callback pick up the new
             // queue seamlessly at the next row boundary.
             if (!mPlayheadRunning.load() && !mQueuedPlaybackRows.empty()) {
+                // Defensive reset: preview auditioning reuses the same
+                // underlying voices as pattern/song tracks (voice index ==
+                // track index — see _previewVoiceIndexForInstrumentSlot on
+                // the Dart side), so any still-settling preview state must
+                // never leak into a freshly started real playback pass:
+                //   - mPreviewBypassTrackInserts routes a track's audio to
+                //     the preview-only dry bus instead of through its normal
+                //     insert/send chain to master.
+                //   - pendingRetriggerNote/declickTailFramesLeft belong to
+                //     the sampler's "mini OFF" anti-click retrigger (see
+                //     triggerRowLocked); if a preview stop landed a voice
+                //     mid-tail, sampleActive is already false and would
+                //     otherwise wait on a fire threshold anchored to a stale
+                //     mSubRowSampleCounter baseline from before this fresh
+                //     row-counter reset.
+                // Both are exactly what stop() already clears on manual
+                // transport stop — this mirrors that same guarantee here so
+                // a track's first note doesn't require a Stop+Play cycle to
+                // become audible again after previewing that same voice.
+                mPreviewBypassTrackInserts.fill(false);
+                for (auto& v : mVoices) {
+                    v.pendingRetriggerNote = -1;
+                    v.declickTailFramesLeft = 0;
+                }
                 mQueuedPlaybackRowIndex = 0;
                 mPlayheadSampleCounter = 0;
                 primeNextQueuedPlaybackRowLocked();

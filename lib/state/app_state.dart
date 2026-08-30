@@ -7203,6 +7203,8 @@ class AppState extends ChangeNotifier {
               _synthPreviewStopTimer?.cancel();
               _synthPreviewStopTimer = null;
               await _setPreviewDryBypass(previewVoice, false);
+              // Reset carry state after preview ends so next playback uses fresh state
+              _resetInstrumentCarry();
             }
           }
         },
@@ -7283,6 +7285,8 @@ class AppState extends ChangeNotifier {
             if (_previewBypassVoice == previewVoice) {
               await _setPreviewDryBypass(previewVoice, false);
             }
+            // Reset carry state after preview ends so next playback uses fresh state
+            _resetInstrumentCarry();
           }
         },
       );
@@ -7413,15 +7417,27 @@ class AppState extends ChangeNotifier {
       await Future.delayed(Duration(milliseconds: releaseMs));
       await _setPreviewDryBypass(previewVoice, false);
     } else {
-      // Non-looping: hard-stop any lingering reverb tails immediately.
-      await AudioEngine.instance.killVoices(
-        List<int>.filled(_audioVoiceCount, 1),
-      );
+      // Non-looping: hard-stop any lingering reverb tail on the preview
+      // voice only. Must NOT kill every voice — killVoicesLocked() forces
+      // envStage=Release on every voice it touches, and doing that to
+      // unrelated idle synth tracks stales their envStage until the next
+      // real note-on, deadlocking them silent (same bug class as the
+      // manual-Stop synth deadlock documented in repo memory).
+      final mask = List<int>.filled(_audioVoiceCount, 0);
+      if (previewVoice >= 0 && previewVoice < mask.length) {
+        mask[previewVoice] = 1;
+      }
+      await AudioEngine.instance.killVoices(mask);
       await _setPreviewDryBypass(previewVoice, false);
     }
     // Do NOT stop the output stream here — stopping it causes an Android
     // hardware route change that produces a transient burst in the next
     // mic capture. The output stream stays open but silent.
+    
+    // CRITICAL: Reset carry state so the next playback doesn't use stale
+    // pattern/carry data from before the preview. Without this, the first
+    // playback after sampler preview would use corrupted carry state.
+    _resetInstrumentCarry();
   }
 
   Future<String?> togglePreviewCurrentSampler() async {
