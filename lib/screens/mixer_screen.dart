@@ -48,12 +48,15 @@ class _ReverbUiState {
 }
 
 class _DelayUiState {
-  final double timeMs; // 1–2000 ms
+  final double timeMs; // 1–2000 ms — free-running time, or the resolved
+  // (rows→ms) value when sync=true. Always the value actually sent to the
+  // engine, so nothing downstream needs to know about sync/rows at all.
   final double feedback; // 0.0–0.95
   final double hpCutoff; // 0.0–1.0 (0 = off)
   final double dry;
   final double wet;
-  final bool sync;
+  final bool sync; // false = free ms slider, true = musical row-synced tap
+  final int delayRows; // 1-64, only used/shown when sync=true
 
   const _DelayUiState({
     this.timeMs = 375.0,
@@ -62,6 +65,7 @@ class _DelayUiState {
     this.dry = 1.0,
     this.wet = 0.35,
     this.sync = false,
+    this.delayRows = 8,
   });
 
   _DelayUiState copyWith({
@@ -71,6 +75,7 @@ class _DelayUiState {
     double? dry,
     double? wet,
     bool? sync,
+    int? delayRows,
   }) {
     return _DelayUiState(
       timeMs: timeMs ?? this.timeMs,
@@ -79,8 +84,20 @@ class _DelayUiState {
       dry: dry ?? this.dry,
       wet: wet ?? this.wet,
       sync: sync ?? this.sync,
+      delayRows: delayRows ?? this.delayRows,
     );
   }
+}
+
+/// Musical delay-tap time for [rows] pattern rows, using the pattern's BASE
+/// bpm/lines-per-beat (never the per-beat line-count override, and never a
+/// runtime BPM-FX tempo nudge) — so a synced tap always lands on the same
+/// musical grid position no matter what a single beat elsewhere is doing.
+double delayMsForRows(int rows, double bpm, int linesPerBeat) {
+  final safeBpm = bpm <= 0 ? 120.0 : bpm;
+  final safeLpb = linesPerBeat <= 0 ? 4 : linesPerBeat;
+  final msPerRow = 60000.0 / (safeBpm * safeLpb);
+  return (rows * msPerRow).clamp(1.0, 2000.0);
 }
 
 class _FilterUiState {
@@ -1851,6 +1868,7 @@ class _MixerScreenState extends State<MixerScreen> {
             'dry': d.dry,
             'wet': d.wet,
             'sync': d.sync,
+            'delayRows': d.delayRows,
           };
         case 'FILTER':
           final f = onMaster
@@ -2038,6 +2056,7 @@ class _MixerScreenState extends State<MixerScreen> {
             dry: d(data, 'dry', 1.0),
             wet: d(data, 'wet', 0.35),
             sync: b(data, 'sync', false),
+            delayRows: iv(data, 'delayRows', 8),
           );
           if (onMaster) {
             _masterDelayStates[s] = dl;
@@ -4172,6 +4191,7 @@ class _DelayEffectEditorState extends State<_DelayEffectEditor> {
   late double _dry;
   late double _wet;
   late bool _sync;
+  late int _delayRows;
   late bool _bypass;
 
   @override
@@ -4183,7 +4203,18 @@ class _DelayEffectEditorState extends State<_DelayEffectEditor> {
     _dry = widget.initialState.dry;
     _wet = widget.initialState.wet;
     _sync = widget.initialState.sync;
+    _delayRows = widget.initialState.delayRows;
     _bypass = widget.initialBypass;
+  }
+
+  /// The value actually sent to the engine: the free-running ms slider when
+  /// unsynced, or the pattern-grid-locked ms for [_delayRows] rows when
+  /// synced (always computed from the pattern's BASE bpm/lpb, so per-beat
+  /// line-count overrides elsewhere in the pattern can never affect it).
+  double _resolvedTimeMs() {
+    if (!_sync) return _timeMs;
+    final state = AppStateScope.of(context);
+    return delayMsForRows(_delayRows, state.bpm, state.linesPerBeat);
   }
 
   void _toggleBypass() {
@@ -4197,15 +4228,21 @@ class _DelayEffectEditorState extends State<_DelayEffectEditor> {
     }
   }
 
+  void _toggleSync() {
+    setState(() => _sync = !_sync);
+    _updateParams();
+  }
+
   void _emitState() {
     widget.onParamsChanged(
       _DelayUiState(
-        timeMs: _timeMs,
+        timeMs: _resolvedTimeMs(),
         feedback: _feedback,
         hpCutoff: _hpCutoff,
         dry: _dry,
         wet: _wet,
         sync: _sync,
+        delayRows: _delayRows,
       ),
     );
   }
@@ -4213,10 +4250,11 @@ class _DelayEffectEditorState extends State<_DelayEffectEditor> {
   void _updateParams() {
     _emitState();
     final ae = AudioEngine.instance;
+    final resolvedMs = _resolvedTimeMs();
     if (widget.onMaster) {
       ae.setMasterDelayParams(
         widget.slotIdx,
-        _timeMs,
+        resolvedMs,
         _feedback,
         _hpCutoff,
         _sync,
@@ -4226,7 +4264,7 @@ class _DelayEffectEditorState extends State<_DelayEffectEditor> {
       ae.setTrackDelayParams(
         widget.trackIdx ?? 0,
         widget.slotIdx,
-        _timeMs,
+        resolvedMs,
         _feedback,
         _hpCutoff,
         _sync,
@@ -4301,18 +4339,64 @@ class _DelayEffectEditorState extends State<_DelayEffectEditor> {
                     ],
                   ),
                 ),
-                // TIME slider — logarithmic feel via sqrt
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 22),
+                  child: Row(
+                    children: [
+                      SizedBox(
+                        width: 58,
+                        child: Text(
+                          'TIME',
+                          style: kStyleHeader.copyWith(
+                            fontSize: 12,
+                            color: kColHeader,
+                          ),
+                        ),
+                      ),
+                      Expanded(
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.end,
+                          children: [
+                            _SyncModeChip(
+                              label: 'FREE',
+                              selected: !_sync,
+                              onTap: _sync ? _toggleSync : null,
+                            ),
+                            const SizedBox(width: 8),
+                            _SyncModeChip(
+                              label: 'SYNC',
+                              selected: _sync,
+                              onTap: _sync ? null : _toggleSync,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                // TIME control — free-running ms slider, or musical row count
+                // when SYNC is on (locked to the pattern's base BPM/LPB, never
+                // affected by a per-beat line-count override elsewhere).
                 Padding(
                   padding: const EdgeInsets.only(bottom: 28),
-                  child: _ReverbSlider(
-                    label: 'TIME',
-                    value: timePct,
-                    displayText: '${_timeMs.round()} ms',
-                    onChanged: (v) {
-                      setState(() => _timeMs = 1.0 + v * v * 1999.0);
-                      _updateParams();
-                    },
-                  ),
+                  child: _sync
+                      ? _RowsStepper(
+                          rows: _delayRows,
+                          displayText: '${_resolvedTimeMs().round()} ms',
+                          onChanged: (rows) {
+                            setState(() => _delayRows = rows);
+                            _updateParams();
+                          },
+                        )
+                      : _ReverbSlider(
+                          label: 'TIME',
+                          value: timePct,
+                          displayText: '${_timeMs.round()} ms',
+                          onChanged: (v) {
+                            setState(() => _timeMs = 1.0 + v * v * 1999.0);
+                            _updateParams();
+                          },
+                        ),
                 ),
                 Padding(
                   padding: const EdgeInsets.only(bottom: 28),
@@ -6938,6 +7022,118 @@ class _ReverbSlider extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+// Small FREE/SYNC selector chip used by the delay effect's time-mode toggle.
+class _SyncModeChip extends StatelessWidget {
+  final String label;
+  final bool selected;
+  final VoidCallback? onTap;
+
+  const _SyncModeChip({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+        decoration: BoxDecoration(
+          color: selected ? kColAccent.withAlpha(40) : Colors.transparent,
+          border: Border.all(
+            color: selected ? kColAccent : kColInactive.withAlpha(120),
+          ),
+          borderRadius: BorderRadius.circular(2),
+        ),
+        child: Text(
+          label,
+          style: kStyleHeader.copyWith(
+            fontSize: 10,
+            color: selected ? kColAccent : kColInactive,
+            letterSpacing: 0.5,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// Integer row-count stepper for the delay effect's SYNC mode. Exact integer
+// taps (1-64) — deliberately not a continuous Slider, since musical delay
+// taps must land on a precise row count with no rounding ambiguity.
+class _RowsStepper extends StatelessWidget {
+  final int rows;
+  final String displayText;
+  final ValueChanged<int> onChanged;
+
+  const _RowsStepper({
+    required this.rows,
+    required this.displayText,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        SizedBox(
+          width: 58,
+          child: Text(
+            'ROWS',
+            style: kStyleHeader.copyWith(fontSize: 12, color: kColHeader),
+          ),
+        ),
+        _StepButton(
+          icon: Icons.remove,
+          onTap: () => onChanged((rows - 1).clamp(1, 64)),
+        ),
+        Expanded(
+          child: Center(
+            child: Text(
+              '${rows.toString().padLeft(2, '0')}  ($displayText)',
+              style: kStyleBase.copyWith(
+                color: Colors.amber.shade600,
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+        ),
+        _StepButton(
+          icon: Icons.add,
+          onTap: () => onChanged((rows + 1).clamp(1, 64)),
+        ),
+      ],
+    );
+  }
+}
+
+class _StepButton extends StatelessWidget {
+  final IconData icon;
+  final VoidCallback onTap;
+
+  const _StepButton({required this.icon, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: 32,
+        height: 32,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          border: Border.all(color: kColInactive.withAlpha(120)),
+          borderRadius: BorderRadius.circular(3),
+        ),
+        child: Icon(icon, size: 16, color: kColAccent),
+      ),
     );
   }
 }
