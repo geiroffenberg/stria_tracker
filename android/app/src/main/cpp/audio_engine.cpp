@@ -4684,9 +4684,14 @@ void AudioEngine::startExportTap() {
 }
 
 std::vector<float> AudioEngine::stopExportTap(int& outSampleRate) {
-    mExportTapActive.store(false);
-
+    // CRITICAL: Acquire lock FIRST, then disable export flag while holding the lock.
+    // This ensures the audio thread's current onAudioReady callback (if running) will
+    // finish adding its samples before we read the buffer. Without this ordering,
+    // a race exists: audio thread checks mExportTapActive (sees true), but by the time
+    // it acquires the lock, we've already disabled the flag, so it skips this buffer
+    // and the final chunk of audio is lost.
     std::lock_guard<std::mutex> lock(mExportMutex);
+    mExportTapActive.store(false);
 
     outSampleRate = static_cast<int>(mCachedSampleRate);
     LOGI("stopExportTap: %zu interleaved frames captured at %d Hz",

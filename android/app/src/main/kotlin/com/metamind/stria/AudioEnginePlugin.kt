@@ -651,11 +651,11 @@ class AudioEnginePlugin : FlutterPlugin, MethodCallHandler {
                     val outRate = IntArray(1)
                     val samples = nativeStopExportTap(enginePtr, outRate)
                     result.success(mapOf(
-                        "samples" to samples?.toList(),
+                        "samples" to samples,  // Pass FloatArray directly, avoid .toList() copy
                         "sampleRate" to outRate[0]
                     ))
                 } else {
-                    result.success(mapOf("samples" to emptyList<Float>(), "sampleRate" to 48000))
+                    result.success(mapOf("samples" to FloatArray(0), "sampleRate" to 48000))
                 }
             }
             "dispose" -> {
