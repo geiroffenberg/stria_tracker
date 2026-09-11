@@ -3181,6 +3181,19 @@ oboe::DataCallbackResult AudioEngine::onAudioReady(
             // Convert scaled normalized positions back to 0.0-1.0 range.
             v.sampleStartNorm = std::clamp(static_cast<float>(ev.startNormScaled) / 10000.0f, 0.0f, 1.0f);
             v.sampleEndNorm   = std::clamp(static_cast<float>(ev.endNormScaled) / 10000.0f, 0.0f, 1.0f);
+            if (v.samplerMode && v.sampleSlot >= 0 &&
+                v.sampleSlot < static_cast<int>(mSamplerSlots.size())) {
+                const auto& s = mSamplerSlots[v.sampleSlot];
+                if (!s.mono.empty()) {
+                    const int sampleFrames = static_cast<int>(s.mono.size());
+                    const double startFrame = static_cast<double>(std::clamp(
+                        static_cast<int>(v.sampleStartNorm * static_cast<float>(sampleFrames - 1)),
+                        0, sampleFrames - 1));
+                    if (v.samplePos < startFrame) {
+                        v.samplePos = startFrame;
+                    }
+                }
+            }
         }
         // Clear slice commands after processing (they've served their purpose for this row).
         mPendingSliceCommands.clear();
@@ -3313,6 +3326,11 @@ oboe::DataCallbackResult AudioEngine::onAudioReady(
             const double loopLen = std::max(1.0, loopRegionEnd - loopRegionStart);
 
             if (v.samplePos < regionStart || v.samplePos >= regionEnd) {
+                if (v.loopMode == 0) {
+                    v.sampleActive = false;
+                    v.midiNote = -1;
+                    continue;
+                }
                 v.samplePos = regionStart;
             }
 

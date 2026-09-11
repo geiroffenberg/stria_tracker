@@ -1005,6 +1005,7 @@ class AppState extends ChangeNotifier {
       await _loadNativePatternPlaybackQueue(
         startRow: playheadRow,
         endRow: _playbackEndRow,
+        continueCarry: true,
       );
       if (isPlaying && !_playbackFollowsSong) {
         await AudioEngine.instance.start();
@@ -5075,10 +5076,12 @@ class AppState extends ChangeNotifier {
   Future<void> _loadNativePatternPlaybackQueue({
     required int startRow,
     int? endRow,
+    bool continueCarry = false,
   }) async {
     final scheduledRows = _buildScheduledRows(
       startRow: startRow,
       endRow: endRow,
+      continueCarry: continueCarry,
     );
     _nextPassScheduled = false;
     // Update send routing based on carry state from row building.
@@ -5913,8 +5916,15 @@ class AppState extends ChangeNotifier {
             }
             if (activeSlices.isNotEmpty && rng.nextInt(100) < ranChancePct) {
               samplerSlice = activeSlices[rng.nextInt(activeSlices.length)];
+              samplerSliceActive = true;
             }
           }
+        }
+
+        if (slcSliceNum > 0 && slcSliceNum <= 9) {
+          samplerSlice = slcSliceNum;
+          samplerSliceActive = true;
+          samplerPlayThrough = (slcPlayMode == 1);
         }
 
         synthParams = _synthParamsForInstrumentSlot(
