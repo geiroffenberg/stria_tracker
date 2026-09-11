@@ -2688,6 +2688,111 @@ class _SamplerEditorState extends State<_SamplerEditor>
     }
   }
 
+  Future<void> _normalizeCurrentSample(BuildContext context) async {
+    if (_busy) return;
+    setState(() => _busy = true);
+    try {
+      final err = await state.normalizeCurrentSampler();
+      if (!mounted) return;
+      if (err != null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(err),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Normalized sample peak to -1 dB'),
+            duration: Duration(seconds: 2),
+          ),
+        );
+        _syncWaveformForCurrent();
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _reverseCurrentSample(BuildContext context) async {
+    if (_busy) return;
+    setState(() => _busy = true);
+    try {
+      final err = await state.reverseCurrentSampler();
+      if (!mounted) return;
+      if (err != null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(err),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Reversed sample audio'),
+            duration: Duration(seconds: 2),
+          ),
+        );
+        _syncWaveformForCurrent();
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _equalChopCurrentSample(BuildContext context) async {
+    if (_busy) return;
+    final err = await state.equalChopCurrentSampler();
+    if (!mounted) return;
+    if (err != null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(err),
+          backgroundColor: Colors.red,
+          duration: const Duration(seconds: 3),
+        ),
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Set 9 slices to equal distance'),
+          duration: Duration(seconds: 2),
+        ),
+      );
+    }
+  }
+
+  Future<void> _transientChopCurrentSample(BuildContext context) async {
+    if (_busy) return;
+    setState(() => _busy = true);
+    try {
+      final err = await state.transientChopCurrentSampler();
+      if (!mounted) return;
+      if (err != null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(err),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Auto-placed slices on transients'),
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
   Future<void> _previewFromWaveTap(
     BuildContext context,
     TapDownDetails details,
@@ -3889,6 +3994,43 @@ class _SamplerEditorState extends State<_SamplerEditor>
                     );
                   },
                 ),
+                const SizedBox(height: 8),
+                // ── Waveform Actions: NORMALIZE · REVERSE · TRANSIENT · EQUAL ──
+                Row(
+                  children: [
+                    _WaveformActionButton(
+                      icon: Icons.equalizer,
+                      label: 'NORM',
+                      onPressed: (_busy || p.samplePath == null)
+                          ? null
+                          : () => _normalizeCurrentSample(context),
+                    ),
+                    const SizedBox(width: 6),
+                    _WaveformActionButton(
+                      icon: Icons.swap_horiz,
+                      label: 'REVERSE',
+                      onPressed: (_busy || p.samplePath == null)
+                          ? null
+                          : () => _reverseCurrentSample(context),
+                    ),
+                    const SizedBox(width: 6),
+                    _WaveformActionButton(
+                      icon: Icons.flash_on,
+                      label: 'TRANSIENT',
+                      onPressed: (_busy || p.samplePath == null)
+                          ? null
+                          : () => _transientChopCurrentSample(context),
+                    ),
+                    const SizedBox(width: 6),
+                    _WaveformActionButton(
+                      icon: Icons.grid_on,
+                      label: 'EQUAL',
+                      onPressed: (_busy || p.samplePath == null)
+                          ? null
+                          : () => _equalChopCurrentSample(context),
+                    ),
+                  ],
+                ),
               ],
             ),
           ),
@@ -4660,4 +4802,56 @@ class _KnobPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _KnobPainter old) => old.value != value;
+}
+
+class _WaveformActionButton extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final VoidCallback? onPressed;
+
+  const _WaveformActionButton({
+    required this.icon,
+    required this.label,
+    required this.onPressed,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final disabled = onPressed == null;
+    return Expanded(
+      child: GestureDetector(
+        onTap: onPressed,
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          decoration: BoxDecoration(
+            color: kBgColor.withAlpha(60),
+            border: Border.all(
+              color: disabled
+                  ? kColInactive.withAlpha(50)
+                  : kColAccent.withAlpha(140),
+            ),
+            borderRadius: BorderRadius.circular(4),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                icon,
+                size: 16,
+                color: disabled ? kColInactive : kColAccent,
+              ),
+              const SizedBox(height: 4),
+              Text(
+                label,
+                style: kStyleHeader.copyWith(
+                  fontSize: 9,
+                  color: disabled ? kColInactive : kColAccent,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 }

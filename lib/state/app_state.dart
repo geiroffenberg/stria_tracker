@@ -71,6 +71,12 @@ class CellBoxSelection {
       );
 }
 
+class _DecodedWav {
+  final int sampleRate;
+  final List<double> monoSamples;
+  const _DecodedWav({required this.sampleRate, required this.monoSamples});
+}
+
 /// Central application state — passed down via InheritedNotifier.
 class _ScheduledPlaybackRow {
   final List<int> rowData;
@@ -6976,6 +6982,359 @@ class AppState extends ChangeNotifier {
     // If stretch is enabled, re-bake it against the newly cropped originalMono.
     if (src.stretchEnabled) await applyStretch();
 
+    _notifyListenersSafe();
+    return null;
+  }
+
+  Future<_DecodedWav?> _readCurrentSamplerWav() async {
+    final src = currentInstrument.sampler;
+    final srcPath = src.samplePath;
+    if (srcPath == null || srcPath.isEmpty) return null;
+
+    final srcFile = File(srcPath);
+    if (!srcFile.existsSync()) return null;
+    final bytes = await srcFile.readAsBytes();
+    if (bytes.length < 44) return null;
+
+    bool matchAscii(int off, String s) {
+      if (off + s.length > bytes.length) return false;
+      for (int i = 0; i < s.length; i++) {
+        if (bytes[off + i] != s.codeUnitAt(i)) return false;
+      }
+      return true;
+    }
+
+    if (!matchAscii(0, 'RIFF') || !matchAscii(8, 'WAVE')) return null;
+
+    final bd = ByteData.sublistView(bytes);
+    int readLe16(int o) => bd.getUint16(o, Endian.little);
+    int readLe32(int o) => bd.getUint32(o, Endian.little);
+
+    int audioFormat = 0, channels = 0, sampleRate = 0, bitsPerSample = 0;
+    int dataOffset = -1, dataSize = 0;
+    int pos = 12;
+    while (pos + 8 <= bytes.length) {
+      final chunkSize = readLe32(pos + 4);
+      final body = pos + 8;
+      if (body + chunkSize > bytes.length) break;
+      if (matchAscii(pos, 'fmt ') && chunkSize >= 16) {
+        audioFormat = readLe16(body + 0);
+        channels = readLe16(body + 2);
+        sampleRate = readLe32(body + 4);
+        bitsPerSample = readLe16(body + 14);
+      } else if (matchAscii(pos, 'data')) {
+        dataOffset = body;
+        dataSize = chunkSize;
+      }
+      pos = body + chunkSize + (chunkSize.isOdd ? 1 : 0);
+    }
+    if (dataOffset < 0 ||
+        channels <= 0 ||
+        bitsPerSample <= 0 ||
+        !(audioFormat == 1 || audioFormat == 3)) {
+      return null;
+    }
+
+    final bytesPerSample = bitsPerSample ~/ 8;
+    final frameSize = bytesPerSample * channels;
+    final totalFrames = dataSize ~/ frameSize;
+    if (totalFrames <= 0) return null;
+
+    final mono = List<double>.filled(totalFrames, 0.0);
+    for (int f = 0; f < totalFrames; f++) {
+      final frameOff = dataOffset + f * frameSize;
+      double sum = 0.0;
+      for (int ch = 0; ch < channels; ch++) {
+        final off = frameOff + ch * bytesPerSample;
+        double s = 0.0;
+        if (audioFormat == 1 && bitsPerSample == 8) {
+          s = (bytes[off] - 128) / 128.0;
+        } else if (audioFormat == 1 && bitsPerSample == 16) {
+          s = bd.getInt16(off, Endian.little) / 32768.0;
+        } else if (audioFormat == 1 && bitsPerSample == 24) {
+          int raw = bytes[off] | (bytes[off + 1] << 8) | (bytes[off + 2] << 16);
+          if (raw & 0x800000 != 0) raw |= ~0xFFFFFF;
+          s = raw / 8388608.0;
+        } else if (audioFormat == 3 && bitsPerSample == 32) {
+          s = bd.getFloat32(off, Endian.little);
+        }
+        sum += s;
+      }
+      mono[f] = (sum / channels).clamp(-1.0, 1.0);
+    }
+
+    return _DecodedWav(sampleRate: sampleRate, monoSamples: mono);
+  }
+
+  Future<String> _writeMonoWavFile(
+    List<double> samples,
+    int sampleRate,
+    String suffix,
+  ) async {
+    final src = currentInstrument.sampler;
+    final srcPath = src.samplePath ?? 'sample.wav';
+    final srcName =
+        src.sampleName ?? srcPath.split(Platform.pathSeparator).last;
+    final dot = srcName.lastIndexOf('.');
+    final base = dot > 0 ? srcName.substring(0, dot) : srcName;
+
+    final projectDir = await _songSamplesDir();
+    int num = 1;
+    String outName;
+    do {
+      outName = '${base}_${suffix}_$num.wav';
+      num++;
+    } while (File('${projectDir.path}/$outName').existsSync());
+
+    final outPath = '${projectDir.path}/$outName';
+
+    final frameCount = samples.length;
+    final dataBytes = frameCount * 2;
+    final wavOut = ByteData(44 + dataBytes);
+
+    void writeFourCC(int off, String s) {
+      for (int i = 0; i < 4; i++) {
+        wavOut.setUint8(off + i, s.codeUnitAt(i));
+      }
+    }
+
+    writeFourCC(0, 'RIFF');
+    wavOut.setUint32(4, 36 + dataBytes, Endian.little);
+    writeFourCC(8, 'WAVE');
+    writeFourCC(12, 'fmt ');
+    wavOut.setUint32(16, 16, Endian.little);
+    wavOut.setUint16(20, 1, Endian.little); // PCM
+    wavOut.setUint16(22, 1, Endian.little); // mono
+    wavOut.setUint32(24, sampleRate, Endian.little);
+    wavOut.setUint32(28, sampleRate * 2, Endian.little);
+    wavOut.setUint16(32, 2, Endian.little);
+    wavOut.setUint16(34, 16, Endian.little);
+    writeFourCC(36, 'data');
+    wavOut.setUint32(40, dataBytes, Endian.little);
+
+    for (int f = 0; f < frameCount; f++) {
+      final s16 = (samples[f].clamp(-1.0, 1.0) * 32767.0).round().clamp(
+        -32768,
+        32767,
+      );
+      wavOut.setInt16(44 + f * 2, s16, Endian.little);
+    }
+
+    await File(outPath).writeAsBytes(wavOut.buffer.asUint8List(), flush: true);
+    return outPath;
+  }
+
+  /// Normalize the current sampler audio file to peak around -1 dBFS (0.90 amplitude).
+  Future<String?> normalizeCurrentSampler() async {
+    final src = currentInstrument.sampler;
+    if (src.samplePath == null || src.samplePath!.isEmpty) {
+      return 'No sample loaded';
+    }
+
+    final decoded = await _readCurrentSamplerWav();
+    if (decoded == null || decoded.monoSamples.isEmpty) {
+      return 'Could not read audio file';
+    }
+
+    double maxPeak = 0.0;
+    for (final s in decoded.monoSamples) {
+      final absVal = s.abs();
+      if (absVal > maxPeak) maxPeak = absVal;
+    }
+
+    if (maxPeak <= 0.00001) return 'Sample is silent';
+
+    const targetPeak = 0.90;
+    final factor = targetPeak / maxPeak;
+
+    final normalized = List<double>.filled(decoded.monoSamples.length, 0.0);
+    for (int i = 0; i < decoded.monoSamples.length; i++) {
+      normalized[i] = (decoded.monoSamples[i] * factor).clamp(-1.0, 1.0);
+    }
+
+    final outPath = await _writeMonoWavFile(
+      normalized,
+      decoded.sampleRate,
+      'norm',
+    );
+    final outName = outPath.split(Platform.pathSeparator).last;
+
+    src
+      ..samplePath = outPath
+      ..sampleName = outName;
+
+    await AudioEngine.instance.setSamplerSample(
+      currentInstrumentIndex,
+      outPath,
+    );
+    if (src.stretchEnabled) await applyStretch();
+
+    _notifyListenersSafe();
+    return null;
+  }
+
+  /// Reverse the current sampler audio file.
+  Future<String?> reverseCurrentSampler() async {
+    final src = currentInstrument.sampler;
+    if (src.samplePath == null || src.samplePath!.isEmpty) {
+      return 'No sample loaded';
+    }
+
+    final decoded = await _readCurrentSamplerWav();
+    if (decoded == null || decoded.monoSamples.isEmpty) {
+      return 'Could not read audio file';
+    }
+
+    final reversed = decoded.monoSamples.reversed.toList();
+
+    final outPath = await _writeMonoWavFile(
+      reversed,
+      decoded.sampleRate,
+      'rev',
+    );
+    final outName = outPath.split(Platform.pathSeparator).last;
+
+    src
+      ..samplePath = outPath
+      ..sampleName = outName;
+
+    await AudioEngine.instance.setSamplerSample(
+      currentInstrumentIndex,
+      outPath,
+    );
+    if (src.stretchEnabled) await applyStretch();
+
+    _notifyListenersSafe();
+    return null;
+  }
+
+  /// Set the 9 slice start markers to equal distances across the active start..end region.
+  Future<String?> equalChopCurrentSampler() async {
+    final src = currentInstrument.sampler;
+    if (src.samplePath == null || src.samplePath!.isEmpty) {
+      return 'No sample loaded';
+    }
+
+    final startNorm = src.start.clamp(0.0, 0.99);
+    final endNorm = src.end.clamp(startNorm + 0.01, 1.0);
+    final regionLen = endNorm - startNorm;
+
+    final newSlices = List<int>.filled(SamplerParams.sliceCount, 0);
+    for (int k = 1; k <= 9; k++) {
+      final posNorm = startNorm + (k / 10.0) * regionLen;
+      newSlices[k - 1] = (posNorm * 999.0).round().clamp(1, 999);
+    }
+
+    src.sliceStarts = newSlices;
+    _notifyListenersSafe();
+    return null;
+  }
+
+  /// Auto-detect transients/onsets in the active start..end region and place the 9 slice markers.
+  Future<String?> transientChopCurrentSampler() async {
+    final src = currentInstrument.sampler;
+    if (src.samplePath == null || src.samplePath!.isEmpty) {
+      return 'No sample loaded';
+    }
+
+    final decoded = await _readCurrentSamplerWav();
+    if (decoded == null || decoded.monoSamples.isEmpty) {
+      return 'Could not read audio file';
+    }
+
+    final samples = decoded.monoSamples;
+    final totalFrames = samples.length;
+    final startFrame = (src.start.clamp(0.0, 1.0) * (totalFrames - 1))
+        .round()
+        .clamp(0, totalFrames - 1);
+    final endFrame = (src.end.clamp(0.0, 1.0) * totalFrames).round().clamp(
+      startFrame + 10,
+      totalFrames,
+    );
+    final regionFrames = endFrame - startFrame;
+
+    if (regionFrames < 100) return 'Region too small for transient detection';
+
+    final windowSize = (decoded.sampleRate * 0.010).round().clamp(64, 2048);
+    final hopSize = (windowSize / 2).round().clamp(32, 1024);
+    final numWindows = (regionFrames - windowSize) ~/ hopSize;
+
+    if (numWindows < 10) {
+      return equalChopCurrentSampler();
+    }
+
+    final energies = List<double>.filled(numWindows, 0.0);
+    for (int w = 0; w < numWindows; w++) {
+      final frameStart = startFrame + w * hopSize;
+      double energy = 0.0;
+      for (int i = 0; i < windowSize && (frameStart + i) < endFrame; i++) {
+        final s = samples[frameStart + i];
+        energy += s * s;
+      }
+      energies[w] = math.sqrt(energy / windowSize);
+    }
+
+    final diffs = List<double>.filled(numWindows, 0.0);
+    for (int w = 1; w < numWindows; w++) {
+      final diff = energies[w] - energies[w - 1];
+      diffs[w] = diff > 0 ? diff : 0.0;
+    }
+
+    final candidateIndices = <int>[];
+    for (int w = 1; w < numWindows - 1; w++) {
+      if (diffs[w] > diffs[w - 1] &&
+          diffs[w] >= diffs[w + 1] &&
+          diffs[w] > 0.001) {
+        candidateIndices.add(w);
+      }
+    }
+
+    candidateIndices.sort((a, b) => diffs[b].compareTo(diffs[a]));
+
+    final minWindowDist = math.max(3, (numWindows / 20).round());
+    final chosenWindows = <int>[];
+
+    for (final w in candidateIndices) {
+      if (chosenWindows.length >= 9) break;
+      bool tooClose = false;
+      for (final cw in chosenWindows) {
+        if ((w - cw).abs() < minWindowDist) {
+          tooClose = true;
+          break;
+        }
+      }
+      if (!tooClose) {
+        chosenWindows.add(w);
+      }
+    }
+
+    if (chosenWindows.length < 9) {
+      for (int k = 1; k <= 9; k++) {
+        if (chosenWindows.length >= 9) break;
+        final targetW = (k / 10.0 * numWindows).round();
+        bool tooClose = false;
+        for (final cw in chosenWindows) {
+          if ((targetW - cw).abs() < minWindowDist) {
+            tooClose = true;
+            break;
+          }
+        }
+        if (!tooClose) {
+          chosenWindows.add(targetW);
+        }
+      }
+    }
+
+    chosenWindows.sort();
+
+    final newSlices = List<int>.filled(SamplerParams.sliceCount, 0);
+    for (int i = 0; i < chosenWindows.length && i < 9; i++) {
+      final frameIdx = startFrame + chosenWindows[i] * hopSize;
+      final norm = frameIdx / (totalFrames - 1);
+      newSlices[i] = (norm * 999.0).round().clamp(1, 999);
+    }
+
+    src.sliceStarts = newSlices;
     _notifyListenersSafe();
     return null;
   }
