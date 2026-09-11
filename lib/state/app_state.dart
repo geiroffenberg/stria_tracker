@@ -5465,18 +5465,30 @@ class AppState extends ChangeNotifier {
       pattern = currentPattern;
     }
 
+    final bool hasExistingCarry = _trackCarry.length == pattern.tracks.length;
     if (_carryPatternIndex != patternIdx ||
-        _trackCarry.length != pattern.tracks.length ||
+        !hasExistingCarry ||
         (playheadRow == 0 && !_suppressCarryResetAtRowZero)) {
       _carryPatternIndex = patternIdx;
-      // Seed with the last instrument each track actually used (wrapping
-      // from the end of the pattern) instead of always defaulting to slot 0 —
-      // otherwise a fresh loop pass on a track with no instrument cell on
+      // Seed with the last instrument each track actually used in the
+      // previous pattern/pass (if carry exists) or scan the current pattern
+      // (if starting fresh) instead of defaulting to slot 0 — otherwise a
+      // pattern transition or loop pass on a track with no instrument cell on
       // row 0 would resend instrument 01's params to a still-sustaining
-      // voice from a different instrument, falsely retriggering it.
+      // voice from a different instrument, falsely retriggering it or
+      // corrupting its active sample slot.
+      final previousCarry = _trackCarry;
       _trackCarry = List<_TrackCarry>.generate(
         pattern.tracks.length,
-        (t) => _TrackCarry()..instrument = _lastInstrumentSlotForTrack(pattern, t),
+        (t) {
+          final carry = _TrackCarry();
+          if (hasExistingCarry) {
+            carry.instrument = previousCarry[t].instrument;
+          } else {
+            carry.instrument = _lastInstrumentSlotForTrack(pattern, t);
+          }
+          return carry;
+        },
       );
       _sendRoutingCarryWasReset = true;
     }
