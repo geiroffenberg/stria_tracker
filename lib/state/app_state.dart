@@ -235,6 +235,10 @@ class AppState extends ChangeNotifier {
   bool _playheadPollInFlight = false;
   bool _nextPassScheduled =
       false; // double-buffer: true once next loop pass is in C++ pending queue
+  // True when the next loop pass needs fresh rows because musical playback
+  // data was rebuilt while the pattern is playing. Mixer-only changes do not
+  // set this; native mixer routing is applied without touching the queue.
+  bool _loopPassDirty = true;
   // The absolute row range locked in at play() for the current pattern session.
   // Both are inclusive indices into currentPattern. Captured once so that
   // mid-playback selection changes don't disturb the running engine.
@@ -1035,43 +1039,6 @@ class AppState extends ChangeNotifier {
   void nextTrack() => selectTrack(_currentTrackIndex + 1);
   void prevTrack() => selectTrack(_currentTrackIndex - 1);
 
-  PatternModel _playbackPattern() {
-    if (_playbackFollowsSong && song.patterns.isNotEmpty) {
-      return song.patterns[_playheadArrangementSlot.clamp(
-        0,
-        song.patterns.length - 1,
-      )];
-    }
-    return currentPattern;
-  }
-
-  bool _isTrackMutedByMixer(
-    PatternModel pattern,
-    int trackIndex, {
-    bool? hasSoloOverride,
-  }) {
-    if (trackIndex < 0 || trackIndex >= pattern.tracks.length) return false;
-    final hasSolo =
-        hasSoloOverride ?? pattern.tracks.any((track) => track.mixerSolo);
-    final track = pattern.tracks[trackIndex];
-    if (track.mixerMute) return true;
-    if (hasSolo && !track.mixerSolo) return true;
-    return false;
-  }
-
-  void _applyImmediateMixerMuteState() {
-    if (!isPlaying) return;
-    final pattern = _playbackPattern();
-    final hasSolo = pattern.tracks.any((track) => track.mixerSolo);
-    final mask = List<int>.generate(
-      pattern.tracks.length,
-      (i) => _isTrackMutedByMixer(pattern, i, hasSoloOverride: hasSolo) ? 1 : 0,
-    );
-    if (mask.any((v) => v == 1)) {
-      AudioEngine.instance.killVoices(mask);
-    }
-  }
-
   bool _isMixerFxCommand(int? cmd) => isMixerValueCommand(cmd);
 
   void _resetSongScopedState() {
@@ -1839,7 +1806,6 @@ class AppState extends ChangeNotifier {
     // value > 0 = muted, 0 = unmuted
     final muteValue = nextMute ? 1 : 0;
     AudioEngine.instance.queueMixerCommands([trackIndex + 1, 2, muteValue, 0]);
-    _applyImmediateMixerMuteState();
     notifyListeners();
   }
 
@@ -1856,7 +1822,74 @@ class AppState extends ChangeNotifier {
     // value > 0 = soloed, 0 = not soloed
     final soloValue = nextSolo ? 1 : 0;
     AudioEngine.instance.queueMixerCommands([trackIndex + 1, 3, soloValue, 0]);
-    _applyImmediateMixerMuteState();
+    notifyListeners();
+  }
+
+  /// Single-icon live control used by the Song view (and any surface that
+  /// exposes only one visual state per track). Advances a track's state
+  /// through the cycle Normal → Solo → Mute → Normal.
+  ///
+  /// The mixer remains the full/expressive surface: its two independent
+  /// buttons can produce any combination, including the "both lit" state
+  /// (mute + solo). Because audibility gives mute precedence over solo, a
+  /// both-lit track *looks and sounds* exactly like a mute-only track, and
+  /// this method deliberately treats the two identically: the first tap on
+  /// either collapses both flags and returns to Normal. The Song view never
+  /// creates the both-lit state and dissolves it on first touch — if the
+  /// user wants to work with both flags, they do it in the mixer.
+  void cycleTrackMuteSolo(int trackIndex) {
+    if (trackIndex < 0 || trackIndex >= currentPattern.tracks.length) return;
+    final track = currentPattern.tracks[trackIndex];
+
+    // Mute wins, so any muted track (mute-only OR both-lit) displays as M.
+    // Both collapse to Normal on the next tap.
+    final bool nextMute;
+    final bool nextSolo;
+    if (track.mixerMute) {
+      // M (covers mute-only and both-lit) → Normal
+      nextMute = false;
+      nextSolo = false;
+    } else if (track.mixerSolo) {
+      // S → M
+      nextMute = true;
+      nextSolo = false;
+    } else {
+      // Normal → S
+      nextMute = false;
+      nextSolo = true;
+    }
+
+    // Mixer settings are project-wide: update same track on every pattern.
+    for (final pattern in song.patterns) {
+      if (trackIndex < pattern.tracks.length) {
+        pattern.tracks[trackIndex].mixerMute = nextMute;
+        pattern.tracks[trackIndex].mixerSolo = nextSolo;
+      }
+    }
+    final muteValue = nextMute ? 1 : 0;
+    final soloValue = nextSolo ? 1 : 0;
+    AudioEngine.instance.queueMixerCommands([trackIndex + 1, 2, muteValue, 0]);
+    AudioEngine.instance.queueMixerCommands([trackIndex + 1, 3, soloValue, 0]);
+    notifyListeners();
+  }
+
+  /// Reset every track to the normal mixer state. Used by the Song-view
+  /// track-number long press as a fast performance reset.
+  void resetAllTrackMuteSolo() {
+    for (final pattern in song.patterns) {
+      for (final track in pattern.tracks) {
+        track.mixerMute = false;
+        track.mixerSolo = false;
+      }
+    }
+
+    final commands = <int>[];
+    for (int trackIndex = 0; trackIndex < kMaxTracks; trackIndex++) {
+      final channel = trackIndex + 1;
+      commands.addAll([channel, 2, 0, 0]);
+      commands.addAll([channel, 3, 0, 0]);
+    }
+    AudioEngine.instance.queueMixerCommands(commands);
     notifyListeners();
   }
 
@@ -4393,51 +4426,6 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Finds the start slot of the cluster containing [slotIdx].
-  /// A cluster is a contiguous block of non-empty patterns separated by empty patterns.
-  /// Returns the slot index of the first pattern in the cluster.
-  int _findClusterStartSlot(int slotIdx) {
-    if (song.patterns.isEmpty) return 0;
-    slotIdx = slotIdx.clamp(0, song.patterns.length - 1);
-
-    // Scan backwards to find the first empty pattern (cluster boundary).
-    for (int i = slotIdx - 1; i >= 0; i--) {
-      if (song.patterns[i].isEmpty) {
-        // Found boundary; cluster starts at i+1
-        return i + 1;
-      }
-    }
-
-    // No empty pattern found above; cluster starts at 0
-    return 0;
-  }
-
-  Future<void> _restartSongFromBeginningForLoop({
-    int clusterStartSlot = 0,
-  }) async {
-    if (!isPlaying || !_playbackFollowsSong || song.patterns.isEmpty) return;
-
-    // Clamp to valid range
-    clusterStartSlot = clusterStartSlot.clamp(0, song.patterns.length - 1);
-
-    _queuedArrangementSlot = null;
-    _playheadArrangementSlot = clusterStartSlot;
-    _currentArrangementSlotIndex = clusterStartSlot;
-    _syncCurrentPatternToSongPlayhead();
-    playheadRow = 0;
-    _songRowMap = [];
-    _songFlatRowIndex = 0;
-    _resetInstrumentCarry();
-    _captureStartStates();
-    await _loadNativeSongPlaybackQueue(
-      startSlot: clusterStartSlot,
-      startRow: 0,
-    );
-    if (!isPlaying) return;
-    await AudioEngine.instance.start();
-    notifyListeners();
-  }
-
   /// Stops the transport (sequencer). By default this fully silences all
   /// voices immediately (explicit user Stop). Pass [keepVoicesRinging] when
   /// stopping because playback simply reached its natural end (non-looped
@@ -5090,6 +5078,7 @@ class AppState extends ChangeNotifier {
       continueCarry: continueCarry,
     );
     _nextPassScheduled = false;
+    _loopPassDirty = false;
     // Update send routing based on carry state from row building.
     final sendRouting = _buildStaticSendRouting();
     await AudioEngine.instance.setSendRouting(sendRouting);
@@ -5120,6 +5109,7 @@ class AppState extends ChangeNotifier {
   /// the C++ pending buffer. At the next native loop boundary the engine
   /// swaps it in atomically — zero gap, edits picked up every pass.
   Future<void> _scheduleNextLoopPass() async {
+    if (!_loopPassDirty) return;
     final rows = _buildScheduledRows(
       startRow: _playbackStartRow,
       endRow: _playbackEndRow,
@@ -5148,6 +5138,7 @@ class AppState extends ChangeNotifier {
           )
           .toList(),
     );
+            _loopPassDirty = false;
   }
 
   void _startNativePatternPlayheadPoller() {
@@ -5192,7 +5183,9 @@ class AppState extends ChangeNotifier {
           selLen > 2 &&
           playheadRow >= _playbackEndRow - 1) {
         _nextPassScheduled = true;
-        unawaited(_scheduleNextLoopPass());
+        if (_loopPassDirty) {
+          unawaited(_scheduleNextLoopPass());
+        }
       }
       notifyListeners();
     } finally {
@@ -5276,7 +5269,7 @@ class AppState extends ChangeNotifier {
     // Upload to native — all rows in one channel call to avoid per-row
     // Dart→Kotlin→JNI overhead that caused multi-second play latency.
     await AudioEngine.instance.enqueueAllPlaybackRows(
-      loop: false,
+      loop: _loopPlaybackEnabled,
       rows: scheduledRows
           .map(
             (r) => {
@@ -5329,11 +5322,15 @@ class AppState extends ChangeNotifier {
           return; // _rebuildNativeSongQueueFromSlot calls notifyListeners
         }
         if (_loopPlaybackEnabled) {
-          // Loop back to the start of the current cluster (bounded by empty patterns)
-          final clusterStart = _findClusterStartSlot(_playheadArrangementSlot);
-          await _restartSongFromBeginningForLoop(
-            clusterStartSlot: clusterStart,
-          );
+          // Native is already looping the active queue. Keep the Dart song
+          // playhead map in sync without rebuilding the queue or restarting
+          // the audio stream, which would create a gap at every cycle.
+          _songFlatRowIndex %= _songRowMap.length;
+          final loopedEntry = _songRowMap[_songFlatRowIndex];
+          _playheadArrangementSlot = loopedEntry.arrangementSlot;
+          playheadRow = loopedEntry.rowWithinSlot;
+          _syncCurrentPatternToSongPlayhead();
+          notifyListeners();
           return;
         }
         // Song/cluster reached its natural end with looping off — halt the
@@ -5563,7 +5560,6 @@ class AppState extends ChangeNotifier {
 
     final rowData = <int>[];
     final immediateKillData = <int>[];
-    final hasSolo = pattern.tracks.any((track) => track.mixerSolo);
     bool anyImmediateKill = false;
     // BPM FX is a pattern-global effect (not per-track). Only the first
     // track (lowest index) carrying it on this row takes effect.
@@ -5957,22 +5953,9 @@ class AppState extends ChangeNotifier {
         waveCmd,
       );
 
-      final isMixerMuted = _isTrackMutedByMixer(
-        pattern,
-        t,
-        hasSoloOverride: hasSolo,
-      );
-      if (isMixerMuted) {
-        // Mute/solo should immediately silence ongoing voices and prevent
-        // new triggers for this track until it is active again.
-        noteCmd = -1;
-        delayPct = 0;
-        immediateKill = true;
-      }
-
       // CHA: 00..99 chance that a note-on this row will play.
       // If chance fails, treat as hold (no new note trigger).
-      if (!isMixerMuted && noteCmd >= 0 && chancePct != null) {
+      if (noteCmd >= 0 && chancePct != null) {
         final pct = chancePct.clamp(0, 99);
         if (rng.nextInt(100) >= pct) {
           noteCmd = -1;
@@ -5998,8 +5981,7 @@ class AppState extends ChangeNotifier {
       final retBaseVolume = _trackCarry[t].volume ?? volCmd;
       if (retrigNotesPerLine > 0 &&
           noteCmd == -1 &&
-          retBaseNote != null &&
-          !isMixerMuted) {
+          retBaseNote != null) {
         // RET on held rows retriggers the last carried note.
         noteCmd = retBaseNote;
         volCmd = retBaseVolume;
@@ -6026,8 +6008,7 @@ class AppState extends ChangeNotifier {
         if (t < _trackCarry.length) _trackCarry[t].slide = null;
       } else if (noteCmd == -1 &&
           t < _trackCarry.length &&
-          _trackCarry[t].slide != null &&
-          !isMixerMuted) {
+          _trackCarry[t].slide != null) {
         // Hold row with active slide.
         final slide = _trackCarry[t].slide!;
         final nextElapsed = slide.linesElapsed + 1;
@@ -6059,8 +6040,7 @@ class AppState extends ChangeNotifier {
           arpInterval1 >= 0 &&
           noteCmd == -1 &&
           _trackCarry.length > t &&
-          _trackCarry[t].note != null &&
-          !isMixerMuted;
+          _trackCarry[t].note != null;
       if (arpInterval1 >= 0 && (noteCmd >= 0 || midNoteArp)) {
         // New note or mid-note hold row with ARP: (re)start the carry.
         final baseNote = noteCmd >= 0 ? noteCmd : _trackCarry[t].note!;
@@ -6104,7 +6084,7 @@ class AppState extends ChangeNotifier {
       } else if (noteCmd == -2 || noteCmd >= 0) {
         // Note-off or new note without ARP: clear carry.
         _trackCarry[t].arp = null;
-      } else if (noteCmd == -1 && _trackCarry[t].arp != null && !isMixerMuted) {
+      } else if (noteCmd == -1 && _trackCarry[t].arp != null) {
         // Held empty line with active carry: continue the ARP phase instead of
         // restarting from the first note.
         final carry = _trackCarry[t].arp!;
@@ -6160,7 +6140,7 @@ class AppState extends ChangeNotifier {
       // RET: value N means N evenly spaced note-ons per line.
       final retrigBaseNote = noteCmd >= 0 ? noteCmd : retBaseNote;
       final retrigBaseVolume = noteCmd >= 0 ? volCmd : retBaseVolume;
-      if (retrigNotesPerLine > 1 && retrigBaseNote != null && !isMixerMuted) {
+      if (retrigNotesPerLine > 1 && retrigBaseNote != null) {
         for (int step = 1; step < retrigNotesPerLine; step++) {
           // Send [stepNum, totalSteps, trackIdx, note, volume] — C++ calculates
           // the sample offset using mLineSamplesPerRow for sample-rate accuracy.

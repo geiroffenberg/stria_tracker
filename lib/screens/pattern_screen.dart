@@ -136,9 +136,10 @@ class _PatternScreenState extends State<PatternScreen> {
                   enabled: trackIdx < state.trackCount - 1,
                 ),
                 const SizedBox(width: 8),
-                _SoloBtn(
+                _MuteSoloBtn(
                   soloed: state.currentPattern.tracks[trackIdx].mixerSolo,
-                  onTap: () => state.toggleTrackMixerSolo(trackIdx),
+                  muted: state.currentPattern.tracks[trackIdx].mixerMute,
+                  onTap: () => state.cycleTrackMuteSolo(trackIdx),
                 ),
               ] else ...[
                 Expanded(
@@ -199,33 +200,42 @@ class _PatternScreenState extends State<PatternScreen> {
   }
 }
 
-class _SoloBtn extends StatelessWidget {
+/// Single-icon live mute/solo control for the pattern track header.
+/// Mirrors the Song view: it shows the track's audible state with mute
+/// taking precedence (both-lit shows 'M'), and each tap advances
+/// Normal → Solo → Mute → Normal via [AppState.cycleTrackMuteSolo].
+class _MuteSoloBtn extends StatelessWidget {
   final bool soloed;
+  final bool muted;
   final VoidCallback onTap;
 
-  const _SoloBtn({required this.soloed, required this.onTap});
+  const _MuteSoloBtn({
+    required this.soloed,
+    required this.muted,
+    required this.onTap,
+  });
 
   @override
   Widget build(BuildContext context) {
+    final active = muted || soloed;
+    final color = muted ? kColRecBtn : (soloed ? kColStopBtn : kColInactive);
+    final label = muted ? 'M' : (soloed ? 'S' : 'S');
     return GestureDetector(
       onTap: onTap,
       child: Container(
         width: 22,
         height: 22,
         decoration: BoxDecoration(
-          color: soloed ? kColStopBtn.withAlpha(40) : Colors.transparent,
-          border: Border.all(
-            color: soloed ? kColStopBtn : kColInactive,
-            width: 1,
-          ),
+          color: active ? color.withAlpha(40) : Colors.transparent,
+          border: Border.all(color: active ? color : kColInactive, width: 1),
           borderRadius: BorderRadius.circular(3),
         ),
         alignment: Alignment.center,
         child: Text(
-          'S',
+          label,
           style: kStyleBase.copyWith(
             fontSize: 12,
-            color: soloed ? kColStopBtn : kColInactive,
+            color: active ? color : kColInactive,
             fontWeight: FontWeight.w700,
           ),
         ),
@@ -499,70 +509,74 @@ class _PatternMenuButton extends StatelessWidget {
       case 'swing':
         if (context.mounted) await _showSwingDialog(context);
         break;
-      case 'copyBpmAll': {
-        final affected = state.copyCurrentBpmToAllPatterns();
-        if (context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(
-                affected == 0
-                    ? 'Current pattern is the only one'
-                    : 'Updated $affected pattern${affected == 1 ? '' : 's'} with BPM ${state.bpm.round()}',
+      case 'copyBpmAll':
+        {
+          final affected = state.copyCurrentBpmToAllPatterns();
+          if (context.mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(
+                  affected == 0
+                      ? 'Current pattern is the only one'
+                      : 'Updated $affected pattern${affected == 1 ? '' : 's'} with BPM ${state.bpm.round()}',
+                ),
+                duration: const Duration(seconds: 3),
               ),
-              duration: const Duration(seconds: 3),
-            ),
-          );
+            );
+          }
+          break;
         }
-        break;
-      }
-      case 'copyBeatsAll': {
-        final affected = state.copyCurrentBeatsToAllEmptyPatterns();
-        if (context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(
-                affected == 0
-                    ? 'No empty patterns to update'
-                    : 'Updated $affected empty pattern${affected == 1 ? '' : 's'}',
+      case 'copyBeatsAll':
+        {
+          final affected = state.copyCurrentBeatsToAllEmptyPatterns();
+          if (context.mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(
+                  affected == 0
+                      ? 'No empty patterns to update'
+                      : 'Updated $affected empty pattern${affected == 1 ? '' : 's'}',
+                ),
+                duration: const Duration(seconds: 3),
               ),
-              duration: const Duration(seconds: 3),
-            ),
-          );
+            );
+          }
+          break;
         }
-        break;
-      }
-      case 'copyLpbAll': {
-        final affected = state.copyCurrentLpbToAllEmptyPatterns();
-        if (context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(
-                affected == 0
-                    ? 'No empty patterns to update'
-                    : 'Updated $affected empty pattern${affected == 1 ? '' : 's'}',
+      case 'copyLpbAll':
+        {
+          final affected = state.copyCurrentLpbToAllEmptyPatterns();
+          if (context.mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(
+                  affected == 0
+                      ? 'No empty patterns to update'
+                      : 'Updated $affected empty pattern${affected == 1 ? '' : 's'}',
+                ),
+                duration: const Duration(seconds: 3),
               ),
-              duration: const Duration(seconds: 3),
-            ),
-          );
+            );
+          }
+          break;
         }
-        break;
-      }
-      case 'copySwingAll': {
-        final affected = state.copyCurrentSwingToAllPatterns();
-        if (context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(
-                affected == 0
-                    ? 'Current pattern is the only one'
-                    : 'Updated $affected pattern${affected == 1 ? '' : 's'} with Swing ${state.currentPatternSwing.round()}%',
+      case 'copySwingAll':
+        {
+          final affected = state.copyCurrentSwingToAllPatterns();
+          if (context.mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(
+                  affected == 0
+                      ? 'Current pattern is the only one'
+                      : 'Updated $affected pattern${affected == 1 ? '' : 's'} with Swing ${state.currentPatternSwing.round()}%',
+                ),
+                duration: const Duration(seconds: 3),
               ),
-              duration: const Duration(seconds: 3),
-            ),
-          );
+            );
+          }
+          break;
         }
-        break;
-      }
       case 'follow':
         state.toggleFollowPlayhead();
         break;

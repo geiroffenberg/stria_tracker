@@ -77,7 +77,8 @@ class _SongScreenState extends State<SongScreen> {
   // range (i.e. a second/third/... press while a selection is already up).
   bool _gestureExtendsRange = false;
 
-  static const double kSlotSize = 22.0; // small square around the pattern number
+  static const double kSlotSize =
+      22.0; // small square around the pattern number
   static const double kRowHeight = 64.0; // timeline row height (per pattern)
   static const double kSlotGap = 6.0;
 
@@ -511,36 +512,47 @@ class _SongScreenState extends State<SongScreen> {
                   width: laneW,
                   child: Material(
                     color: Colors.transparent,
-                    child: GestureDetector(
-                      onTap: () => state.toggleTrackMixerSolo(t),
-                      child: Container(
-                        alignment: Alignment.center,
-                        decoration: BoxDecoration(
-                          border: Border.all(
-                            color:
-                                t < state.currentPattern.tracks.length &&
-                                    state.currentPattern.tracks[t].mixerSolo
-                                ? kColStopBtn
-                                : kColInactive.withAlpha(60),
-                            width: 0.5,
+                    child: Builder(
+                      builder: (_) {
+                        // Single-icon live control: derived from the same
+                        // precedence as audibility (mute wins), so the icon
+                        // can never disagree with what the track is doing.
+                        // Tapping advances Normal → Solo → Mute → Normal and
+                        // always collapses any "both-lit" state to Normal.
+                        final inRange = t < state.currentPattern.tracks.length;
+                        final soloed =
+                            inRange && state.currentPattern.tracks[t].mixerSolo;
+                        final muted =
+                            inRange && state.currentPattern.tracks[t].mixerMute;
+                        final label = muted ? 'M' : (soloed ? 'S' : '${t + 1}');
+                        final active = muted || soloed;
+                        final color = muted
+                            ? kColRecBtn
+                            : (soloed ? kColStopBtn : kColAccent);
+                        return GestureDetector(
+                          onTap: () => state.cycleTrackMuteSolo(t),
+                          onLongPress: state.resetAllTrackMuteSolo,
+                          child: Container(
+                            alignment: Alignment.center,
+                            decoration: BoxDecoration(
+                              border: Border.all(
+                                color: active
+                                    ? color
+                                    : kColInactive.withAlpha(60),
+                                width: 0.5,
+                              ),
+                            ),
+                            child: Text(
+                              label,
+                              style: kStyleHeader.copyWith(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w700,
+                                color: color,
+                              ),
+                            ),
                           ),
-                        ),
-                        child: Text(
-                          t < state.currentPattern.tracks.length &&
-                                  state.currentPattern.tracks[t].mixerSolo
-                              ? 'S'
-                              : '${t + 1}',
-                          style: kStyleHeader.copyWith(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w700,
-                            color:
-                                t < state.currentPattern.tracks.length &&
-                                    state.currentPattern.tracks[t].mixerSolo
-                                ? kColStopBtn
-                                : kColAccent,
-                          ),
-                        ),
-                      ),
+                        );
+                      },
                     ),
                   ),
                 ),
@@ -1288,12 +1300,7 @@ class _SongScreenState extends State<SongScreen> {
         return GestureDetector(
           behavior: HitTestBehavior.opaque,
           onTapUp: (details) {
-            _handleTimelineTap(
-              state,
-              details.localPosition,
-              width,
-              slotPitch,
-            );
+            _handleTimelineTap(state, details.localPosition, width, slotPitch);
           },
           onLongPressStart: (details) {
             final hit = _hitTestTimelineCell(

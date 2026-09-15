@@ -827,6 +827,7 @@ private:
     std::vector<QueuedPlaybackRow> mQueuedPlaybackRows;
     size_t                   mQueuedPlaybackRowIndex = 0;
     bool                     mQueuedPlaybackLoop = false;
+    bool                     mLoopBoundaryRow = false;
     std::vector<QueuedPlaybackRow> mPendingNextLoopRows; // double-buffer: swapped in at each loop boundary
 
     // Recording state

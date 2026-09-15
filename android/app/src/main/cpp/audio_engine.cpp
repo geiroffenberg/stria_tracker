@@ -1351,7 +1351,8 @@ void AudioEngine::triggerRowLocked(const std::vector<int>& rowData) {
                     // different sample's tail is a foreign-sample artifact,
                     // not a click fix, so that case just relies on the normal
                     // attack envelope.
-                    if (v.sampleActive && v.sampleSlot == prevSampleSlot) {
+                    if (v.sampleActive && v.sampleSlot == prevSampleSlot &&
+                        !mLoopBoundaryRow) {
                         constexpr float kDeclickTailMs = 3.0f;
                         v.declickTailGain0 = v.sampleLastOutput;
                         v.declickTailFramesTotal = std::max(
@@ -1378,7 +1379,20 @@ void AudioEngine::triggerRowLocked(const std::vector<int>& rowData) {
                             startFrame + 1, sampleFrames);
                         v.samplePos = v.sampleReverse ? static_cast<double>(endFrame - 1)
                                                       : static_cast<double>(startFrame);
-                        v.sampleElapsedFrames = 0.0;
+                        // A loop-boundary retrigger of the same sample is a
+                        // continuity point, not a fresh attack. Starting its
+                        // minimum envelope from zero creates the small gap
+                        // audible at every cycle after the declick tail has
+                        // been bypassed. Preserve full attack gain only for
+                        // this boundary case; ordinary note-ons keep their
+                        // normal attack ramp.
+                        const bool preserveLoopGain =
+                            mLoopBoundaryRow && v.sampleSlot == prevSampleSlot;
+                        v.sampleElapsedFrames = preserveLoopGain
+                            ? static_cast<double>(std::max(
+                                  0.002f * mCachedSampleRate,
+                                  v.attackSec * mCachedSampleRate))
+                            : 0.0;
                         v.samplePingDir = v.sampleReverse;
                         v.sampleActive = true;
                         v.samplerReleaseActive = false;
@@ -1621,10 +1635,12 @@ void AudioEngine::applyQueuedPlaybackRowLocked(const QueuedPlaybackRow& row) {
 
 bool AudioEngine::primeNextQueuedPlaybackRowLocked() {
     if (mQueuedPlaybackRows.empty()) return false;
+    bool loopBoundary = false;
     if (mQueuedPlaybackRowIndex >= mQueuedPlaybackRows.size()) {
         if (!mQueuedPlaybackLoop) {
             return false;
         }
+        loopBoundary = true;
         // Double-buffer swap: if a new pass was pre-built by Dart, use it.
         if (!mPendingNextLoopRows.empty()) {
             mQueuedPlaybackRows = std::move(mPendingNextLoopRows);
@@ -1632,7 +1648,9 @@ bool AudioEngine::primeNextQueuedPlaybackRowLocked() {
         }
         mQueuedPlaybackRowIndex = 0;
     }
+    mLoopBoundaryRow = loopBoundary;
     applyQueuedPlaybackRowLocked(mQueuedPlaybackRows[mQueuedPlaybackRowIndex++]);
+    mLoopBoundaryRow = false;
     return true;
 }
 

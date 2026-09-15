@@ -346,13 +346,28 @@ class _CollapsedTracksWidgetState extends State<CollapsedTracksWidget>
               width: labelWidth,
               child: GestureDetector(
                 behavior: HitTestBehavior.opaque,
-                onTap: () => state.toggleTrackMixerSolo(i),
+                onTap: () => state.cycleTrackMuteSolo(i),
                 child: Center(
-                  child: Text(
-                    'T${(i + 1).toString().padLeft(2, '0')}',
-                    style: kStyleHeader.copyWith(
-                      color: tracks[i].mixerSolo ? kColStopBtn : kColAccent,
-                    ),
+                  child: Builder(
+                    builder: (_) {
+                      // Single-icon live control: mute wins the display, so a
+                      // both-lit track shows 'M'. Tapping cycles
+                      // Normal → Solo → Mute → Normal.
+                      final muted = tracks[i].mixerMute;
+                      final soloed = tracks[i].mixerSolo;
+                      final label = muted
+                          ? 'M'
+                          : (soloed
+                                ? 'S'
+                                : 'T${(i + 1).toString().padLeft(2, '0')}');
+                      final color = muted
+                          ? kColRecBtn
+                          : (soloed ? kColStopBtn : kColAccent);
+                      return Text(
+                        label,
+                        style: kStyleHeader.copyWith(color: color),
+                      );
+                    },
                   ),
                 ),
               ),

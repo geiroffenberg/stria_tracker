@@ -15,6 +15,8 @@ Each channel strip contains:
 | Mute button | on/off | Silence the channel |
 | Solo button | on/off | Isolate the channel |
 
+Mute and Solo state is **global** — changes made here instantly reflect in the Song screen timeline and Pattern screen header.
+
 ## Insert Effect Slots
 
 Each channel strip has up to **6 insert effect slots** in series. Each slot can hold one of the available effect types.

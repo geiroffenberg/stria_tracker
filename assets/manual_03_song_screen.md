@@ -13,9 +13,26 @@ The Song screen is where you build the arrangement of your track.
 
 Each slot represents one pattern. The song plays slots from top to bottom in sequence. Tap a slot number to focus that pattern for the playhead; no other actions are attached to the row numbers.
 
-## Timeline Track Numbers — Solo
+## Timeline Track Numbers — Mute & Solo
 
-The numbers (1–16) shown above each lane in the right-hand timeline are **tappable solo buttons**. Tapping a track number solos that track — identical to pressing the Solo button in the Mixer screen or the pattern track header. The number turns red while the track is soloed. Tapping it again un-solos it. Solo state is global: it shows in red in all three places (Song timeline, Pattern header, Mixer) simultaneously.
+The numbers (1–16) shown above each lane in the right-hand timeline provide a **single-icon live control** for track mute and solo.
+
+### Cycling Behaviour
+
+Tapping a track number advances through the cycle:
+
+1. **Normal** — track plays normally, number shows `1–16` in grey
+2. **Solo** — track is isolated, number shows `S` in red
+3. **Mute** — track is silenced, number shows `M` in orange
+4. **Back to Normal** — number returns to `1–16` in grey
+
+Each tap advances to the next state. Mute takes **audibility precedence** over solo — a muted track remains silent even if soloed, and the display shows `M` (not `S`).
+
+Solo and mute state is **global**: it displays identically in three places — Song timeline, Pattern screen header, and Mixer screen — and changes propagate instantly across all three views.
+
+### Performance Reset
+
+**Long-press any track number** to reset **all 16 tracks** to the Normal (unsolo'd, unmuted) state. This is useful during live performance to quickly clear a complex mute/solo setup and start fresh. No confirmation or notification is shown — the reset is immediate and silent.
 
 ## Track Cell Editing from the Song View
 
