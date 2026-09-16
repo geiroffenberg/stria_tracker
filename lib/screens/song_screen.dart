@@ -517,8 +517,8 @@ class _SongScreenState extends State<SongScreen> {
                         // Single-icon live control: derived from the same
                         // precedence as audibility (mute wins), so the icon
                         // can never disagree with what the track is doing.
-                        // Tapping advances Normal → Solo → Mute → Normal and
-                        // always collapses any "both-lit" state to Normal.
+                        // Single tap = mute toggle (no-op while soloed);
+                        // double tap = solo toggle; long press = reset all.
                         final inRange = t < state.currentPattern.tracks.length;
                         final soloed =
                             inRange && state.currentPattern.tracks[t].mixerSolo;
@@ -530,7 +530,7 @@ class _SongScreenState extends State<SongScreen> {
                             ? kColRecBtn
                             : (soloed ? kColStopBtn : kColAccent);
                         return GestureDetector(
-                          onTap: () => state.cycleTrackMuteSolo(t),
+                          onTap: () => state.handleTrackLiveTap(t),
                           onLongPress: state.resetAllTrackMuteSolo,
                           child: Container(
                             alignment: Alignment.center,

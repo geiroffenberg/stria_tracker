@@ -264,6 +264,9 @@ class AppState extends ChangeNotifier {
   // Song mode native queue tracking.
   List<({int arrangementSlot, int rowWithinSlot})> _songRowMap = [];
   int _songFlatRowIndex = 0;
+  List<({int arrangementSlot, int rowWithinSlot})> _pendingSongRowMap = [];
+  int? _pendingSongTargetSlot;
+  int _songJumpRequestVersion = 0;
 
   // Per-track segments from the last row trigger (for DEL replay).
   List<List<int>> _rowSegments = [];
@@ -1825,51 +1828,76 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Single-icon live control used by the Song view (and any surface that
-  /// exposes only one visual state per track). Advances a track's state
-  /// through the cycle Normal → Solo → Mute → Normal.
-  ///
-  /// The mixer remains the full/expressive surface: its two independent
-  /// buttons can produce any combination, including the "both lit" state
-  /// (mute + solo). Because audibility gives mute precedence over solo, a
-  /// both-lit track *looks and sounds* exactly like a mute-only track, and
-  /// this method deliberately treats the two identically: the first tap on
-  /// either collapses both flags and returns to Normal. The Song view never
-  /// creates the both-lit state and dissolves it on first touch — if the
-  /// user wants to work with both flags, they do it in the mixer.
-  void cycleTrackMuteSolo(int trackIndex) {
+  // Last live-tap timestamp per track, used by [handleTrackLiveTap] to
+  // recognize a double-tap without going through GestureDetector's built-in
+  // onTap+onDoubleTap disambiguation (which delays onTap by ~300ms while it
+  // waits to see if a second tap is coming — far too laggy for live muting).
+  final Map<int, DateTime> _lastLiveTapTime = {};
+  static const Duration _kLiveDoubleTapWindow = Duration(milliseconds: 300);
+
+  /// Live tap entry point for Song/Pattern/Collapsed track headers.
+  /// Always toggles mute immediately so there is zero perceived delay. If a
+  /// second tap on the same track follows within [_kLiveDoubleTapWindow], it
+  /// is treated as a double-tap: the mute flip from the first tap is
+  /// reverted and solo is toggled instead — so mute flickers for only a
+  /// couple of frames before settling into solo.
+  void handleTrackLiveTap(int trackIndex) {
+    final now = DateTime.now();
+    final last = _lastLiveTapTime[trackIndex];
+    final isDoubleTap =
+        last != null && now.difference(last) < _kLiveDoubleTapWindow;
+    if (isDoubleTap) {
+      _lastLiveTapTime.remove(trackIndex);
+      toggleTrackLiveMute(trackIndex); // revert the first tap's mute flip
+      toggleTrackLiveSolo(trackIndex);
+    } else {
+      _lastLiveTapTime[trackIndex] = now;
+      toggleTrackLiveMute(trackIndex);
+    }
+  }
+
+  /// Live single-tap gesture (Song/Pattern/Collapsed track headers): toggles
+  /// mute only. No-op while the track is soloed — clearing solo is reserved
+  /// for the double-tap gesture so a stray single tap during live play can
+  /// never silence the whole mix by accident.
+  void toggleTrackLiveMute(int trackIndex) {
     if (trackIndex < 0 || trackIndex >= currentPattern.tracks.length) return;
     final track = currentPattern.tracks[trackIndex];
+    if (track.mixerSolo) return;
 
-    // Mute wins, so any muted track (mute-only OR both-lit) displays as M.
-    // Both collapse to Normal on the next tap.
-    final bool nextMute;
-    final bool nextSolo;
-    if (track.mixerMute) {
-      // M (covers mute-only and both-lit) → Normal
-      nextMute = false;
-      nextSolo = false;
-    } else if (track.mixerSolo) {
-      // S → M
-      nextMute = true;
-      nextSolo = false;
-    } else {
-      // Normal → S
-      nextMute = false;
-      nextSolo = true;
-    }
-
+    final nextMute = !track.mixerMute;
     // Mixer settings are project-wide: update same track on every pattern.
     for (final pattern in song.patterns) {
       if (trackIndex < pattern.tracks.length) {
         pattern.tracks[trackIndex].mixerMute = nextMute;
+      }
+    }
+    AudioEngine.instance.queueMixerCommands([
+      trackIndex + 1,
+      2,
+      nextMute ? 1 : 0,
+      0,
+    ]);
+    notifyListeners();
+  }
+
+  /// Live double-tap gesture: toggles solo only, independent of mute.
+  void toggleTrackLiveSolo(int trackIndex) {
+    if (trackIndex < 0 || trackIndex >= currentPattern.tracks.length) return;
+    final track = currentPattern.tracks[trackIndex];
+    final nextSolo = !track.mixerSolo;
+
+    for (final pattern in song.patterns) {
+      if (trackIndex < pattern.tracks.length) {
         pattern.tracks[trackIndex].mixerSolo = nextSolo;
       }
     }
-    final muteValue = nextMute ? 1 : 0;
-    final soloValue = nextSolo ? 1 : 0;
-    AudioEngine.instance.queueMixerCommands([trackIndex + 1, 2, muteValue, 0]);
-    AudioEngine.instance.queueMixerCommands([trackIndex + 1, 3, soloValue, 0]);
+    AudioEngine.instance.queueMixerCommands([
+      trackIndex + 1,
+      3,
+      nextSolo ? 1 : 0,
+      0,
+    ]);
     notifyListeners();
   }
 
@@ -3820,9 +3848,28 @@ class AppState extends ChangeNotifier {
     if (patternIndex < 0 || patternIndex >= song.patterns.length) return;
     // Empty patterns are non-playable separators — can't jump playback there.
     if (song.patterns[patternIndex].isEmpty) return;
-    _queuedArrangementSlot = patternIndex == _playheadArrangementSlot
+    final target = patternIndex == _playheadArrangementSlot
         ? null
         : patternIndex;
+    _songJumpRequestVersion++;
+    _queuedArrangementSlot = target;
+    _pendingSongRowMap = [];
+    _pendingSongTargetSlot = null;
+    if (target == null) {
+      // Discard a destination that was still being prepared.
+      unawaited(AudioEngine.instance.scheduleNextLoopRows(const []));
+      return;
+    }
+    final requestVersion = _songJumpRequestVersion;
+    if (!_loopPlaybackEnabled) return;
+    unawaited(
+      _loadNativeSongPlaybackQueue(
+        startSlot: target,
+        startRow: 0,
+        pending: true,
+        requestVersion: requestVersion,
+      ),
+    );
   }
 
   /// Called by MainScreen whenever the user switches tabs.
@@ -5201,6 +5248,8 @@ class AppState extends ChangeNotifier {
   Future<void> _loadNativeSongPlaybackQueue({
     required int startSlot,
     required int startRow,
+    bool pending = false,
+    int? requestVersion,
   }) async {
     if (song.patterns.isEmpty) return;
 
@@ -5265,6 +5314,37 @@ class AppState extends ChangeNotifier {
     final sendRouting = _buildStaticSendRouting();
     _resetInstrumentCarry();
 
+    if (pending) {
+      if (!isPlaying ||
+          requestVersion != _songJumpRequestVersion ||
+          _queuedArrangementSlot != startSlot) {
+        return;
+      }
+      await AudioEngine.instance.scheduleNextLoopRows(
+        scheduledRows
+            .map(
+              (r) => {
+                'lineSamples': r.lineSamples,
+                'rowData': r.rowData,
+                'immediateKillMask': r.immediateKillMask,
+                'retrigData': r.retrigData,
+                'arpData': r.arpData,
+                'delayData': r.delayData,
+                'killData': r.killData,
+                'sliceCommandData': r.sliceCommandData,
+                'mixerCommandData': r.mixerCommandData,
+                'insertFxCommandData': r.insertFxCommandData,
+                'pitchRampData': r.pitchRampData,
+                'sendRoutingCommandData': r.sendRoutingCommandData,
+              },
+            )
+            .toList(),
+      );
+      _pendingSongRowMap = rowMap;
+      _pendingSongTargetSlot = startSlot;
+      return;
+    }
+
     await AudioEngine.instance.setSendRouting(sendRouting);
     // Upload to native — all rows in one channel call to avoid per-row
     // Dart→Kotlin→JNI overhead that caused multi-second play latency.
@@ -5301,6 +5381,26 @@ class AppState extends ChangeNotifier {
     });
   }
 
+  bool _activatePendingSongJump(int overflowRows) {
+    if (!_loopPlaybackEnabled ||
+        _queuedArrangementSlot == null ||
+        _pendingSongTargetSlot != _queuedArrangementSlot ||
+        _pendingSongRowMap.isEmpty) {
+      return false;
+    }
+
+    _queuedArrangementSlot = null;
+    _songRowMap = _pendingSongRowMap;
+    _pendingSongRowMap = [];
+    _pendingSongTargetSlot = null;
+    _songFlatRowIndex = overflowRows.clamp(0, _songRowMap.length - 1);
+    final entry = _songRowMap[_songFlatRowIndex];
+    _playheadArrangementSlot = entry.arrangementSlot;
+    playheadRow = entry.rowWithinSlot;
+    _syncCurrentPatternToSongPlayhead();
+    return true;
+  }
+
   Future<void> _pollNativeSongPlayhead() async {
     if (!isPlaying || !_playbackFollowsSong || _songPollInFlight) return;
     _songPollInFlight = true;
@@ -5317,6 +5417,25 @@ class AppState extends ChangeNotifier {
         // this is how performance-mode jumps between clusters get applied.
         final queuedAtEnd = _queuedArrangementSlot;
         if (queuedAtEnd != null) {
+          if (_activatePendingSongJump(
+            _songFlatRowIndex - _songRowMap.length,
+          )) {
+            notifyListeners();
+            return;
+          }
+          if (_loopPlaybackEnabled) {
+            // Keep the current queue running if the destination was not
+            // prepared in time. The pending jump will be applied at the next
+            // boundary instead of rebuilding mid-transport and double-triggering
+            // the first row.
+            _songFlatRowIndex %= _songRowMap.length;
+            final currentEntry = _songRowMap[_songFlatRowIndex];
+            _playheadArrangementSlot = currentEntry.arrangementSlot;
+            playheadRow = currentEntry.rowWithinSlot;
+            _syncCurrentPatternToSongPlayhead();
+            notifyListeners();
+            return;
+          }
           _queuedArrangementSlot = null;
           await _rebuildNativeSongQueueFromSlot(queuedAtEnd);
           return; // _rebuildNativeSongQueueFromSlot calls notifyListeners
@@ -5348,6 +5467,18 @@ class AppState extends ChangeNotifier {
       // Pattern boundary: check for a queued jump.
       final queued = _queuedArrangementSlot;
       if (queued != null && entry.arrangementSlot != prevSlot) {
+        if (_activatePendingSongJump(
+          _songFlatRowIndex - _songRowMap.length,
+        )) {
+          notifyListeners();
+          return;
+        }
+        if (_loopPlaybackEnabled) {
+          // Native has already wrapped the current queue. Wait for the
+          // prepared destination rather than rebuilding mid-transport.
+          notifyListeners();
+          return;
+        }
         _queuedArrangementSlot = null;
         _syncCurrentPatternToSongPlayhead();
         await _rebuildNativeSongQueueFromSlot(queued);

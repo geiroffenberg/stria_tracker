@@ -22,9 +22,11 @@ The numbers (1–16) shown above each lane in the right-hand timeline provide a 
 Tapping a track number advances through the cycle:
 
 1. **Normal** — track plays normally, number shows `1–16` in grey
-2. **Solo** — track is isolated, number shows `S` in red
-3. **Mute** — track is silenced, number shows `M` in orange
+2. **Mute** — track is silenced, number shows `M` in orange
+3. **Solo** — track is isolated, number shows `S` in red
 4. **Back to Normal** — number returns to `1–16` in grey
+
+Mute comes before solo because muting one track live is far less disruptive than soloing, which would otherwise briefly silence every other track as you tap through the cycle to reach it.
 
 Each tap advances to the next state. Mute takes **audibility precedence** over solo — a muted track remains silent even if soloed, and the display shows `M` (not `S`).
 

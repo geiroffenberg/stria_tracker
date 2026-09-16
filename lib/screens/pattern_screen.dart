@@ -139,7 +139,7 @@ class _PatternScreenState extends State<PatternScreen> {
                 _MuteSoloBtn(
                   soloed: state.currentPattern.tracks[trackIdx].mixerSolo,
                   muted: state.currentPattern.tracks[trackIdx].mixerMute,
-                  onTap: () => state.cycleTrackMuteSolo(trackIdx),
+                  onTap: () => state.handleTrackLiveTap(trackIdx),
                 ),
               ] else ...[
                 Expanded(
@@ -201,9 +201,9 @@ class _PatternScreenState extends State<PatternScreen> {
 }
 
 /// Single-icon live mute/solo control for the pattern track header.
-/// Mirrors the Song view: it shows the track's audible state with mute
-/// taking precedence (both-lit shows 'M'), and each tap advances
-/// Normal → Solo → Mute → Normal via [AppState.cycleTrackMuteSolo].
+/// Mirrors the Song view: mute takes display precedence (both-lit shows
+/// 'M'). Tap routes through [AppState.handleTrackLiveTap], which toggles
+/// mute immediately and upgrades to solo if a second tap follows quickly.
 class _MuteSoloBtn extends StatelessWidget {
   final bool soloed;
   final bool muted;
