@@ -27,6 +27,17 @@ void main() async {
     DeviceOrientation.portraitUp,
   ]);
 
+  // Configure transparent edge-to-edge system bars
+  SystemChrome.setSystemUIOverlayStyle(
+    const SystemUiOverlayStyle(
+      statusBarColor: Colors.transparent,
+      statusBarIconBrightness: Brightness.light,
+      systemNavigationBarColor: Colors.transparent,
+      systemNavigationBarIconBrightness: Brightness.light,
+      systemNavigationBarDividerColor: Colors.transparent,
+    ),
+  );
+
   // Restore saved palette
   final prefs = await SharedPreferences.getInstance();
   final savedName = prefs.getString(_kPaletteKey);

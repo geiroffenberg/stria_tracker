@@ -164,9 +164,27 @@ Each slot represents one pattern. The song plays slots from top to bottom in seq
 | Duplicate | Insert a copy of the pattern directly below |
 | Delete | Remove the slot from the arrangement |
 
-### Timeline Track Numbers — Solo
+### Timeline Track Numbers — Mute & Solo
 
-The numbers (1–16) shown above each lane in the right-hand timeline are **tappable solo buttons**. Tapping a track number solos that track — identical to pressing the Solo button in the Mixer screen or the pattern track header. The number turns red while the track is soloed. Tapping it again un-solos it. Solo state is global: it shows in red in all three places (Song timeline, Pattern header, Mixer) simultaneously.
+The numbers (1–16) shown above each lane in the right-hand timeline (as well as the track header button in Pattern and Collapsed views) provide a responsive **live control** for track mute and solo.
+
+#### Gesture Controls
+
+- **Single Tap — Toggle Mute:**
+  - Tapping a track toggles **Mute** immediately with zero delay (shows `M` in orange, track silenced).
+  - Tapping a muted track un-mutes it back to normal (shows `1–16`).
+  - Tapping a **soloed track** is ignored (no-op) so a stray single tap during live performance will never accidentally silence the whole mix.
+- **Double Tap — Toggle Solo:**
+  - Double-tapping a track quickly (within 300 ms) toggles **Solo** (shows `S` in red, isolating the track).
+  - To ensure instant responsiveness on single taps, the first tap mutes the track immediately; when the second tap arrives within 300 ms, the mute is reverted and the track switches to solo.
+  - Double-tapping a soloed track un-solos it back to normal.
+- **Long Press — Performance Reset:**
+  - **Long-press any track number** in the Song timeline to reset **all 16 tracks** to the Normal (un-soloed, unmuted) state. This quickly clears complex live mute/solo setups in one action. The reset is immediate and silent.
+
+#### Precedence & Global State
+
+- **Audibility Precedence:** Mute takes precedence over solo — a muted track remains silent even if soloed, and the display shows `M` (not `S`).
+- **Global Synchronization:** Solo and mute state is **global**: changes propagate instantly across the Song timeline, Pattern screen header (including collapsed views), and Mixer screen.
 
 ### Track Cell Editing from the Song View
 
