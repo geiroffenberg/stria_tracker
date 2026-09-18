@@ -3957,6 +3957,27 @@ class AppState extends ChangeNotifier {
             .sliceEndNorm(samplerSlice, playThrough: samplerPlayThrough)
             .clamp(startNorm, 1.0);
       }
+      // VIB overrides the sampler's own instrument LFO with a sine pitch
+      // vibrato, same "override when present" semantics as the synth branch
+      // below — otherwise falls through to whatever LFO the instrument has
+      // configured. kSamplerLfoDivBeats is indexed 0=fastest (1/32 beat/cycle)
+      // .. 9=slowest (16 beats/cycle), the OPPOSITE order of VIB's speed
+      // digit (0=slow, 9=fast) — invert so higher X is still faster.
+      // Depth is also rescaled: the sampler's own pitch-LFO swings up to a
+      // full octave (±12 semitones) at depth=1.0 for its general-purpose
+      // instrument-LFO panel, but VIB's synth-side pitch depth only swings
+      // ±2 semitones at depth=1.0 — scale down so VIB feels the same depth
+      // regardless of instrument type.
+      final vibActive = vibSpeedNorm != null && vibDepthNorm != null;
+      final lfoWaveIdx = vibActive
+          ? SamplerLfoWave.sine.index
+          : (sp.isLfoActive ? sp.lfoWave.index : 0);
+      final lfoRateIdx = vibActive
+          ? (9 - (vibSpeedNorm * 9).round()).clamp(0, 9)
+          : sp.lfoRateIndex;
+      final lfoTargetMask = vibActive ? 2 : sp.lfoTargetMask; // 2 = pitch
+      final lfoDepthVal = vibActive ? vibDepthNorm * (2.0 / 12.0) : sp.lfoDepth;
+      final lfoModeIdx = vibActive ? SamplerLfoMode.center.index : sp.lfoMode.index;
       return <int>[
         _norm01ToAudio255(detuneNorm), // sampler pitch / synth detune
         _norm01ToAudio255(sp.hpCutoff), // cutoff  → sampler HP cutoff
@@ -4001,12 +4022,12 @@ class AppState extends ChangeNotifier {
         treMode ?? 0, // treMode: 0=off, 1=TRE(sine), 2=GAT(square)
         _norm01ToAudio255(sp.loopStart), // loopStart (sampler loop region)
         _norm01ToAudio255(sp.loopEnd), // loopEnd (sampler loop region)
-        // ── Sampler LFO (note-synced, BPM-relative) ──────────────────────
-        sp.isLfoActive ? sp.lfoWave.index : 0, // LFO waveform (0=off)
-        sp.lfoRateIndex, // LFO cycle-length division index
-        sp.lfoTargetMask, // LFO target bitmask: 1=vol,2=pitch,4=hp,8=lp
-        _norm01ToAudio255(sp.lfoDepth), // LFO depth 0..255
-        sp.lfoMode.index, // LFO anchor mode: 0=center,1=up,2=down
+        // ── Sampler LFO (note-synced, BPM-relative) — VIB overrides all 5 ──
+        lfoWaveIdx,
+        lfoRateIdx,
+        lfoTargetMask,
+        _norm01ToAudio255(lfoDepthVal),
+        lfoModeIdx,
       ];
     }
     if (ins.type == InstrumentType.karplusStrong) {
@@ -5773,8 +5794,12 @@ class AppState extends ChangeNotifier {
             cell.instrument! > 0) {
           // Explicit instrument (01-99): full note trigger.
           noteCmd = note.midiNote;
-        } else if (note.isNote && cell.instrument == 0) {
-          // IN = '00': pitch-change only — no retrigger, glide is respected.
+        } else if (note.isNote &&
+            (cell.instrument == null || cell.instrument == 0)) {
+          // IN empty or '00': pitch-change only — no retrigger, glide is
+          // respected. Empty must be treated the same as '00' here, not
+          // left unhandled — otherwise noteCmd stays at its default (hold)
+          // and the pitch silently never updates.
           noteCmd = pitchOnlyNoteCmd(note.midiNote);
         }
 
