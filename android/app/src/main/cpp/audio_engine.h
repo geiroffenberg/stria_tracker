@@ -74,16 +74,18 @@ struct Voice {
     float  decaySec          = 0.20f;
     float  sustainLevel      = 0.80f;
     float  releaseSec        = 0.25f;
-    // Synth "mini OFF" deferred retrigger: when a note-on interrupts a
-    // still-audible synth voice, jumping straight into a new Attack stage
-    // keeps the OLD envLevel but snaps currentFreq/phase-rate to the new
-    // pitch instantly — audible as a click on sustained notes. Instead,
-    // force a fast fixed-time envelope release to true silence (old pitch
-    // keeps ringing during the fade, exactly like a manual OFF), then apply
-    // the deferred note once envLevel actually reaches zero (see the
-    // EnvelopeStage::Release case in onAudioReady). -1 = nothing pending.
+    // Legacy "mini OFF" deferred-retrigger fields — no longer activated (see
+    // forcedMinAttackSec below for the current approach), kept only so the
+    // handful of defensive hard-reset call sites that clear them stay valid.
     bool   synthQuickFadeActive = false;
     int    pendingSynthNote     = -1;
+    // When a note-on retriggers a still-audible synth voice, the envelope is
+    // hard-zeroed immediately (inaudible on its own — offset transients are
+    // masked far more readily than onset transients) but the following
+    // Attack stage is floored to at least this many seconds so it doesn't
+    // snap back up too fast, which IS audible. 0 = no floor (fresh note-on
+    // from genuine silence keeps the instrument's own Attack setting).
+    float  forcedMinAttackSec = 0.0f;
     // LFO (VIB FX — pitch/filter/amp modulation)
     double lfoPhase          = 0.0;  // radians, accumulated per sample
     float  lfoRateNorm       = 0.2f; // 0..1 → 0.1..20 Hz
