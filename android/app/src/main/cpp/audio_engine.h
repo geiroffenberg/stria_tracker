@@ -79,6 +79,9 @@ struct Voice {
     // handful of defensive hard-reset call sites that clear them stay valid.
     bool   synthQuickFadeActive = false;
     int    pendingSynthNote     = -1;
+    int    synthQuickFadeFramesLeft = 0;
+    int    synthQuickFadeFramesTotal = 1;
+    float  synthLastOutput      = 0.0f;
     // When a note-on retriggers a still-audible synth voice, the envelope is
     // hard-zeroed immediately (inaudible on its own — offset transients are
     // masked far more readily than onset transients) but the following
@@ -813,6 +816,8 @@ private:
     int    mLimWriteIdx{0};
     float  mLimPeakEnv{0.0f};   // recent-peak envelope (1 ms release)
     float  mLimGainEnv{1.0f};   // applied gain envelope (50 ms release)
+    int    mStopFadeFramesTotal{1};
+    int    mStopFadeFramesLeft{0};
     
     int32_t                  mSubRowSampleCounter = 0;
     int32_t                  mPlayheadSampleCounter = 0;
