@@ -445,6 +445,12 @@ float normToAttackSec(float n) {
 // retrigger even with 0/full/full/full ADSR settings.
 constexpr float kRetriggerMinAttackSec = 0.008f;
 
+// Duration of the automatic "mini OFF" ramp that silences a still-audible synth
+// voice before a note-on retriggers it. This gap is inserted BEFORE the new
+// note, so it directly delays that note — keep it in the 1-5ms declick range
+// used by trackers, never long enough to be heard as a rhythmic gap.
+constexpr float kSynthQuickFadeSec = 0.006f;
+
 
 float normToDecaySec(float n) {
     const float x = std::clamp(n, 0.0f, 1.0f);
@@ -1489,7 +1495,7 @@ void AudioEngine::triggerRowLocked(const std::vector<int>& rowData) {
                 v.synthQuickFadeActive = true;
                 v.pendingSynthNote = n;
                 v.synthQuickFadeFramesTotal = std::max(
-                    1, static_cast<int>(0.040f * mCachedSampleRate));
+                    1, static_cast<int>(kSynthQuickFadeSec * mCachedSampleRate));
                 v.synthQuickFadeFramesLeft = v.synthQuickFadeFramesTotal;
                 v.noteHeld = false;
                 v.envStage = EnvelopeStage::Release;
@@ -3949,7 +3955,7 @@ oboe::DataCallbackResult AudioEngine::onAudioReady(
                         v.envLevel += relK * (0.0f - v.envLevel);
                     }
                         if (v.synthQuickFadeActive
-                            ? v.synthQuickFadeFramesLeft <= 0
+                            ? (v.synthQuickFadeFramesLeft <= 0 || v.envLevel <= 0.0f)
                             : v.envLevel < 1e-4f) {
                         v.envLevel = 0.0f;
                         if (v.synthQuickFadeActive && v.pendingSynthNote >= 0) {
