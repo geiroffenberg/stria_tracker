@@ -658,6 +658,25 @@ class AudioEnginePlugin : FlutterPlugin, MethodCallHandler {
                     result.success(mapOf("samples" to FloatArray(0), "sampleRate" to 48000))
                 }
             }
+            "renderOffline" -> {
+                if (enginePtr != 0L) {
+                    val tailSeconds = call.argument<Int>("tailSeconds") ?: 6
+                    val ptr = enginePtr
+                    // Blocking render: keep it off the UI thread.
+                    Thread {
+                        val outRate = IntArray(1)
+                        val samples = nativeRenderOffline(ptr, outRate, tailSeconds)
+                        android.os.Handler(android.os.Looper.getMainLooper()).post {
+                            result.success(mapOf(
+                                "samples" to (samples ?: FloatArray(0)),
+                                "sampleRate" to outRate[0]
+                            ))
+                        }
+                    }.start()
+                } else {
+                    result.success(mapOf("samples" to FloatArray(0), "sampleRate" to 48000))
+                }
+            }
             "dispose" -> {
                 if (enginePtr != 0L) {
                     nativeDispose(enginePtr)
@@ -767,6 +786,7 @@ class AudioEnginePlugin : FlutterPlugin, MethodCallHandler {
     private external fun nativeGetMeterValues(ptr: Long): FloatArray
     private external fun nativeStartExportTap(ptr: Long)
     private external fun nativeStopExportTap(ptr: Long, outSampleRate: IntArray): FloatArray?
+    private external fun nativeRenderOffline(ptr: Long, outSampleRate: IntArray, tailSeconds: Int): FloatArray?
     private external fun nativeSetSendRouting(ptr: Long, routing: IntArray)
     private external fun nativeDispose(ptr: Long)
 

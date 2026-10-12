@@ -273,6 +273,24 @@ class AudioEngine {
     return (samples: samples, sampleRate: sampleRate);
   }
 
+  /// Render the queued playback faster than realtime and return interleaved
+  /// stereo float samples plus the sample rate. Empty samples on failure.
+  Future<({List<double> samples, int sampleRate})> renderOffline({
+    int tailSeconds = 6,
+  }) async {
+    if (!_initialised) return (samples: const <double>[], sampleRate: 48000);
+    final result = await _channel.invokeMethod<Map>('renderOffline', {
+      'tailSeconds': tailSeconds,
+    });
+    final rawSamples = result?['samples'];
+    final sampleRate = (result?['sampleRate'] as int?) ?? 48000;
+    // The platform codec delivers a Float32List; avoid boxing millions of doubles.
+    final samples = rawSamples is List<double>
+        ? rawSamples
+        : const <double>[];
+    return (samples: samples, sampleRate: sampleRate);
+  }
+
   /// Configure a master bus insert effect.
   /// [slotIdx] is 0-5 (6 insert slots).
   /// [effectType] is -1=empty, 0=reverb.

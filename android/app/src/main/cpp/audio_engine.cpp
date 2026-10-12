@@ -7,6 +7,7 @@
 #include <thread>
 #include <chrono>
 #include <cmath>
+#include <new>
 
 namespace {
 float byteToNorm(int v) {
@@ -2798,8 +2799,19 @@ oboe::DataCallbackResult AudioEngine::onAudioReady(
         oboe::AudioStream* stream,
         void*              audioData,
         int32_t            numFrames) {
+    renderAudio(static_cast<float*>(audioData), numFrames,
+                stream->getSampleRate(), /*offlineCaller=*/false);
+    return oboe::DataCallbackResult::Continue;
+}
 
-    auto* out = static_cast<float*>(audioData);
+// Renders [numFrames] stereo frames into [out]. Shared by the live Oboe
+// callback and the offline (faster-than-realtime) export renderer.
+void AudioEngine::renderAudio(
+        float*  out,
+        int32_t numFrames,
+        double  sampleRateHz,
+        bool    offlineCaller) {
+
     std::fill(out, out + numFrames * 2, 0.0f);
 
 #if defined(__aarch64__)
@@ -2821,7 +2833,7 @@ oboe::DataCallbackResult AudioEngine::onAudioReady(
     }
 #endif
 
-    const double sampleRate = stream->getSampleRate();
+    const double sampleRate = sampleRateHz;
     const double twoPi = 2.0 * M_PI;
     // One-pole gain smoother: ~5 ms time constant, eliminates clicks.
     const float smoothK = 1.0f - std::exp(-1.0f / (static_cast<float>(sampleRate) * 0.005f));
@@ -2843,6 +2855,10 @@ oboe::DataCallbackResult AudioEngine::onAudioReady(
     float* previewDirectR = mPreviewDirectR.data();
 
     std::lock_guard<std::mutex> lock(mVoiceMutex);
+
+    // While an offline render owns the engine state, live callbacks output
+    // silence. Checked under the lock so no live block can interleave.
+    if (!offlineCaller && mOfflineRendering.load()) return;
 
     // Advance the per-row sample counter and fire due sub-row events BEFORE
     // handling row-boundary advancement below. Ordering matters here: a
@@ -4570,8 +4586,6 @@ oboe::DataCallbackResult AudioEngine::onAudioReady(
     for (auto& v : mVoices) {
         v.triggerSkipFrames = 0;
     }
-
-    return oboe::DataCallbackResult::Continue;
 }
 
 // ---------------------------------------------------------------------------
@@ -4748,6 +4762,93 @@ std::vector<float> AudioEngine::stopExportTap(int& outSampleRate) {
          mExportBuffer.size() / 2, outSampleRate);
 
     std::vector<float> result = std::move(mExportBuffer);
+    return result;
+}
+
+// ---------------------------------------------------------------------------
+// Offline render — drives the exact live render path faster than realtime
+// ---------------------------------------------------------------------------
+
+std::vector<float> AudioEngine::renderOffline(int& outSampleRate, int maxTailSeconds) {
+    const double sr = mCachedSampleRate > 0.0f ? static_cast<double>(mCachedSampleRate) : 48000.0;
+    outSampleRate = static_cast<int>(sr);
+
+    std::vector<float> result;
+    if (mOfflineRendering.exchange(true)) return result; // already rendering
+
+    struct Guard {
+        std::atomic<bool>& flag;
+        ~Guard() { flag.store(false); }
+    } guard{mOfflineRendering};
+
+    // Same block size as the live stream so event timing matches playback.
+    int32_t block = mStream ? mStream->getFramesPerBurst() : 192;
+    block = std::clamp<int32_t>(block, 64, kMaxAudioBurst);
+
+    try {
+        {
+            std::lock_guard<std::mutex> lock(mVoiceMutex);
+            if (mPlayheadRunning.load() || mQueuedPlaybackRows.empty()) return result;
+            // Guarantees the render terminates at the end of the queue.
+            mQueuedPlaybackLoop = false;
+            // Mirrors the fresh idle->running transition in start().
+            mStopFadeFramesLeft = 0;
+            mPreviewBypassTrackInserts.fill(false);
+            for (auto& v : mVoices) {
+                v.pendingRetriggerNote = -1;
+                v.declickTailFramesLeft = 0;
+            }
+            mQueuedPlaybackRowIndex = 0;
+            mPlayheadSampleCounter = 0;
+            primeNextQueuedPlaybackRowLocked();
+            mPlayheadRunning.store(true);
+        }
+
+        const size_t maxSamples = static_cast<size_t>(kMaxExportFrames) * 2;
+        std::vector<float> buf(static_cast<size_t>(block) * 2);
+
+        while (mPlayheadRunning.load() && result.size() < maxSamples) {
+            renderAudio(buf.data(), block, sr, /*offlineCaller=*/true);
+            result.insert(result.end(), buf.begin(), buf.end());
+        }
+
+        // Tail: the sequencer has ended but voices/FX keep ringing, exactly
+        // like a soft stop in live playback. Stop once the output is silent.
+        const int64_t maxTailFrames = static_cast<int64_t>(std::max(0, maxTailSeconds) * sr);
+        const int64_t quietNeeded = static_cast<int64_t>(0.3 * sr);
+        constexpr float kSilence = 3.0e-5f; // ~ -90 dB, below 16-bit resolution
+        int64_t tailFrames = 0;
+        int64_t quietFrames = 0;
+        bool silent = false;
+        while (tailFrames < maxTailFrames && result.size() < maxSamples) {
+            renderAudio(buf.data(), block, sr, /*offlineCaller=*/true);
+            float peak = 0.0f;
+            for (float x : buf) peak = std::max(peak, std::fabs(x));
+            result.insert(result.end(), buf.begin(), buf.end());
+            tailFrames += block;
+            quietFrames = peak < kSilence ? quietFrames + block : 0;
+            if (quietFrames >= quietNeeded) { silent = true; break; }
+        }
+
+        // Endless sounds (e.g. looped samples) hit the cap: fade to avoid a click.
+        if (!silent && tailFrames > 0) {
+            const int64_t fadeFrames = std::min<int64_t>(
+                static_cast<int64_t>(0.25 * sr), tailFrames);
+            const size_t totalFrames = result.size() / 2;
+            for (int64_t i = 0; i < fadeFrames; ++i) {
+                const float g = 1.0f - static_cast<float>(i + 1) / static_cast<float>(fadeFrames);
+                const size_t f = totalFrames - static_cast<size_t>(fadeFrames) + static_cast<size_t>(i);
+                result[f * 2] *= g;
+                result[f * 2 + 1] *= g;
+            }
+        }
+    } catch (const std::bad_alloc&) {
+        LOGE("renderOffline: out of memory");
+        result.clear();
+        result.shrink_to_fit();
+    }
+
+    LOGI("renderOffline: %zu frames at %d Hz", result.size() / 2, outSampleRate);
     return result;
 }
 

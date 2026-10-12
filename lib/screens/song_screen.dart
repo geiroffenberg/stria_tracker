@@ -1123,7 +1123,7 @@ class _SongScreenState extends State<SongScreen> {
       return;
     }
 
-    // Show progress dialog — export takes as long as the song.
+    // Show progress dialog while the engine renders the song offline.
     if (!ctx.mounted) return;
     showDialog<void>(
       context: ctx,
@@ -1136,7 +1136,7 @@ class _SongScreenState extends State<SongScreen> {
             SizedBox(height: 16),
             CircularProgressIndicator(),
             SizedBox(height: 16),
-            Text('Playing song and capturing audio…'),
+            Text('Rendering song…'),
           ],
         ),
       ),

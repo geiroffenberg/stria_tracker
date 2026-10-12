@@ -515,6 +515,24 @@ Java_com_metamind_stria_AudioEnginePlugin_nativeStopExportTap(
     return result;
 }
 
+JNIEXPORT jfloatArray JNICALL
+Java_com_metamind_stria_AudioEnginePlugin_nativeRenderOffline(
+        JNIEnv* env, jobject, jlong ptr, jintArray outSampleRate, jint tailSeconds) {
+    int sampleRate = 48000;
+    std::vector<float> samples =
+        reinterpret_cast<AudioEngine*>(ptr)->renderOffline(sampleRate, tailSeconds);
+
+    jint* ratePtr = env->GetIntArrayElements(outSampleRate, nullptr);
+    ratePtr[0] = sampleRate;
+    env->ReleaseIntArrayElements(outSampleRate, ratePtr, 0);
+
+    jfloatArray result = env->NewFloatArray(static_cast<jsize>(samples.size()));
+    if (result != nullptr && !samples.empty()) {
+        env->SetFloatArrayRegion(result, 0, static_cast<jsize>(samples.size()), samples.data());
+    }
+    return result;
+}
+
 JNIEXPORT void JNICALL
 Java_com_metamind_stria_AudioEnginePlugin_nativeOpenRecordingStream(
         JNIEnv*, jobject, jlong ptr) {

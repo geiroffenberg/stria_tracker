@@ -4532,8 +4532,9 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Export the current song to a WAV file by tapping the stereo output
-  /// while the song plays from start to finish.
+  /// Export the current song to a WAV file. The native engine renders the
+  /// queued song faster than realtime (no audio device involved), including
+  /// a ringing-out tail for reverb/delay/release.
   ///
   /// Returns the path of the saved file on success, or null on failure.
   Future<String?> exportSongToWav() async {
@@ -4549,31 +4550,18 @@ class AppState extends ChangeNotifier {
     _syncCurrentPatternToSongPlayhead();
     playheadRow = 0;
 
-    // Arm the tap before starting the engine.
-    await AudioEngine.instance.startExportTap();
-
-    // Create a completer that stop() will signal when the song ends.
-    _exportCompleter = Completer<void>();
-    final done = _exportCompleter!.future;
-
-    // Start playback.
-    _resetInstrumentCarry();
-    _captureStartStates();
-    isPlaying = true;
-    await _loadNativeSongPlaybackQueue(startSlot: 0, startRow: 0);
-    await AudioEngine.instance.start();
-    _startNativeSongPoller();
-    notifyListeners();
-
-    // Wait for song to finish (stop() completes the future).
-    await done;
-
-    // Retrieve captured audio.
-    final tap = await AudioEngine.instance.stopExportTap();
-
-    // Restore playback mode.
-    _playbackFollowsSong = wasFollowing;
-    _loopPlaybackEnabled = wasLooping;
+    ({List<double> samples, int sampleRate}) tap;
+    try {
+      _resetInstrumentCarry();
+      _captureStartStates();
+      await _loadNativeSongPlaybackQueue(startSlot: 0, startRow: 0);
+      tap = await AudioEngine.instance.renderOffline();
+    } finally {
+      _playbackFollowsSong = wasFollowing;
+      _loopPlaybackEnabled = wasLooping;
+      // Reset transport/UI state and release the voices left ringing.
+      stop();
+    }
 
     if (tap.samples.isEmpty) return null;
 

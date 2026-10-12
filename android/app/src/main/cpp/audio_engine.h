@@ -743,6 +743,12 @@ public:
     /// Also returns the stream sample rate via [outSampleRate].
     std::vector<float> stopExportTap(int& outSampleRate);
 
+    /// Render the already-queued playback (song/pattern) faster than realtime
+    /// and return interleaved stereo floats. Blocks until finished, so call it
+    /// from a worker thread. Appends a ringing-out tail of up to
+    /// [maxTailSeconds] (stops early once silent). Returns empty on failure.
+    std::vector<float> renderOffline(int& outSampleRate, int maxTailSeconds);
+
     /// Set per-track send routing. [routing] has one entry per track:
     /// 0 = route to master, 1-16 = route audio into that channel's bus (1-based).
     void setSendRouting(const std::vector<int>& routing);
@@ -752,6 +758,9 @@ public:
     std::array<float, kMaxVoices * 2 + 2> getMeterValues() const;
 
 private:
+    // Core render, shared by onAudioReady() and renderOffline().
+    void renderAudio(float* out, int32_t numFrames, double sampleRateHz, bool offlineCaller);
+
     // Shared by stop() / stopTransportSoft(): halts the sequencer/playhead
     // and resets meters. Does NOT touch mVoices — callers decide separately
     // whether to silence voices (hard stop) or leave them ringing (soft stop).
@@ -848,6 +857,7 @@ private:
     // Export tap state (stereo output capture during song playback)
     std::mutex                       mExportMutex;
     std::atomic<bool>                mExportTapActive{false};
+    std::atomic<bool>                mOfflineRendering{false}; // live callback goes silent while true
     std::vector<float>               mExportBuffer;       // interleaved stereo L,R,...
     static constexpr int             kMaxExportFrames = 48000 * 60 * 20; // 20 min at 48 kHz
 
