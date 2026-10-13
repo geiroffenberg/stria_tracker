@@ -554,11 +554,19 @@ int findNearestZeroCrossing(const std::vector<float>& mono,
                             int minFrame,
                             int maxFrame,
                             int searchRadius = 512) {
-    if (mono.empty() || minFrame >= maxFrame) return targetFrame;
+    const int total = static_cast<int>(mono.size());
+    if (total < 2) return targetFrame;
+
+    const int lastValid = total - 1;
+    minFrame = std::clamp(minFrame, 0, lastValid);
+    maxFrame = std::clamp(maxFrame, 0, lastValid);
+    if (minFrame >= maxFrame) return std::clamp(targetFrame, minFrame, maxFrame);
+
     targetFrame = std::clamp(targetFrame, minFrame, maxFrame);
 
-    const int startSearch = std::max(minFrame + 1, targetFrame - searchRadius);
-    const int endSearch   = std::min(maxFrame, targetFrame + searchRadius);
+    // Search window for i. Since we inspect mono[i-1] and mono[i], i must be in [1, lastValid].
+    const int startSearch = std::clamp(targetFrame - searchRadius, std::max(1, minFrame + 1), lastValid);
+    const int endSearch   = std::clamp(targetFrame + searchRadius, startSearch, maxFrame);
 
     int bestPosCrossing = -1;
     int bestPosDist = searchRadius + 1;
@@ -567,8 +575,7 @@ int findNearestZeroCrossing(const std::vector<float>& mono,
     int bestAnyDist = searchRadius + 1;
 
     int bestMinAbsFrame = targetFrame;
-    float minAbsVal = (targetFrame >= 0 && targetFrame < static_cast<int>(mono.size()))
-        ? std::fabs(mono[targetFrame]) : 1.0f;
+    float minAbsVal = std::fabs(mono[targetFrame]);
 
     for (int i = startSearch; i <= endSearch; ++i) {
         const float prev = mono[i - 1];
@@ -602,10 +609,11 @@ int findNearestZeroCrossing(const std::vector<float>& mono,
 
 // PolyBLEP (Polynomial Band-Limited Step) anti-aliasing residual.
 // Smooths sharp discontinuities in saw, square, and pulse waveforms.
-// t: phase in [0, 1)
+// t: phase (will be normalized to [0, 1))
 // dt: phase increment per sample (frequency / sampleRate)
 inline float polyBlep(float t, float dt) {
-    if (dt <= 0.0f) return 0.0f;
+    if (dt <= 0.0f || dt >= 0.5f) return 0.0f;
+    t = t - std::floor(t);
     if (t < dt) {
         const float x = t / dt;
         return x + x - x * x - 1.0f; // 2*x - x^2 - 1
@@ -1046,7 +1054,7 @@ float AudioEngine::findNearestZeroCrossingNorm(int slot, float normPos) {
     const int safe = std::clamp(slot, 0, static_cast<int>(mSamplerSlots.size()) - 1);
     std::lock_guard<std::mutex> lock(mVoiceMutex);
     const auto& s = mSamplerSlots[safe];
-    if (s.mono.empty()) return normPos;
+    if (s.mono.size() < 2) return normPos;
 
     const int totalFrames = static_cast<int>(s.mono.size());
     const int targetFrame = std::clamp(
@@ -3409,25 +3417,38 @@ void AudioEngine::renderAudio(
             const double regionEnd = static_cast<double>(endFrame);
             const double regionLen = std::max(1.0, regionEnd - regionStart);
 
-            // Loop region: clamped within playback region and snapped to nearest zero crossing.
-            if (v.cachedSampleSlot != v.sampleSlot ||
-                v.cachedLoopStartNorm != v.loopStartNorm ||
-                v.cachedLoopEndNorm != v.loopEndNorm ||
-                v.cachedSampleStartNorm != v.sampleStartNorm ||
-                v.cachedSampleEndNorm != v.sampleEndNorm) {
-                const int rawS = std::clamp(
-                    static_cast<int>(v.loopStartNorm * static_cast<float>(sampleFrames)),
-                    startFrame, endFrame - 1);
-                const int rawE = std::clamp(
-                    static_cast<int>(v.loopEndNorm * static_cast<float>(sampleFrames)),
-                    rawS + 1, endFrame);
-                v.cachedLoopSFrame = findNearestZeroCrossing(s.mono, rawS, startFrame, endFrame - 1);
-                v.cachedLoopEFrame = findNearestZeroCrossing(s.mono, rawE, v.cachedLoopSFrame + 1, endFrame);
-                v.cachedLoopStartNorm = v.loopStartNorm;
-                v.cachedLoopEndNorm = v.loopEndNorm;
-                v.cachedSampleStartNorm = v.sampleStartNorm;
-                v.cachedSampleEndNorm = v.sampleEndNorm;
-                v.cachedSampleSlot = v.sampleSlot;
+            // Loop region: clamped within playback region.
+            if (v.loopMode > 0) {
+                if (v.cachedSampleSlot != v.sampleSlot ||
+                    v.cachedLoopStartNorm != v.loopStartNorm ||
+                    v.cachedLoopEndNorm != v.loopEndNorm ||
+                    v.cachedSampleStartNorm != v.sampleStartNorm ||
+                    v.cachedSampleEndNorm != v.sampleEndNorm) {
+                    const int maxValidFrame = sampleFrames - 1;
+                    const int sBound = std::clamp(startFrame, 0, maxValidFrame);
+                    const int eBound = std::clamp(endFrame - 1, sBound, maxValidFrame);
+
+                    const int rawS = std::clamp(
+                        static_cast<int>(v.loopStartNorm * static_cast<float>(sampleFrames - 1)),
+                        sBound, eBound);
+                    const int rawE = std::clamp(
+                        static_cast<int>(v.loopEndNorm * static_cast<float>(sampleFrames - 1)),
+                        rawS, eBound);
+
+                    v.cachedLoopSFrame = findNearestZeroCrossing(s.mono, rawS, sBound, eBound);
+                    v.cachedLoopEFrame = findNearestZeroCrossing(s.mono, rawE, std::min(eBound, v.cachedLoopSFrame + 1), eBound);
+                    if (v.cachedLoopEFrame <= v.cachedLoopSFrame) {
+                        v.cachedLoopEFrame = std::min(sampleFrames, v.cachedLoopSFrame + 1);
+                    }
+                    v.cachedLoopStartNorm = v.loopStartNorm;
+                    v.cachedLoopEndNorm = v.loopEndNorm;
+                    v.cachedSampleStartNorm = v.sampleStartNorm;
+                    v.cachedSampleEndNorm = v.sampleEndNorm;
+                    v.cachedSampleSlot = v.sampleSlot;
+                }
+            } else {
+                v.cachedLoopSFrame = startFrame;
+                v.cachedLoopEFrame = endFrame;
             }
             const int loopSFrame = v.cachedLoopSFrame;
             const int loopEFrame = v.cachedLoopEFrame;
@@ -4184,14 +4205,14 @@ void AudioEngine::renderAudio(
                     case 3: { // square
                         float sqr = (t3 < 0.5f) ? 1.0f : -1.0f;
                         sqr += polyBlep(t3, dt3);
-                        sqr -= polyBlep(t3 < 0.5f ? (t3 + 0.5f) : (t3 - 0.5f), dt3);
+                        sqr -= polyBlep(t3 - 0.5f, dt3);
                         osc3Raw = sqr;
                         break;
                     }
                     case 4: { // pulse (25%)
                         float pul = (t3 < 0.25f) ? 1.0f : -1.0f;
                         pul += polyBlep(t3, dt3);
-                        pul -= polyBlep(t3 < 0.25f ? (t3 + 0.75f) : (t3 - 0.25f), dt3);
+                        pul -= polyBlep(t3 - 0.25f, dt3);
                         osc3Raw = pul;
                         break;
                     }
@@ -4226,14 +4247,14 @@ void AudioEngine::renderAudio(
                     case 3: { // square
                         float sqr = (t2 < 0.5f) ? 1.0f : -1.0f;
                         sqr += polyBlep(t2, dt2);
-                        sqr -= polyBlep(t2 < 0.5f ? (t2 + 0.5f) : (t2 - 0.5f), dt2);
+                        sqr -= polyBlep(t2 - 0.5f, dt2);
                         osc2Raw = sqr;
                         break;
                     }
                     case 4: { // pulse (25%)
                         float pul = (t2 < 0.25f) ? 1.0f : -1.0f;
                         pul += polyBlep(t2, dt2);
-                        pul -= polyBlep(t2 < 0.25f ? (t2 + 0.75f) : (t2 - 0.25f), dt2);
+                        pul -= polyBlep(t2 - 0.25f, dt2);
                         osc2Raw = pul;
                         break;
                     }
@@ -4268,14 +4289,14 @@ void AudioEngine::renderAudio(
                 case 3: { // square
                     float sqr = (t < 0.5f) ? 1.0f : -1.0f;
                     sqr += polyBlep(t, dt);
-                    sqr -= polyBlep(t < 0.5f ? (t + 0.5f) : (t - 0.5f), dt);
+                    sqr -= polyBlep(t - 0.5f, dt);
                     osc = sqr;
                     break;
                 }
                 case 4: { // pulse (25%)
                     float pul = (t < 0.25f) ? 1.0f : -1.0f;
                     pul += polyBlep(t, dt);
-                    pul -= polyBlep(t < 0.25f ? (t + 0.75f) : (t - 0.25f), dt);
+                    pul -= polyBlep(t - 0.25f, dt);
                     osc = pul;
                     break;
                 }
