@@ -466,6 +466,13 @@ Java_com_metamind_stria_AudioEnginePlugin_nativeSetSamplerSample(
     return static_cast<jboolean>(ok);
 }
 
+JNIEXPORT jfloat JNICALL
+Java_com_metamind_stria_AudioEnginePlugin_nativeFindNearestZeroCrossing(
+        JNIEnv*, jobject, jlong ptr, jint slot, jfloat normPos) {
+    if (ptr == 0) return normPos;
+    return reinterpret_cast<AudioEngine*>(ptr)->findNearestZeroCrossingNorm(slot, normPos);
+}
+
 JNIEXPORT void JNICALL
 Java_com_metamind_stria_AudioEnginePlugin_nativeUpdateStretch(
         JNIEnv*, jobject, jlong ptr,

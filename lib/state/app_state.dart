@@ -7976,6 +7976,37 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Snaps current sampler's loop points to the nearest waveform zero-crossings.
+  Future<void> snapCurrentSamplerLoopPoints({
+    bool snapStart = true,
+    bool snapEnd = true,
+  }) async {
+    final inst = currentInstrument;
+    if (inst.type != InstrumentType.sampler) return;
+    final sp = inst.sampler;
+    if (sp.samplePath == null) return;
+    final slot = currentInstrumentIndex;
+
+    if (snapStart) {
+      final snappedS = await AudioEngine.instance.findNearestZeroCrossing(
+        slot,
+        sp.loopStart,
+      );
+      sp.loopStart = snappedS.clamp(0.0, 1.0);
+    }
+    if (snapEnd) {
+      final snappedE = await AudioEngine.instance.findNearestZeroCrossing(
+        slot,
+        sp.loopEnd,
+      );
+      sp.loopEnd = snappedE.clamp(0.0, 1.0);
+    }
+    if (sp.loopEnd < sp.loopStart + 0.001) {
+      sp.loopEnd = (sp.loopStart + 0.001).clamp(0.0, 1.0);
+    }
+    instrumentParamsChanged();
+  }
+
   // ── Persistence ───────────────────────────────────────────────────────────
 
   void _notifyListenersSafe() {

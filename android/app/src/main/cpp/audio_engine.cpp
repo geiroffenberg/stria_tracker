@@ -544,6 +544,77 @@ uint32_t readLe32(const uint8_t* p) {
                                  (p[2] << 16) |
                                  (p[3] << 24));
 }
+
+// Finds the nearest zero-crossing index in mono buffer around targetFrame.
+// Prioritizes positive-going zero crossings (waveform going from negative/zero to positive)
+// to ensure seamless looping phase continuity without amplitude clicks.
+// If no positive-going crossing is found, falls back to any crossing, then to minimum absolute amplitude.
+int findNearestZeroCrossing(const std::vector<float>& mono,
+                            int targetFrame,
+                            int minFrame,
+                            int maxFrame,
+                            int searchRadius = 512) {
+    if (mono.empty() || minFrame >= maxFrame) return targetFrame;
+    targetFrame = std::clamp(targetFrame, minFrame, maxFrame);
+
+    const int startSearch = std::max(minFrame + 1, targetFrame - searchRadius);
+    const int endSearch   = std::min(maxFrame, targetFrame + searchRadius);
+
+    int bestPosCrossing = -1;
+    int bestPosDist = searchRadius + 1;
+
+    int bestAnyCrossing = -1;
+    int bestAnyDist = searchRadius + 1;
+
+    int bestMinAbsFrame = targetFrame;
+    float minAbsVal = (targetFrame >= 0 && targetFrame < static_cast<int>(mono.size()))
+        ? std::fabs(mono[targetFrame]) : 1.0f;
+
+    for (int i = startSearch; i <= endSearch; ++i) {
+        const float prev = mono[i - 1];
+        const float curr = mono[i];
+        const int dist = std::abs(i - targetFrame);
+
+        // Positive-going zero-crossing: prev <= 0 and curr >= 0 (and not both identically 0)
+        if (prev <= 0.0f && curr >= 0.0f && (prev < 0.0f || curr > 0.0f)) {
+            if (dist < bestPosDist) {
+                bestPosDist = dist;
+                bestPosCrossing = (std::fabs(curr) < std::fabs(prev)) ? i : (i - 1);
+            }
+        } else if ((prev >= 0.0f && curr <= 0.0f) && (prev > 0.0f || curr < 0.0f)) {
+            if (dist < bestAnyDist) {
+                bestAnyDist = dist;
+                bestAnyCrossing = (std::fabs(curr) < std::fabs(prev)) ? i : (i - 1);
+            }
+        }
+
+        const float absVal = std::fabs(curr);
+        if (absVal < minAbsVal) {
+            minAbsVal = absVal;
+            bestMinAbsFrame = i;
+        }
+    }
+
+    if (bestPosCrossing >= 0) return std::clamp(bestPosCrossing, minFrame, maxFrame);
+    if (bestAnyCrossing >= 0) return std::clamp(bestAnyCrossing, minFrame, maxFrame);
+    return std::clamp(bestMinAbsFrame, minFrame, maxFrame);
+}
+
+// PolyBLEP (Polynomial Band-Limited Step) anti-aliasing residual.
+// Smooths sharp discontinuities in saw, square, and pulse waveforms.
+// t: phase in [0, 1)
+// dt: phase increment per sample (frequency / sampleRate)
+inline float polyBlep(float t, float dt) {
+    if (dt <= 0.0f) return 0.0f;
+    if (t < dt) {
+        const float x = t / dt;
+        return x + x - x * x - 1.0f; // 2*x - x^2 - 1
+    } else if (t > 1.0f - dt) {
+        const float x = (t - 1.0f) / dt;
+        return x * x + x + x + 1.0f; // x^2 + 2*x + 1
+    }
+    return 0.0f;
+}
 } // namespace
 
 #define LOG_TAG "TrackerAudio"
@@ -969,6 +1040,21 @@ bool AudioEngine::setSamplerSample(int slot, const std::string& path) {
     LOGI("Sampler: loaded slot %d (%zu frames @ %d Hz) from %s",
          safe, mSamplerSlots[safe].mono.size(), mSamplerSlots[safe].sampleRate, path.c_str());
     return true;
+}
+
+float AudioEngine::findNearestZeroCrossingNorm(int slot, float normPos) {
+    const int safe = std::clamp(slot, 0, static_cast<int>(mSamplerSlots.size()) - 1);
+    std::lock_guard<std::mutex> lock(mVoiceMutex);
+    const auto& s = mSamplerSlots[safe];
+    if (s.mono.empty()) return normPos;
+
+    const int totalFrames = static_cast<int>(s.mono.size());
+    const int targetFrame = std::clamp(
+        static_cast<int>(normPos * static_cast<float>(totalFrames - 1)),
+        0, totalFrames - 1);
+
+    const int snapped = findNearestZeroCrossing(s.mono, targetFrame, 0, totalFrames - 1, 512);
+    return static_cast<float>(snapped) / static_cast<float>(totalFrames);
 }
 
 void AudioEngine::updateStretch(int slot, bool enabled, int beats, float bpm, bool preservePitch) {
@@ -3323,13 +3409,28 @@ void AudioEngine::renderAudio(
             const double regionEnd = static_cast<double>(endFrame);
             const double regionLen = std::max(1.0, regionEnd - regionStart);
 
-            // Loop region: clamped within playback region.
-            const int loopSFrame = std::clamp(
-                static_cast<int>(v.loopStartNorm * static_cast<float>(sampleFrames)),
-                startFrame, endFrame - 1);
-            const int loopEFrame = std::clamp(
-                static_cast<int>(v.loopEndNorm * static_cast<float>(sampleFrames)),
-                loopSFrame + 1, endFrame);
+            // Loop region: clamped within playback region and snapped to nearest zero crossing.
+            if (v.cachedSampleSlot != v.sampleSlot ||
+                v.cachedLoopStartNorm != v.loopStartNorm ||
+                v.cachedLoopEndNorm != v.loopEndNorm ||
+                v.cachedSampleStartNorm != v.sampleStartNorm ||
+                v.cachedSampleEndNorm != v.sampleEndNorm) {
+                const int rawS = std::clamp(
+                    static_cast<int>(v.loopStartNorm * static_cast<float>(sampleFrames)),
+                    startFrame, endFrame - 1);
+                const int rawE = std::clamp(
+                    static_cast<int>(v.loopEndNorm * static_cast<float>(sampleFrames)),
+                    rawS + 1, endFrame);
+                v.cachedLoopSFrame = findNearestZeroCrossing(s.mono, rawS, startFrame, endFrame - 1);
+                v.cachedLoopEFrame = findNearestZeroCrossing(s.mono, rawE, v.cachedLoopSFrame + 1, endFrame);
+                v.cachedLoopStartNorm = v.loopStartNorm;
+                v.cachedLoopEndNorm = v.loopEndNorm;
+                v.cachedSampleStartNorm = v.sampleStartNorm;
+                v.cachedSampleEndNorm = v.sampleEndNorm;
+                v.cachedSampleSlot = v.sampleSlot;
+            }
+            const int loopSFrame = v.cachedLoopSFrame;
+            const int loopEFrame = v.cachedLoopEFrame;
             const double loopRegionStart = static_cast<double>(loopSFrame);
             const double loopRegionEnd   = static_cast<double>(loopEFrame);
             const double loopLen = std::max(1.0, loopRegionEnd - loopRegionStart);
@@ -4074,11 +4175,26 @@ void AudioEngine::renderAudio(
                     std::pow(2.0, static_cast<double>(det3) / 12.0);
                 const double inc3 = twoPi * freq3 / sampleRate;
                 const float t3 = static_cast<float>(v.osc3Phase / twoPi);
+                const float dt3 = std::clamp(static_cast<float>(freq3 / sampleRate), 1e-6f, 0.5f);
                 switch (v.osc3Waveform) {
                     case 1: osc3Raw = 1.0f - 4.0f * std::fabs(t3 - 0.5f); break;
-                    case 2: osc3Raw = 2.0f * t3 - 1.0f; break;
-                    case 3: osc3Raw = (t3 < 0.5f) ? 1.0f : -1.0f; break;
-                    case 4: osc3Raw = (t3 < 0.25f) ? 1.0f : -1.0f; break;
+                    case 2: // saw
+                        osc3Raw = (2.0f * t3 - 1.0f) - polyBlep(t3, dt3);
+                        break;
+                    case 3: { // square
+                        float sqr = (t3 < 0.5f) ? 1.0f : -1.0f;
+                        sqr += polyBlep(t3, dt3);
+                        sqr -= polyBlep(t3 < 0.5f ? (t3 + 0.5f) : (t3 - 0.5f), dt3);
+                        osc3Raw = sqr;
+                        break;
+                    }
+                    case 4: { // pulse (25%)
+                        float pul = (t3 < 0.25f) ? 1.0f : -1.0f;
+                        pul += polyBlep(t3, dt3);
+                        pul -= polyBlep(t3 < 0.25f ? (t3 + 0.75f) : (t3 - 0.25f), dt3);
+                        osc3Raw = pul;
+                        break;
+                    }
                     case 5: {
                         uint32_t ns3 = (v.noiseState ^ 0x5A5A5A5Au) * 22695477u + 1u;
                         osc3Raw = (static_cast<float>((ns3 >> 8) & 0xFFFFu) / 32767.5f) - 1.0f;
@@ -4101,11 +4217,26 @@ void AudioEngine::renderAudio(
                 }
                 const double inc2 = twoPi * static_cast<double>(freq2) / sampleRate;
                 const float t2 = static_cast<float>(v.osc2Phase / twoPi);
+                const float dt2 = std::clamp(static_cast<float>(freq2 / sampleRate), 1e-6f, 0.5f);
                 switch (v.osc2Waveform) {
                     case 1: osc2Raw = 1.0f - 4.0f * std::fabs(t2 - 0.5f); break;
-                    case 2: osc2Raw = 2.0f * t2 - 1.0f; break;
-                    case 3: osc2Raw = (t2 < 0.5f) ? 1.0f : -1.0f; break;
-                    case 4: osc2Raw = (t2 < 0.25f) ? 1.0f : -1.0f; break;
+                    case 2: // saw
+                        osc2Raw = (2.0f * t2 - 1.0f) - polyBlep(t2, dt2);
+                        break;
+                    case 3: { // square
+                        float sqr = (t2 < 0.5f) ? 1.0f : -1.0f;
+                        sqr += polyBlep(t2, dt2);
+                        sqr -= polyBlep(t2 < 0.5f ? (t2 + 0.5f) : (t2 - 0.5f), dt2);
+                        osc2Raw = sqr;
+                        break;
+                    }
+                    case 4: { // pulse (25%)
+                        float pul = (t2 < 0.25f) ? 1.0f : -1.0f;
+                        pul += polyBlep(t2, dt2);
+                        pul -= polyBlep(t2 < 0.25f ? (t2 + 0.75f) : (t2 - 0.25f), dt2);
+                        osc2Raw = pul;
+                        break;
+                    }
                     case 5: {
                         uint32_t ns2 = (v.noiseState ^ 0xA5A5A5A5u) * 1664525u + 1013904223u;
                         osc2Raw = (static_cast<float>((ns2 >> 8) & 0xFFFFu) / 32767.5f) - 1.0f;
@@ -4125,20 +4256,29 @@ void AudioEngine::renderAudio(
             }
             const double phaseInc = twoPi * static_cast<double>(std::max(1.0f, fm1Freq)) / sampleRate;
             const float t = static_cast<float>(v.phase / twoPi); // [0,1)
+            const float dt = std::clamp(static_cast<float>(std::max(1.0f, fm1Freq) / sampleRate), 1e-6f, 0.5f);
             float osc = 0.0f;
             switch (v.waveform) {
                 case 1: // triangle
                     osc = 1.0f - 4.0f * std::fabs(t - 0.5f);
                     break;
                 case 2: // saw
-                    osc = 2.0f * t - 1.0f;
+                    osc = (2.0f * t - 1.0f) - polyBlep(t, dt);
                     break;
-                case 3: // square
-                    osc = (t < 0.5f) ? 1.0f : -1.0f;
+                case 3: { // square
+                    float sqr = (t < 0.5f) ? 1.0f : -1.0f;
+                    sqr += polyBlep(t, dt);
+                    sqr -= polyBlep(t < 0.5f ? (t + 0.5f) : (t - 0.5f), dt);
+                    osc = sqr;
                     break;
-                case 4: // pulse (25%)
-                    osc = (t < 0.25f) ? 1.0f : -1.0f;
+                }
+                case 4: { // pulse (25%)
+                    float pul = (t < 0.25f) ? 1.0f : -1.0f;
+                    pul += polyBlep(t, dt);
+                    pul -= polyBlep(t < 0.25f ? (t + 0.75f) : (t - 0.25f), dt);
+                    osc = pul;
                     break;
+                }
                 case 5: { // noise
                     v.noiseState = v.noiseState * 1664525u + 1013904223u;
                     const uint32_t n = (v.noiseState >> 8) & 0xFFFFu;

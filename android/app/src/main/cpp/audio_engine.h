@@ -206,6 +206,14 @@ struct Voice {
     float  sampleEndNorm     = 1.0f;
     float  loopStartNorm     = 0.0f;  // 0..1 — loop region start (default = full file)
     float  loopEndNorm       = 1.0f;  // 0..1 — loop region end
+    // Cached zero-crossing loop boundary frame indices (recomputed only when loop params change)
+    int    cachedLoopSFrame      = 0;
+    int    cachedLoopEFrame      = 0;
+    float  cachedLoopStartNorm   = -1.0f;
+    float  cachedLoopEndNorm     = -1.0f;
+    float  cachedSampleStartNorm = -1.0f;
+    float  cachedSampleEndNorm   = -1.0f;
+    int    cachedSampleSlot      = -1;
     float  sampleGain        = 1.0f;
 
     // Anti-click retrigger tail. Continuously mirrors the last audible
@@ -685,6 +693,10 @@ public:
     /// Assign a sample file to an instrument slot for sampler playback.
     /// Pass empty path to clear assignment.
     bool setSamplerSample(int slot, const std::string& path);
+
+    /// Find the nearest zero crossing in the specified sampler slot around normPos.
+    /// Returns snapped normalized position in [0..1].
+    float findNearestZeroCrossingNorm(int slot, float normPos);
 
     /// Apply (or remove) beat-sync time-stretching on a sampler slot.
     /// If enabled=false the slot is restored to its original un-stretched audio.

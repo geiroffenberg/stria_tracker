@@ -565,6 +565,16 @@ class AudioEnginePlugin : FlutterPlugin, MethodCallHandler {
                 } else false
                 result.success(ok)
             }
+            "findNearestZeroCrossing" -> {
+                val slot = call.argument<Int>("slot") ?: -1
+                val normPos = (call.argument<Double>("normPos") ?: 0.0).toFloat()
+                val snapped = if (enginePtr != 0L && slot >= 0) {
+                    nativeFindNearestZeroCrossing(enginePtr, slot, normPos)
+                } else {
+                    normPos
+                }
+                result.success(snapped.toDouble())
+            }
             "updateStretch" -> {
                 val slot          = call.argument<Int>("slot") ?: -1
                 val enabled       = call.argument<Boolean>("enabled") ?: false
@@ -776,6 +786,7 @@ class AudioEnginePlugin : FlutterPlugin, MethodCallHandler {
     private external fun nativeSetTrackSidechainParams(ptr: Long, trackIdx: Int, slotIdx: Int, sourceTrack: Int, threshold: Float, duck: Float, attack: Float, release: Float)
     private external fun nativeSetMasterSidechainParams(ptr: Long, slotIdx: Int, sourceTrack: Int, threshold: Float, duck: Float, attack: Float, release: Float)
     private external fun nativeSetSamplerSample(ptr: Long, slot: Int, path: String): Boolean
+    private external fun nativeFindNearestZeroCrossing(ptr: Long, slot: Int, normPos: Float): Float
     private external fun nativeUpdateStretch(ptr: Long, slot: Int, enabled: Boolean, beats: Int, bpm: Float, preservePitch: Boolean)
     private external fun nativeOpenRecordingStream(ptr: Long)
     private external fun nativeCloseRecordingStream(ptr: Long)

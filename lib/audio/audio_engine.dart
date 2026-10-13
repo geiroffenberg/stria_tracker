@@ -675,6 +675,21 @@ class AudioEngine {
     return result ?? false;
   }
 
+  /// Find the nearest zero crossing in the loaded sample slot for [normPos] (0.0 - 1.0).
+  /// Returns the snapped normalized position.
+  Future<double> findNearestZeroCrossing(int slot, double normPos) async {
+    if (!_initialised) return normPos;
+    try {
+      final result = await _channel.invokeMethod<double>(
+        'findNearestZeroCrossing',
+        {'slot': slot, 'normPos': normPos},
+      );
+      return result ?? normPos;
+    } catch (_) {
+      return normPos;
+    }
+  }
+
   /// Apply (or remove) offline beat-sync time-stretching for a sampler slot.
   ///
   /// [slot] — instrument slot index (0-based).

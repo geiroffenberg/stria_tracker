@@ -3107,6 +3107,9 @@ class _SamplerEditorState extends State<_SamplerEditor>
                   child: GestureDetector(
                     onTap: () {
                       p.loopMode = mode;
+                      if (mode != SamplerLoopMode.off) {
+                        unawaited(state.snapCurrentSamplerLoopPoints());
+                      }
                       state.instrumentParamsChanged();
                     },
                     child: Container(
@@ -3171,6 +3174,14 @@ class _SamplerEditorState extends State<_SamplerEditor>
                             state.instrumentParamsChanged();
                           }
                         : null,
+                    onChangeEnd: isLooping
+                        ? (v) async {
+                            await state.snapCurrentSamplerLoopPoints(
+                              snapStart: true,
+                              snapEnd: false,
+                            );
+                          }
+                        : null,
                   ),
                 ),
                 Text(
@@ -3196,6 +3207,14 @@ class _SamplerEditorState extends State<_SamplerEditor>
                               p.loopStart = (p.loopEnd - 0.01).clamp(0.0, 1.0);
                             }
                             state.instrumentParamsChanged();
+                          }
+                        : null,
+                    onChangeEnd: isLooping
+                        ? (v) async {
+                            await state.snapCurrentSamplerLoopPoints(
+                              snapStart: false,
+                              snapEnd: true,
+                            );
                           }
                         : null,
                   ),
