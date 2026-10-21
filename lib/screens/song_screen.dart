@@ -266,6 +266,47 @@ class _SongScreenState extends State<SongScreen> {
     setState(() => _clearTimelineSelection(state));
   }
 
+  /// Glue the selected cell's pattern with the pattern directly below it.
+  ///
+  /// Only works when both patterns hold data and run on the same timing
+  /// grid (see AppState.canMergePatternWithNext); otherwise a short message
+  /// explains why nothing happened. The selection is cleared on success,
+  /// same as the other arrangement actions.
+  void _gluePatternAtSelection(BuildContext context, AppState state) {
+    final r = _selectionRect;
+    if (r == null) return;
+    // Glue the row that holds the selected cell (top of selection) with the
+    // pattern directly below it.
+    final index = r.pTop;
+    final patterns = state.song.patterns;
+    final hasPair =
+        index + 1 < patterns.length &&
+        !patterns[index].isEmpty &&
+        !patterns[index + 1].isEmpty;
+    if (!hasPair) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Nothing to glue — both patterns must have data.'),
+          duration: Duration(seconds: 2),
+        ),
+      );
+      return;
+    }
+    if (!state.canMergePatternWithNext(index)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            "Can't glue — the two patterns have different settings (BPM, LPB, swing or track count), or exceed 99 beats combined.",
+          ),
+          duration: Duration(seconds: 3),
+        ),
+      );
+      return;
+    }
+    state.mergePatternWithNext(index);
+    setState(() => _clearTimelineSelection(state));
+  }
+
   void _pasteTimelineSelection(BuildContext context, AppState state) {
     final r = _selectionRect;
     if (r == null) return;
@@ -464,6 +505,7 @@ class _SongScreenState extends State<SongScreen> {
               onPaste: () => _pasteTimelineSelection(context, state),
               onIn: () => _insertPatternAfterSelection(context, state),
               onDup: () => _duplicatePatternAtSelection(context, state),
+              onGlue: () => _gluePatternAtSelection(context, state),
               onDelete: () => _deleteTimelineSelection(state),
               onClose: () => setState(() => _clearTimelineSelection(state)),
             ),
@@ -1468,6 +1510,13 @@ class _SongScreenState extends State<SongScreen> {
   /// Tapping never opens the pattern view anymore. Navigation into the
   /// pattern view happens only via the PATTERN tab in the top nav, which
   /// uses this selection as the anchor for what to focus on.
+  ///
+  /// The tap also selects the row's pattern number, exactly as if the slot
+  /// number itself had been tapped: while playing with song-follow this
+  /// pre-selects the pattern (blinking, queued jump at the next pattern
+  /// boundary); otherwise it moves the current/playhead marker. Keeping
+  /// the number in sync with the tapped row avoids the confusion of the
+  /// highlight staying on a previously selected pattern.
   void _handleTimelineTap(
     AppState state,
     Offset localPos,
@@ -1489,6 +1538,15 @@ class _SongScreenState extends State<SongScreen> {
       _gestureExtendsRange = false;
     });
     state.setSongTimelineSelectionAnchor(hit.patternIndex, hit.trackIndex);
+
+    // Mirror _handleSlotTap's playhead behaviour for the tapped row.
+    if (state.isPlaying && state.playbackFollowsSong) {
+      // queueSongPatternJump is intentionally silent (no notify); the
+      // setState above already repaints, so the pending blink shows up.
+      state.queueSongPatternJump(hit.patternIndex);
+    } else {
+      state.selectSongPattern(hit.patternIndex);
+    }
   }
 }
 
@@ -1823,6 +1881,7 @@ class _TrackCellActionBar extends StatelessWidget {
   final VoidCallback onPaste;
   final VoidCallback onIn;
   final VoidCallback onDup;
+  final VoidCallback onGlue;
   final VoidCallback onDelete;
   final VoidCallback onClose;
 
@@ -1833,6 +1892,7 @@ class _TrackCellActionBar extends StatelessWidget {
     required this.onPaste,
     required this.onIn,
     required this.onDup,
+    required this.onGlue,
     required this.onDelete,
     required this.onClose,
   });
@@ -1847,9 +1907,10 @@ class _TrackCellActionBar extends StatelessWidget {
         children: [
           _SongActionBtn(label: 'CUT', onTap: onCut),
           _SongActionBtn(label: 'COPY', onTap: onCopy),
-          _SongActionBtn(label: 'PASTE', onTap: onPaste, enabled: canPaste),
+          _SongActionBtn(label: 'PST', onTap: onPaste, enabled: canPaste),
           _SongActionBtn(label: 'INS', onTap: onIn),
           _SongActionBtn(label: 'DUP', onTap: onDup),
+          _SongActionBtn(label: 'GLUE', onTap: onGlue),
           const Spacer(),
           _SongActionBtn(label: 'DEL', onTap: onDelete, color: kColStopBtn),
           _SongActionBtn(label: '✕', onTap: onClose),

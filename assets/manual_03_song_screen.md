@@ -56,9 +56,10 @@ Song screen.
 |---|---|
 | CUT | Copy the selection to the clipboard, then clear it |
 | COPY | Copy the selection to the clipboard (source unchanged) |
-| PASTE | Paste the clipboard, top-left aligned to the current selection |
+| PST | Paste the clipboard, top-left aligned to the current selection |
 | INS | Insert a new empty pattern slot immediately after the selection |
 | DUP | Duplicate the selected pattern, inserting the copy immediately after it |
+| GLUE | Glue the selected pattern and the one below into one longer pattern |
 | DEL | Clear the selection to empty |
 | ✕ | Dismiss the selection |
 
@@ -70,7 +71,11 @@ settings (BPM, beats, swing, LPB, beat overrides, FX envelopes), not just its
 notes — equivalent to inserting an empty pattern and then copy/pasting every
 cell, but in one step. For a multi-row selection, INS inserts after the
 bottom-most selected row and DUP duplicates the pattern at the top of the
-selection.
+selection. GLUE appends the pattern below the selection onto it — cells and
+FX envelopes included — then shifts everything below up one slot so no hole
+is left. It only works when both patterns hold data and share the same BPM,
+LPB, swing, and track count, with a combined length of at most 99 beats;
+otherwise a message explains why nothing happened.
 
 ### Multi-cell selection
 
@@ -83,17 +88,17 @@ The action bar operates on the whole selection:
 
 - **CUT / COPY** save the entire rectangular block to a dedicated Song
   clipboard.
-- **PASTE** writes the clipboard so its top-left aligns with the top-left of
+- **PST** writes the clipboard so its top-left aligns with the top-left of
   the current selection. The pasted area always uses the clipboard's own
   dimensions (a larger selection at the target just marks the start point).
 - **DEL** clears every cell in the selection.
 
-If any of the target cells already contain data, PASTE opens a dialog with
+If any of the target cells already contain data, PST opens a dialog with
 **Overwrite** or **Swap** — the choice applies to the whole block (Swap
 carries the previous target contents into the clipboard so you can move them
 elsewhere with another paste).
 
-After CUT, COPY, PASTE, or DEL the selection is cleared automatically, so the
+After CUT, COPY, PST, GLUE, or DEL the selection is cleared automatically, so the
 very next tap starts a fresh selection at the paste target.
 
 ### Drag and drop (single cell)

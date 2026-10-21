@@ -91,6 +91,7 @@ class _ScheduledPlaybackRow {
 
   /// Linear pitch ramp commands for SLU/SLD: [trackIdx, targetMidiNote, durationSamples, ...].
   final List<int> pitchRampData;
+
   /// Row-accurate send-routing changes from SN1/SN2/SN3: [trackIdx, destChannel, ...].
   final List<int> sendRoutingCommandData;
   final int lineSamples;
@@ -2879,12 +2880,7 @@ class AppState extends ChangeNotifier {
     final ph = pLast - pMin + 1;
     final tw = tLast - tMin + 1;
     if (ph <= 0 || tw <= 0) return null;
-    return (
-      pTop: pMin,
-      tLeft: tMin,
-      patternCount: ph,
-      trackCount: tw,
-    );
+    return (pTop: pMin, tLeft: tMin, patternCount: ph, trackCount: tw);
   }
 
   /// Copy a rectangular range of tracks into the song range clipboard.
@@ -3373,7 +3369,10 @@ class AppState extends ChangeNotifier {
           continue;
         }
       }
-      final maxV = track.maxValue(column, row: r); // Pass row for command-aware clamping
+      final maxV = track.maxValue(
+        column,
+        row: r,
+      ); // Pass row for command-aware clamping
       final clamped = (current + delta).clamp(minV, maxV);
       track.writeColumnValue(r, column, clamped);
     }
@@ -3549,23 +3548,47 @@ class AppState extends ChangeNotifier {
     copyPatternInsertAt(index, index + 1);
   }
 
+  /// True when pattern [index] can be glued to the pattern in the slot
+  /// directly below it: both exist and hold data, run on the same timing
+  /// grid (BPM, LPB and swing must match — beat counts need NOT, gluing
+  /// sums them), use the same number of tracks, and the combined length
+  /// stays within the 99-beat pattern limit.
   bool canMergePatternWithNext(int index) {
     if (index < 0 || index >= song.patterns.length - 1) return false;
     final current = song.patterns[index];
     final next = song.patterns[index + 1];
+    if (current.isEmpty || next.isEmpty) return false;
     final currentBpm = current.bpm ?? 120.0;
     final nextBpm = next.bpm ?? 120.0;
     if (currentBpm != nextBpm) return false;
     if (current.lpb != next.lpb) return false;
+    if (current.swing != next.swing) return false;
+    if (current.tracks.length != next.tracks.length) return false;
     if (current.beatCount + next.beatCount > 99) return false;
     return true;
   }
 
-  void mergePatternWithNext(int index) {
-    if (!canMergePatternWithNext(index)) return;
+  /// Glue pattern [index] and the pattern below it into one longer pattern.
+  ///
+  /// The lower pattern's rows (and its FX envelope runs, row-offset so each
+  /// run still spans its own cells) are appended to [index]'s tracks, then
+  /// every slot below shifts up by one — the same in-place, fixed 99-slot
+  /// mechanics as [insertEmptyPatternAfter]/[duplicatePatternAfter], so slot
+  /// numbers never move and shifted patterns are renamed to match their new
+  /// positions. The merged pattern keeps [index]'s slot, name, BPM/LPB/swing
+  /// and per-beat overrides (with the lower pattern's overrides appended).
+  ///
+  /// Returns false (no mutation) when [canMergePatternWithNext] is false.
+  bool mergePatternWithNext(int index) {
+    if (!canMergePatternWithNext(index)) return false;
+    // Back every slot with a real object so the shift-up loop below can move
+    // data through all of them — this only lazily fills untouched slots; the
+    // arrangement always stays exactly [kMaxSongPatterns] slots.
+    _ensurePatternSlot(kMaxSongPatterns - 1);
     _pushSongUndo('merge patterns');
     final current = song.patterns[index];
     final next = song.patterns[index + 1];
+    final rowOffset = current.rowCount;
     final mergedBeatCount = current.beatCount + next.beatCount;
     final mergedBeatOverrides = <int?>[
       ...current.beatLineOverrides,
@@ -3577,17 +3600,49 @@ class AppState extends ChangeNotifier {
       final nextTrack = next.tracks[trackIndex];
       currentTrack.cells.addAll(nextTrack.cells.map((cell) => cell.copy()));
     }
+    // Carry the lower pattern's FX envelope runs across, shifted by the
+    // current pattern's row count so each run keeps spanning its own cells.
+    current.fxEnvelopes.addAll(
+      next.fxEnvelopes.map(
+        (e) => FxEnvelopeRun(
+          trackIndex: e.trackIndex,
+          fxSlotIndex: e.fxSlotIndex,
+          startRow: e.startRow + rowOffset,
+          endRow: e.endRow + rowOffset,
+          startValue: e.startValue,
+          endValue: e.endValue,
+          gamma: e.gamma,
+        ),
+      ),
+    );
 
     current.beats = mergedBeatCount;
     current.beatLineOverrides = mergedBeatOverrides;
     current.syncTrackLengths();
-    song.patterns.removeAt(index + 1);
+
+    // Shift slot data up by one (index+2..99 → index+1..98), then drop a
+    // fresh empty pattern into slot 99 — mirrors duplicatePatternAfter's
+    // shift-down, so the arrangement stays packed with no hole left behind.
+    for (int i = index + 1; i < kMaxSongPatterns - 1; i++) {
+      song.patterns[i] = song.patterns[i + 1];
+    }
+    final empty = song.createEmptyPattern();
+    _copyProjectMixerStateToPattern(empty);
+    _copyProjectSendRoutingToPattern(empty);
+    song.patterns[kMaxSongPatterns - 1] = empty;
+    // Rename all shifted patterns so their internal names (PAT 01, PAT 02,
+    // …) always equal their slot numbers.
+    for (int i = index + 1; i < kMaxSongPatterns; i++) {
+      final newName = 'PAT ${(i + 1).toString().padLeft(2, '0')}';
+      song.patterns[i] = song.patterns[i].copyWithName(newName);
+    }
     _currentPatternIndex = index.clamp(0, song.patterns.length - 1);
     _currentArrangementSlotIndex = _currentArrangementSlotIndex.clamp(
       0,
       song.patterns.length - 1,
     );
     notifyListeners();
+    return true;
   }
 
   /// Fill the patterns list with empty patterns, if needed, so that a real
@@ -3977,7 +4032,9 @@ class AppState extends ChangeNotifier {
           : sp.lfoRateIndex;
       final lfoTargetMask = vibActive ? 2 : sp.lfoTargetMask; // 2 = pitch
       final lfoDepthVal = vibActive ? vibDepthNorm * (2.0 / 12.0) : sp.lfoDepth;
-      final lfoModeIdx = vibActive ? SamplerLfoMode.center.index : sp.lfoMode.index;
+      final lfoModeIdx = vibActive
+          ? SamplerLfoMode.center.index
+          : sp.lfoMode.index;
       return <int>[
         _norm01ToAudio255(detuneNorm), // sampler pitch / synth detune
         _norm01ToAudio255(sp.hpCutoff), // cutoff  → sampler HP cutoff
@@ -4705,11 +4762,11 @@ class AppState extends ChangeNotifier {
     final clamped = value.round().clamp(20, 300);
     currentPattern.bpm = clamped.toDouble();
     _restartPlayheadTimerIfNeeded();
-    
+
     // Re-apply stretch to all samplers with stretch enabled so they
     // recalculate their target length based on the new BPM.
     unawaited(_reapplyStretchForBpmChange());
-    
+
     notifyListeners();
   }
 
@@ -4782,7 +4839,7 @@ class AppState extends ChangeNotifier {
   int copyCurrentBpmToAllPatterns() {
     // Ensure all 99 pattern slots exist (patterns are lazily created).
     _ensurePatternSlot(kMaxSongPatterns - 1);
-    
+
     final bpmToCopy = currentPattern.bpm ?? 120.0;
     int affected = 0;
     for (final pattern in song.patterns) {
@@ -4801,7 +4858,7 @@ class AppState extends ChangeNotifier {
   int copyCurrentSwingToAllPatterns() {
     // Ensure all 99 pattern slots exist (patterns are lazily created).
     _ensurePatternSlot(kMaxSongPatterns - 1);
-    
+
     final swingToCopy = currentPattern.swing;
     int affected = 0;
     for (final pattern in song.patterns) {
@@ -4820,7 +4877,7 @@ class AppState extends ChangeNotifier {
   int copyCurrentBeatsToAllEmptyPatterns() {
     // Ensure all 99 pattern slots exist (patterns are lazily created).
     _ensurePatternSlot(kMaxSongPatterns - 1);
-    
+
     final beatsToCopy = currentPattern.beatCount;
     int affected = 0;
     for (final pattern in song.patterns) {
@@ -4841,7 +4898,7 @@ class AppState extends ChangeNotifier {
   int copyCurrentLpbToAllEmptyPatterns() {
     // Ensure all 99 pattern slots exist (patterns are lazily created).
     _ensurePatternSlot(kMaxSongPatterns - 1);
-    
+
     final lpbToCopy = currentPattern.lpb;
     int affected = 0;
     for (final pattern in song.patterns) {
@@ -5062,15 +5119,19 @@ class AppState extends ChangeNotifier {
   /// Uses [bpm] rather than reading pattern.bpm directly so BPM FX tempo
   /// nudges (see _bpmFxEffective) can override the pattern's base tempo for
   /// this row without mutating the stored pattern snapshot.
-  Duration _lineDurationForPatternRow(PatternModel pattern, int row, double bpm) {
+  Duration _lineDurationForPatternRow(
+    PatternModel pattern,
+    int row,
+    double bpm,
+  ) {
     final beat = pattern.beatForRow(row);
     final lpbForBeat = pattern.linesForBeat(beat);
-    final microsPerLine = (60000000 / (bpm * lpbForBeat))
-        .round()
-        .clamp(1000, 60000000);
+    final microsPerLine = (60000000 / (bpm * lpbForBeat)).round().clamp(
+      1000,
+      60000000,
+    );
     return Duration(microseconds: microsPerLine);
   }
-
 
   /// Builds the scheduled row list for the current pattern from [startRow].
   /// Pure Dart computation — no channel calls and no song mutation, so we
@@ -5095,7 +5156,8 @@ class AppState extends ChangeNotifier {
     );
     final scheduledRows = <_ScheduledPlaybackRow>[];
 
-    final canContinueCarry = continueCarry &&
+    final canContinueCarry =
+        continueCarry &&
         _carryPatternIndex == _currentPatternIndex &&
         _trackCarry.length == pattern.tracks.length;
     if (canContinueCarry) {
@@ -5194,7 +5256,7 @@ class AppState extends ChangeNotifier {
           )
           .toList(),
     );
-            _loopPassDirty = false;
+    _loopPassDirty = false;
   }
 
   void _startNativePatternPlayheadPoller() {
@@ -5476,9 +5538,7 @@ class AppState extends ChangeNotifier {
       // Pattern boundary: check for a queued jump.
       final queued = _queuedArrangementSlot;
       if (queued != null && entry.arrangementSlot != prevSlot) {
-        if (_activatePendingSongJump(
-          _songFlatRowIndex - _songRowMap.length,
-        )) {
+        if (_activatePendingSongJump(_songFlatRowIndex - _songRowMap.length)) {
           notifyListeners();
           return;
         }
@@ -5624,18 +5684,15 @@ class AppState extends ChangeNotifier {
       // voice from a different instrument, falsely retriggering it or
       // corrupting its active sample slot.
       final previousCarry = _trackCarry;
-      _trackCarry = List<_TrackCarry>.generate(
-        pattern.tracks.length,
-        (t) {
-          final carry = _TrackCarry();
-          if (hasExistingCarry) {
-            carry.instrument = previousCarry[t].instrument;
-          } else {
-            carry.instrument = _lastInstrumentSlotForTrack(pattern, t);
-          }
-          return carry;
-        },
-      );
+      _trackCarry = List<_TrackCarry>.generate(pattern.tracks.length, (t) {
+        final carry = _TrackCarry();
+        if (hasExistingCarry) {
+          carry.instrument = previousCarry[t].instrument;
+        } else {
+          carry.instrument = _lastInstrumentSlotForTrack(pattern, t);
+        }
+        return carry;
+      });
       _sendRoutingCarryWasReset = true;
     }
 
@@ -5716,8 +5773,7 @@ class AppState extends ChangeNotifier {
       // Whether this row has a reason to overwrite v.level in the engine.
       // Hold/empty rows must NOT touch v.level, or a mid-note VL=00 gets
       // stomped by the mixer default on every subsequent hold row.
-      bool volExplicit =
-          _trackCarry.length > t && _trackCarry[t].volFx != null;
+      bool volExplicit = _trackCarry.length > t && _trackCarry[t].volFx != null;
       int panCmd = (_trackCarry.length > t && _trackCarry[t].panFx != null)
           ? _trackCarry[t].panFx!
           : (((track.mixerPan.clamp(-1.0, 1.0) + 1.0) / 2.0) * 255).round();
@@ -5844,7 +5900,9 @@ class AppState extends ChangeNotifier {
           if (fx.command == kFxCHA && fx.value != null) {
             chancePct = fx.value!.clamp(0, 99);
           }
-          if (fx.command == kFxBPM && fx.value != null && !bpmFxAppliedThisRow) {
+          if (fx.command == kFxBPM &&
+              fx.value != null &&
+              !bpmFxAppliedThisRow) {
             // BPM FX is pattern-global: only the first track carrying it on
             // this row applies. Value 00 resets to the pattern's own base
             // BPM. 01-50 = +1..+50, 51-99 = -49..-1 (stacks onto whatever
@@ -5860,7 +5918,9 @@ class AppState extends ChangeNotifier {
             }
             _bpmFxEffective = _bpmFxEffective.clamp(20.0, 300.0);
           }
-          if (fx.command == kFxSWN && fx.value != null && !swnFxAppliedThisRow) {
+          if (fx.command == kFxSWN &&
+              fx.value != null &&
+              !swnFxAppliedThisRow) {
             // SWN FX is pattern-global: only the first track carrying it on
             // this row applies. Directly overrides the pattern's swing
             // amount (00-99) for this row onward, until reset at pattern
@@ -5913,7 +5973,9 @@ class AppState extends ChangeNotifier {
           // with carry persistence. Value 00 resets the send (percent 0),
           // 01-99 sets the send percentage. The track's normal output keeps
           // playing unaffected — this only adds an extra percentage copy.
-          if (fx.command == kFxSN1 || fx.command == kFxSN2 || fx.command == kFxSN3) {
+          if (fx.command == kFxSN1 ||
+              fx.command == kFxSN2 ||
+              fx.command == kFxSN3) {
             if (fx.value == 0) {
               // Reset send: clear carry values
               _trackCarry[t].sendChannel = null;
@@ -5950,7 +6012,8 @@ class AppState extends ChangeNotifier {
           }
           if (fx.command == kFxARC && fx.value != null) {
             arcMode = (fx.value! ~/ 10).clamp(1, 9);
-            arcOctaveLayers = ((arcMode - 1) % 3) + 1; // 1-9 → 1,2,3,1,2,3,1,2,3 octaves
+            arcOctaveLayers =
+                ((arcMode - 1) % 3) + 1; // 1-9 → 1,2,3,1,2,3,1,2,3 octaves
             arcNotesPerLine = (fx.value! % 10).clamp(0, 9);
           }
           // SLU/SLD XY: X (tens) = lines to slide over, Y (ones) = semitones.
@@ -6039,8 +6102,12 @@ class AppState extends ChangeNotifier {
         // RNI: random instrument selection from current to specified upper limit.
         // Applied before synth params fetch so the randomized instrument is used.
         if (rniUpperLimit != null && noteCmd >= 0) {
-          final minSlot = math.min(currentSlot, rniUpperLimit).clamp(0, instruments.length - 1);
-          final maxSlot = math.max(currentSlot, rniUpperLimit).clamp(0, instruments.length - 1);
+          final minSlot = math
+              .min(currentSlot, rniUpperLimit)
+              .clamp(0, instruments.length - 1);
+          final maxSlot = math
+              .max(currentSlot, rniUpperLimit)
+              .clamp(0, instruments.length - 1);
           currentSlot = minSlot + rng.nextInt((maxSlot - minSlot + 1));
           waveCmd = _waveCodeForInstrumentSlot(currentSlot);
           instrumentTypeCmd = _instrumentTypeCodeForSlot(currentSlot);
@@ -6123,9 +6190,7 @@ class AppState extends ChangeNotifier {
 
       final retBaseNote = _trackCarry[t].note;
       final retBaseVolume = _trackCarry[t].volume ?? volCmd;
-      if (retrigNotesPerLine > 0 &&
-          noteCmd == -1 &&
-          retBaseNote != null) {
+      if (retrigNotesPerLine > 0 && noteCmd == -1 && retBaseNote != null) {
         // RET on held rows retriggers the last carried note.
         noteCmd = retBaseNote;
         volCmd = retBaseVolume;
@@ -6189,15 +6254,17 @@ class AppState extends ChangeNotifier {
         // New note or mid-note hold row with ARP: (re)start the carry.
         final baseNote = noteCmd >= 0 ? noteCmd : _trackCarry[t].note!;
         final layers = arcOctaveLayers > 0 ? arcOctaveLayers : 1;
-        final modeType = arcMode <= 3 ? 1 : (arcMode <= 6 ? 2 : 3); // 1=linear, 2=bidirectional, 3=random
+        final modeType = arcMode <= 3
+            ? 1
+            : (arcMode <= 6 ? 2 : 3); // 1=linear, 2=bidirectional, 3=random
         final cycle = <int>[];
-        
+
         for (int oct = 0; oct < layers; oct++) {
           final offset = 12 * oct;
           final base = (baseNote + offset).clamp(0, 127);
           final int1 = (baseNote + arpInterval1 + offset).clamp(0, 127);
           final int2 = (baseNote + arpInterval2 + offset).clamp(0, 127);
-          
+
           if (modeType == 1) {
             // Linear: play notes forward
             cycle.addAll([base, int1, int2]);
@@ -6336,8 +6403,11 @@ class AppState extends ChangeNotifier {
     // 48000 Hz matches the Oboe stream sample rate.
     const int kSampleRate = 48000;
     final int baseLineSamples =
-        (_lineDurationForPatternRow(pattern, playheadRow, _bpmFxEffective)
-                .inMicroseconds *
+        (_lineDurationForPatternRow(
+              pattern,
+              playheadRow,
+              _bpmFxEffective,
+            ).inMicroseconds *
             kSampleRate) ~/
         1000000;
 
@@ -6410,25 +6480,26 @@ class AppState extends ChangeNotifier {
 
   void _syncCurrentPatternToSongPlayhead() {
     if (song.patterns.isEmpty) return;
-    
+
     // Capture old BPM before switching pattern
-    final oldBpm = _currentPatternIndex >= 0 && _currentPatternIndex < song.patterns.length
+    final oldBpm =
+        _currentPatternIndex >= 0 && _currentPatternIndex < song.patterns.length
         ? song.patterns[_currentPatternIndex].bpm ?? 120.0
         : 120.0;
-    
+
     _currentPatternIndex = _playheadArrangementSlot.clamp(
       0,
       song.patterns.length - 1,
     );
-    
+
     final newBpm = song.patterns[_currentPatternIndex].bpm ?? 120.0;
-    
+
     // If BPM changed between patterns during playback, re-apply stretch
     // so all stretched samplers adapt to the new tempo.
     if ((newBpm - oldBpm).abs() > 1.0) {
       unawaited(_reapplyStretchForBpmChange());
     }
-    
+
     _clampSelectionToPattern();
   }
 
@@ -7691,29 +7762,28 @@ class AppState extends ChangeNotifier {
       final clampedDurationMs = durationMs.clamp(60, 4000);
       final startTime = DateTime.now();
       bool noteOffSent = false;
-      _synthPreviewStopTimer = Timer.periodic(
-        const Duration(milliseconds: 50),
-        (_) async {
-          if (_disposed) return;
-          final elapsed = DateTime.now().difference(startTime).inMilliseconds;
-          if (!noteOffSent && elapsed >= clampedDurationMs) {
-            noteOffSent = true;
-            await AudioEngine.instance.setRowData(noteOff);
+      _synthPreviewStopTimer = Timer.periodic(const Duration(milliseconds: 50), (
+        _,
+      ) async {
+        if (_disposed) return;
+        final elapsed = DateTime.now().difference(startTime).inMilliseconds;
+        if (!noteOffSent && elapsed >= clampedDurationMs) {
+          noteOffSent = true;
+          await AudioEngine.instance.setRowData(noteOff);
+        }
+        if (noteOffSent) {
+          final isStillPlaying = await AudioEngine.instance.isVoicePlaying(
+            previewVoice,
+          );
+          if (!isStillPlaying) {
+            _synthPreviewStopTimer?.cancel();
+            _synthPreviewStopTimer = null;
+            await _setPreviewDryBypass(previewVoice, false);
+            // Reset carry state after preview ends so next playback uses fresh state
+            _resetInstrumentCarry();
           }
-          if (noteOffSent) {
-            final isStillPlaying = await AudioEngine.instance.isVoicePlaying(
-              previewVoice,
-            );
-            if (!isStillPlaying) {
-              _synthPreviewStopTimer?.cancel();
-              _synthPreviewStopTimer = null;
-              await _setPreviewDryBypass(previewVoice, false);
-              // Reset carry state after preview ends so next playback uses fresh state
-              _resetInstrumentCarry();
-            }
-          }
-        },
-      );
+        }
+      });
 
       return null;
     } catch (e) {
@@ -7772,29 +7842,28 @@ class AppState extends ChangeNotifier {
       final clampedDurationMs = durationMs.clamp(80, 4000);
       final startTime = DateTime.now();
       bool noteOffSent = false;
-      _synthPreviewStopTimer = Timer.periodic(
-        const Duration(milliseconds: 50),
-        (_) async {
-          if (_disposed) return;
-          final elapsed = DateTime.now().difference(startTime).inMilliseconds;
-          if (!noteOffSent && elapsed >= clampedDurationMs) {
-            noteOffSent = true;
-            await AudioEngine.instance.setRowData(noteOff);
+      _synthPreviewStopTimer = Timer.periodic(const Duration(milliseconds: 50), (
+        _,
+      ) async {
+        if (_disposed) return;
+        final elapsed = DateTime.now().difference(startTime).inMilliseconds;
+        if (!noteOffSent && elapsed >= clampedDurationMs) {
+          noteOffSent = true;
+          await AudioEngine.instance.setRowData(noteOff);
+        }
+        final stillPlaying = await AudioEngine.instance.isVoicePlaying(
+          previewVoice,
+        );
+        if (!stillPlaying && elapsed >= clampedDurationMs) {
+          _synthPreviewStopTimer?.cancel();
+          _synthPreviewStopTimer = null;
+          if (_previewBypassVoice == previewVoice) {
+            await _setPreviewDryBypass(previewVoice, false);
           }
-          final stillPlaying = await AudioEngine.instance.isVoicePlaying(
-            previewVoice,
-          );
-          if (!stillPlaying && elapsed >= clampedDurationMs) {
-            _synthPreviewStopTimer?.cancel();
-            _synthPreviewStopTimer = null;
-            if (_previewBypassVoice == previewVoice) {
-              await _setPreviewDryBypass(previewVoice, false);
-            }
-            // Reset carry state after preview ends so next playback uses fresh state
-            _resetInstrumentCarry();
-          }
-        },
-      );
+          // Reset carry state after preview ends so next playback uses fresh state
+          _resetInstrumentCarry();
+        }
+      });
 
       return null;
     } catch (e) {
@@ -7938,7 +8007,7 @@ class AppState extends ChangeNotifier {
     // Do NOT stop the output stream here — stopping it causes an Android
     // hardware route change that produces a transient burst in the next
     // mic capture. The output stream stays open but silent.
-    
+
     // CRITICAL: Reset carry state so the next playback doesn't use stale
     // pattern/carry data from before the preview. Without this, the first
     // playback after sampler preview would use corrupted carry state.
@@ -8106,9 +8175,7 @@ class AppState extends ChangeNotifier {
       // Stability Mode: defaults to disabled. Push the saved value so the
       // native buffer margin matches the persisted setting on every launch.
       _stabilityModeEnabled = j['stabilityModeEnabled'] as bool? ?? false;
-      unawaited(
-        AudioEngine.instance.setStabilityMode(_stabilityModeEnabled),
-      );
+      unawaited(AudioEngine.instance.setStabilityMode(_stabilityModeEnabled));
 
       // Restore the last open song automatically.
       final lastSong = j['lastOpenSongName'] as String?;
@@ -8573,7 +8640,7 @@ class AppState extends ChangeNotifier {
     try {
       // Keep app-managed local copies of used sampler files for this song.
       await _persistSamplerAssetsForSong();
-      
+
       // Persist may have re-initialized sampler slots in the audio engine
       // (via setSamplerSample), which clears stretch buffers. Re-apply
       // stretch for any samplers that have it enabled.
@@ -8591,7 +8658,7 @@ class AppState extends ChangeNotifier {
           );
         }
       }
-      
+
       // For SAF projects, samplePath is kept as the full local cache path
       // in memory (so waveform display works), but the JSON must store only
       // the bare filename so the file can be re-read from SAF on reload.
