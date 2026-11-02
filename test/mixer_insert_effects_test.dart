@@ -188,6 +188,8 @@ void main() {
       expect(find.text('LIMITER'), findsNothing);
       await tester.tap(find.text('EQ-5'));
       await tester.pumpAndSettle();
+      expect(find.text('BASS (120Hz)'), findsOneWidget);
+      expect(find.text('AIR (8kHz)'), findsOneWidget);
       final sliders = find.descendant(
         of: find.byType(BottomSheet),
         matching: find.byType(Slider),

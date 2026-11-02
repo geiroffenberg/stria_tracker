@@ -64,17 +64,21 @@ Five independent tone controls, each from -10 to +10 dB:
 
 | Control | Frequency | Shape |
 |---|---|---|
-| Bass | 60 Hz | Low shelf |
+| Bass | 120 Hz | Low shelf |
 | Warmth | 250 Hz | Bell, Q=1 |
 | Presence | 1 kHz | Bell, Q=1 |
 | Clarity | 4 kHz | Bell, Q=1 |
-| Air | 12 kHz | High shelf |
+| Air | 8 kHz | High shelf |
 
 All five controls now process audio on both tracks and the master. Previously,
 Warmth and Clarity were saved but did not affect audio, and the other bands used
 approximate frequencies. Existing EQ-5 settings are retained, so older songs
 with nonzero settings may sound different after this correction. The separate
 three-band EQ is unchanged.
+
+Bass and Air shelves now transition at 120 Hz and 8 kHz (previously 60 Hz
+and 12 kHz) for broader tone shaping. Saved gains are retained, so existing
+EQ-5 mixes with Bass or Air adjustments will sound different.
 
 Pattern commands `F[S]3/4/5/8/9` control Bass/Presence/Air/Warmth/Clarity.
 Values 00-99 span -10 to +10 dB; 49/50 are near zero.

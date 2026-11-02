@@ -53,9 +53,9 @@ void check(bool ok, const char* message) {
 }
 void configure(InsertEffect& fx, int type, const std::array<float, 5>& db) {
     fx.type = type; fx.dryLevel = 0; fx.wetLevel = 1;
-    applyEqParams(fx, db[0]/12, std::log(60.0f/40)/std::log(500.0f/40),
+    applyEqParams(fx, db[0]/12, std::log(120.0f/40)/std::log(500.0f/40),
         db[2]/12, std::log(1000.0f/200)/std::log(8000.0f/200), (1.0f-.3f)/7.7f,
-        db[4]/12, std::log(12000.0f/2000)/std::log(16000.0f/2000),
+        db[4]/12, std::log(8000.0f/2000)/std::log(16000.0f/2000),
         db[1]/12, db[3]/12);
 }
 double gainAt(float sr, int band, float db) {
@@ -64,7 +64,7 @@ double gainAt(float sr, int band, float db) {
     std::array<float,5> gains{};
     gains[band] = db;
     configure(fx[0], 11, gains);
-    const float freqs[] = {60, 250, 1000, 4000, 12000};
+    const float freqs[] = {120, 250, 1000, 4000, 8000};
     double input = 0, output = 0;
     int total = 0;
     for (int block = 0; block < 200; ++block) {

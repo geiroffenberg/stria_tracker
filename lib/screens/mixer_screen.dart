@@ -325,11 +325,11 @@ class _EqUiState {
 }
 
 class _Eq5UiState {
-  final double bass; // -10..+10 dB (60 Hz)
+  final double bass; // -10..+10 dB (120 Hz)
   final double warmth; // -10..+10 dB (250 Hz)
   final double presence; // -10..+10 dB (1 kHz)
   final double clarity; // -10..+10 dB (4 kHz)
-  final double air; // -10..+10 dB (12 kHz)
+  final double air; // -10..+10 dB (8 kHz)
   final double dry;
   final double wet;
 
@@ -7247,7 +7247,7 @@ class _Eq5EffectEditorState extends State<_Eq5EffectEditor> {
                 ),
                 Padding(
                   padding: const EdgeInsets.only(bottom: 18),
-                  child: _ReverbSlider(label: 'BASS (60Hz)', value: (_bass + 10.0) / 20.0, displayText: _dbLabel(_bass), onChanged: (v) { setState(() => _bass = v * 20.0 - 10.0); _updateParams(); }),
+                  child: _ReverbSlider(label: 'BASS (120Hz)', value: (_bass + 10.0) / 20.0, displayText: _dbLabel(_bass), onChanged: (v) { setState(() => _bass = v * 20.0 - 10.0); _updateParams(); }),
                 ),
                 Padding(
                   padding: const EdgeInsets.only(bottom: 18),
@@ -7263,7 +7263,7 @@ class _Eq5EffectEditorState extends State<_Eq5EffectEditor> {
                 ),
                 Padding(
                   padding: const EdgeInsets.only(bottom: 18),
-                  child: _ReverbSlider(label: 'AIR (12kHz)', value: (_air + 10.0) / 20.0, displayText: _dbLabel(_air), onChanged: (v) { setState(() => _air = v * 20.0 - 10.0); _updateParams(); }),
+                  child: _ReverbSlider(label: 'AIR (8kHz)', value: (_air + 10.0) / 20.0, displayText: _dbLabel(_air), onChanged: (v) { setState(() => _air = v * 20.0 - 10.0); _updateParams(); }),
                 ),
                 Padding(padding: const EdgeInsets.only(bottom: 28), child: _ReverbSlider(label: 'DRY', value: _dry, onChanged: (v) { setState(() => _dry = v); _updateParams(); })),
                 _ReverbSlider(label: 'WET', value: _wet, onChanged: (v) { setState(() => _wet = v); _updateParams(); }),

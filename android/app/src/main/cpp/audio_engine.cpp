@@ -2709,7 +2709,7 @@ void AudioEngine::processEffects(float* outL, float* outR, int numFrames, Insert
 
                 // Low shelf  (40..500 Hz, log)
                 {
-                    float freq  = fx.type == 11 ? 60.0f : 40.0f * std::pow(500.0f / 40.0f, fx.eqLowFreq);
+                    float freq  = fx.type == 11 ? 120.0f : 40.0f * std::pow(500.0f / 40.0f, fx.eqLowFreq);
                     float dBgain = fx.eqLowGain * 12.0f;
                     float A     = std::pow(10.0f, dBgain / 40.0f);
                     float w0    = 2.0f * pi * freq / sr;
@@ -2752,7 +2752,7 @@ void AudioEngine::processEffects(float* outL, float* outR, int numFrames, Insert
                 }
                 // High shelf  (2000..16000 Hz, log)
                 {
-                    float freq  = fx.type == 11 ? std::min(12000.0f, sr * 0.45f) : 2000.0f * std::pow(16000.0f / 2000.0f, fx.eqHighFreq);
+                    float freq  = fx.type == 11 ? std::min(8000.0f, sr * 0.45f) : 2000.0f * std::pow(16000.0f / 2000.0f, fx.eqHighFreq);
                     float dBgain = fx.eqHighGain * 12.0f;
                     float A     = std::pow(10.0f, dBgain / 40.0f);
                     float w0    = 2.0f * pi * freq / sr;
