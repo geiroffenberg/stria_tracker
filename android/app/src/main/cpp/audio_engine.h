@@ -365,7 +365,7 @@ struct QueuedPlaybackRow {
 
 /// Effect state for a single insert effect slot
 struct InsertEffect {
-    int type = -1; // -1=empty, 0=reverb, 1=delay, 2=eq, 3=distortion, etc.
+    int type = -1; // -1=empty, 0=reverb, 1=delay, 2=filter, 7=EQ, 11=EQ-5
     bool bypass = false;
     float inputGain = 1.0f;  // 0.0-2.0
     float outputGain = 1.0f; // 0.0-2.0
@@ -417,7 +417,7 @@ struct InsertEffect {
     float crushHoldR  = 0.0f;
     float crushAccum  = 0.0f;  // accumulator for rate reduction
 
-    // Limiter-specific parameters (type == 5)
+    // Clipper parameters (type == 5; legacy transport name: Limiter)
     float limGain     = 0.0f;  // 0..1 → 0 dB..+24 dB input gain pushed into ceiling
     // ceiling is fixed at -0.1 dBFS ≈ 0.9886 (no per-instance field needed)
 
@@ -446,8 +446,8 @@ struct InsertEffect {
     std::vector<float> flangerBufR;
     int   flangerBufPos  = 0;
 
-    // EQ (type == 7) — 3-band semi-parametric
-    // All gains stored as linear multipliers; frequencies/Q as 0..1 normalised.
+    // EQ (type == 7) / EQ-5 (type == 11).
+    // Gains are normalised dB offsets; frequencies/Q are 0..1 normalised.
     float eqLowGain   = 0.0f;  // −1..+1 → −12..+12 dB
     float eqLowFreq   = 0.2f;  // 0..1 → 40..500 Hz (log)
     float eqMidGain   = 0.0f;  // −1..+1 → −12..+12 dB
@@ -456,10 +456,13 @@ struct InsertEffect {
     float eqHighGain  = 0.0f;  // −1..+1 → −12..+12 dB
     float eqHighFreq  = 0.5f;  // 0..1 → 2000..16000 Hz (log)
     // Biquad state: [band][b0,b1,b2,a1,a2]
-    float eqCoeffs[3][5] = {};
+    float eqCoeffs[5][5] = {};
     // Per-channel biquad delay lines: [band][channel: 0=L,1=R][x1,x2]
-    float eqZx[3][2][2] = {};
-    float eqZy[3][2][2] = {};
+    float eqZx[5][2][2] = {};
+    float eqZy[5][2][2] = {};
+    // EQ-5 (type == 11) adds 250 Hz and 4 kHz peaks to the shared EQ cascade.
+    float eqWarmthGain = 0.0f;
+    float eqClarityGain = 0.0f;
     bool  eqDirty = true;  // recompute coefficients on next block
 
     // Compressor (type == 8)
@@ -677,9 +680,10 @@ public:
     void setTrackFlangerParams(int trackIdx, int slotIdx, float rate, float depth, float delay, float feedback, int stereo);
     void setMasterFlangerParams(int slotIdx, float rate, float depth, float delay, float feedback, int stereo);
 
-    /// Configure EQ parameters on a track/master insert effect slot (type 7).
-    void setTrackEqParams(int trackIdx, int slotIdx, float lowGain, float lowFreq, float midGain, float midFreq, float midQ, float highGain, float highFreq);
-    void setMasterEqParams(int slotIdx, float lowGain, float lowFreq, float midGain, float midFreq, float midQ, float highGain, float highFreq);
+    /// Configure EQ (type 7) or EQ-5 (type 11). The latter uses fixed
+    /// frequencies/Q plus warmth/clarity gains; all gains are dB / 12.
+    void setTrackEqParams(int trackIdx, int slotIdx, float lowGain, float lowFreq, float midGain, float midFreq, float midQ, float highGain, float highFreq, float warmthGain = 0.0f, float clarityGain = 0.0f);
+    void setMasterEqParams(int slotIdx, float lowGain, float lowFreq, float midGain, float midFreq, float midQ, float highGain, float highFreq, float warmthGain = 0.0f, float clarityGain = 0.0f);
 
     /// Configure compressor parameters on a track/master insert effect slot (type 8).
     void setTrackCompressorParams(int trackIdx, int slotIdx, float threshold, float ratio, float attack, float release, float makeup, int knee);

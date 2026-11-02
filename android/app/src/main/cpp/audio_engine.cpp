@@ -284,14 +284,26 @@ void applyInsertFxCommand(InsertEffect& fx, int function, int value) {
         fx.chorusBufL.assign(2880, 0.0f);
         fx.chorusBufR.assign(2880, 0.0f);
         fx.chorusBufPos = 0;
+        fx.flangerRate = 0.3f;
+        fx.flangerDepth = 0.22f;
+        fx.flangerDelay = 0.2f;
+        fx.flangerFeedback = 0.0f;
+        fx.flangerStereo = 0;
+        fx.flangerLfoPhL = fx.flangerLfoPhR = 0.0f;
+        std::fill(fx.flangerBufL.begin(), fx.flangerBufL.end(), 0.0f);
+        std::fill(fx.flangerBufR.begin(), fx.flangerBufR.end(), 0.0f);
+        fx.flangerBufPos = 0;
         // EQ defaults
         fx.eqLowGain  = 0.0f; fx.eqLowFreq  = 0.2f;
         fx.eqMidGain  = 0.0f; fx.eqMidFreq  = 0.3f; fx.eqMidQ = 0.3f;
         fx.eqHighGain = 0.0f; fx.eqHighFreq = 0.5f;
+        fx.eqWarmthGain = fx.eqClarityGain = 0.0f;
         std::memset(fx.eqCoeffs, 0, sizeof(fx.eqCoeffs));
         std::memset(fx.eqZx,     0, sizeof(fx.eqZx));
         std::memset(fx.eqZy,     0, sizeof(fx.eqZy));
         fx.eqDirty = true;
+        if (fx.type == 11) fx.dryLevel = 0.0f;
+        if (fx.type == 9) fx.dryLevel = 1.0f;
         // Compressor defaults
         fx.cmpThreshold = 0.7f; fx.cmpRatio   = 0.2f;
         fx.cmpAttack    = 0.1f; fx.cmpRelease = 0.2f;
@@ -402,12 +414,25 @@ void applyInsertFxCommand(InsertEffect& fx, int function, int value) {
             case 5: fx.chorusDelay = fxValueToUnit(value); break;
             default: break;
         }
-    } else if (fx.type == 7) {
-        // EQ — gains stored as −1..+1, freqs/Q stored as 0..1
+    } else if (fx.type == 9) {
         switch (function) {
-            case 3: fx.eqLowGain  = fxValueToUnit(value) * 2.0f - 1.0f; fx.eqDirty = true; break;
-            case 4: fx.eqMidGain  = fxValueToUnit(value) * 2.0f - 1.0f; fx.eqDirty = true; break;
-            case 5: fx.eqHighGain = fxValueToUnit(value) * 2.0f - 1.0f; fx.eqDirty = true; break;
+            case 2: fx.flangerStereo = value > 0 ? 1 : 0; break;
+            case 3: fx.flangerRate = fxValueToUnit(value); break;
+            case 4: fx.flangerDepth = fxValueToUnit(value); break;
+            case 5: fx.flangerDelay = fxValueToUnit(value); break;
+            case 8: fx.flangerFeedback = std::clamp(fxValueToUnit(value) * 2.0f - 1.0f, -0.95f, 0.95f); break;
+            default: break;
+        }
+    } else if (fx.type == 7 || fx.type == 11) {
+        // EQ — gains stored as −1..+1, freqs/Q stored as 0..1
+        const float gain = (fxValueToUnit(value) * 2.0f - 1.0f)
+            * (fx.type == 11 ? 10.0f / 12.0f : 1.0f);
+        switch (function) {
+            case 3: fx.eqLowGain  = gain; fx.eqDirty = true; break;
+            case 4: fx.eqMidGain  = gain; fx.eqDirty = true; break;
+            case 5: fx.eqHighGain = gain; fx.eqDirty = true; break;
+            case 8: if (fx.type == 11) { fx.eqWarmthGain = gain; fx.eqDirty = true; } break;
+            case 9: if (fx.type == 11) { fx.eqClarityGain = gain; fx.eqDirty = true; } break;
             default: break;
         }
     } else if (fx.type == 8) {
@@ -2005,7 +2030,7 @@ void AudioEngine::setMasterInsertEffect(int slotIdx, int effectType, float initi
     fx.chorusLfoPhL = 0.0f;
     fx.chorusLfoPhR = 0.0f;
     fx.eqDirty = true;
-    for (int i = 0; i < 3; ++i) {
+    for (int i = 0; i < 5; ++i) {
         for (int j = 0; j < 5; ++j) {
             fx.eqCoeffs[i][j] = 0.0f;
         }
@@ -2145,7 +2170,7 @@ void AudioEngine::setTrackInsertEffect(int trackIdx, int slotIdx, int effectType
     fx.chorusLfoPhL = 0.0f;
     fx.chorusLfoPhR = 0.0f;
     fx.eqDirty = true;
-    for (int i = 0; i < 3; ++i) {
+    for (int i = 0; i < 5; ++i) {
         for (int j = 0; j < 5; ++j) {
             fx.eqCoeffs[i][j] = 0.0f;
         }
@@ -2336,34 +2361,37 @@ void AudioEngine::setMasterChorusParams(int slotIdx, float rate, float depth, fl
 
 static void applyEqParams(InsertEffect& fx, float lowGain, float lowFreq,
                            float midGain, float midFreq, float midQ,
-                           float highGain, float highFreq) {
-    fx.eqLowGain  = std::clamp(lowGain,  -1.0f, 1.0f);
+                           float highGain, float highFreq, float warmthGain, float clarityGain) {
+    const float gainLimit = fx.type == 11 ? 10.0f / 12.0f : 1.0f;
+    fx.eqLowGain  = std::clamp(lowGain, -gainLimit, gainLimit);
     fx.eqLowFreq  = std::clamp(lowFreq,   0.0f, 1.0f);
-    fx.eqMidGain  = std::clamp(midGain,  -1.0f, 1.0f);
+    fx.eqMidGain  = std::clamp(midGain, -gainLimit, gainLimit);
     fx.eqMidFreq  = std::clamp(midFreq,   0.0f, 1.0f);
     fx.eqMidQ     = std::clamp(midQ,      0.0f, 1.0f);
-    fx.eqHighGain = std::clamp(highGain, -1.0f, 1.0f);
+    fx.eqHighGain = std::clamp(highGain, -gainLimit, gainLimit);
     fx.eqHighFreq = std::clamp(highFreq,  0.0f, 1.0f);
+    fx.eqWarmthGain = std::clamp(warmthGain, -10.0f / 12.0f, 10.0f / 12.0f);
+    fx.eqClarityGain = std::clamp(clarityGain, -10.0f / 12.0f, 10.0f / 12.0f);
     fx.eqDirty    = true;
 }
 
 void AudioEngine::setTrackEqParams(int trackIdx, int slotIdx,
                                    float lowGain, float lowFreq,
                                    float midGain, float midFreq, float midQ,
-                                   float highGain, float highFreq) {
+                                   float highGain, float highFreq, float warmthGain, float clarityGain) {
     if (trackIdx < 0 || trackIdx >= kMaxVoices) return;
     if (slotIdx < 0 || slotIdx >= kMaxInsertSlots) return;
     std::lock_guard<std::mutex> lock(mVoiceMutex);
-    applyEqParams(mTrackInserts[trackIdx][slotIdx], lowGain, lowFreq, midGain, midFreq, midQ, highGain, highFreq);
+    applyEqParams(mTrackInserts[trackIdx][slotIdx], lowGain, lowFreq, midGain, midFreq, midQ, highGain, highFreq, warmthGain, clarityGain);
 }
 
 void AudioEngine::setMasterEqParams(int slotIdx,
                                     float lowGain, float lowFreq,
                                     float midGain, float midFreq, float midQ,
-                                    float highGain, float highFreq) {
+                                    float highGain, float highFreq, float warmthGain, float clarityGain) {
     if (slotIdx < 0 || slotIdx >= kMaxInsertSlots) return;
     std::lock_guard<std::mutex> lock(mVoiceMutex);
-    applyEqParams(mMasterInserts[slotIdx], lowGain, lowFreq, midGain, midFreq, midQ, highGain, highFreq);
+    applyEqParams(mMasterInserts[slotIdx], lowGain, lowFreq, midGain, midFreq, midQ, highGain, highFreq, warmthGain, clarityGain);
 }
 
 static void applyCompressorParams(InsertEffect& fx, float threshold, float ratio,
@@ -2554,7 +2582,7 @@ void AudioEngine::processEffects(float* outL, float* outR, int numFrames, Insert
                 outR[i] = outR[i] * fx.dryLevel + fx.crushHoldR * fx.wetLevel;
             }
         } else if (fx.type == 5) {
-            // Brick-wall limiter: input gain pushed into fixed -0.1 dBFS ceiling
+            // Hard clipper: preserve the legacy "Limiter" sound and type ID.
             constexpr float kCeiling = 0.9886f; // 10^(-0.1/20)
             // gain: 0..1 → 0 dB..+24 dB (1×..15.8×), logarithmic feel via power
             const float gainLin = std::pow(10.0f, fx.limGain * 24.0f / 20.0f);
@@ -2672,7 +2700,7 @@ void AudioEngine::processEffects(float* outL, float* outR, int numFrames, Insert
                 }
             }
             chorus_skip:;
-        } else if (fx.type == 7) {
+        } else if (fx.type == 7 || fx.type == 11) {
             // ── EQ: 3-band semi-parametric biquad ──────────────────────────
             // Recompute coefficients when dirty (param changed).
             if (fx.eqDirty) {
@@ -2681,7 +2709,7 @@ void AudioEngine::processEffects(float* outL, float* outR, int numFrames, Insert
 
                 // Low shelf  (40..500 Hz, log)
                 {
-                    float freq  = 40.0f * std::pow(500.0f / 40.0f, fx.eqLowFreq);
+                    float freq  = fx.type == 11 ? 60.0f : 40.0f * std::pow(500.0f / 40.0f, fx.eqLowFreq);
                     float dBgain = fx.eqLowGain * 12.0f;
                     float A     = std::pow(10.0f, dBgain / 40.0f);
                     float w0    = 2.0f * pi * freq / sr;
@@ -2700,11 +2728,10 @@ void AudioEngine::processEffects(float* outL, float* outR, int numFrames, Insert
                     fx.eqCoeffs[0][3] = a1*inv; fx.eqCoeffs[0][4] = a2*inv;
                 }
                 // Mid peaking EQ  (200..8000 Hz, log; Q 0.3..8.0)
-                {
-                    float freq  = 200.0f * std::pow(8000.0f / 200.0f, fx.eqMidFreq);
-                    float dBgain = fx.eqMidGain * 12.0f;
+                auto setPeak = [&](int band, float freq, float gain, float Q) {
+                    freq = std::min(freq, sr * 0.45f);
+                    float dBgain = gain * 12.0f;
                     float A     = std::pow(10.0f, dBgain / 40.0f);
-                    float Q     = 0.3f + fx.eqMidQ * 7.7f;
                     float w0    = 2.0f * pi * freq / sr;
                     float alpha = std::sin(w0) / (2.0f * Q);
                     float b0 =  1.0f + alpha * A;
@@ -2714,12 +2741,18 @@ void AudioEngine::processEffects(float* outL, float* outR, int numFrames, Insert
                     float a1 = -2.0f * std::cos(w0);
                     float a2 =  1.0f - alpha / A;
                     float inv = 1.0f / a0;
-                    fx.eqCoeffs[1][0] = b0*inv; fx.eqCoeffs[1][1] = b1*inv; fx.eqCoeffs[1][2] = b2*inv;
-                    fx.eqCoeffs[1][3] = a1*inv; fx.eqCoeffs[1][4] = a2*inv;
+                    fx.eqCoeffs[band][0] = b0*inv; fx.eqCoeffs[band][1] = b1*inv; fx.eqCoeffs[band][2] = b2*inv;
+                    fx.eqCoeffs[band][3] = a1*inv; fx.eqCoeffs[band][4] = a2*inv;
+                };
+                setPeak(1, fx.type == 11 ? 1000.0f : 200.0f * std::pow(8000.0f / 200.0f, fx.eqMidFreq),
+                        fx.eqMidGain, fx.type == 11 ? 1.0f : 0.3f + fx.eqMidQ * 7.7f);
+                if (fx.type == 11) {
+                    setPeak(3, 250.0f, fx.eqWarmthGain, 1.0f);
+                    setPeak(4, 4000.0f, fx.eqClarityGain, 1.0f);
                 }
                 // High shelf  (2000..16000 Hz, log)
                 {
-                    float freq  = 2000.0f * std::pow(16000.0f / 2000.0f, fx.eqHighFreq);
+                    float freq  = fx.type == 11 ? std::min(12000.0f, sr * 0.45f) : 2000.0f * std::pow(16000.0f / 2000.0f, fx.eqHighFreq);
                     float dBgain = fx.eqHighGain * 12.0f;
                     float A     = std::pow(10.0f, dBgain / 40.0f);
                     float w0    = 2.0f * pi * freq / sr;
@@ -2786,6 +2819,21 @@ void AudioEngine::processEffects(float* outL, float* outR, int numFrames, Insert
                 fx.eqZx[2][1][1] = fx.eqZx[2][1][0]; fx.eqZx[2][1][0] = y1R;
                 fx.eqZy[2][1][1] = fx.eqZy[2][1][0]; fx.eqZy[2][1][0] = y2R;
 
+                if (fx.type == 11) {
+                    for (int band = 3; band < 5; ++band) {
+                        auto processBand = [&](float x, int ch) {
+                            const auto& c = fx.eqCoeffs[band];
+                            auto& zx = fx.eqZx[band][ch];
+                            auto& zy = fx.eqZy[band][ch];
+                            const float y = c[0]*x + c[1]*zx[0] + c[2]*zx[1] - c[3]*zy[0] - c[4]*zy[1];
+                            zx[1] = zx[0]; zx[0] = x;
+                            zy[1] = zy[0]; zy[0] = y;
+                            return y;
+                        };
+                        y2L = processBand(y2L, 0);
+                        y2R = processBand(y2R, 1);
+                    }
+                }
                 outL[i] = dryL * fx.dryLevel + y2L * fx.wetLevel;
                 outR[i] = dryR * fx.dryLevel + y2R * fx.wetLevel;
             }

@@ -498,7 +498,9 @@ class AudioEnginePlugin : FlutterPlugin, MethodCallHandler {
                 val midQ      = call.argument<Double>("midQ") ?: 0.3
                 val highGain  = call.argument<Double>("highGain") ?: 0.0
                 val highFreq  = call.argument<Double>("highFreq") ?: 0.5
-                if (enginePtr != 0L) nativeSetTrackEqParams(enginePtr, trackIdx, slotIdx, lowGain.toFloat(), lowFreq.toFloat(), midGain.toFloat(), midFreq.toFloat(), midQ.toFloat(), highGain.toFloat(), highFreq.toFloat())
+                val warmthGain = call.argument<Double>("warmthGain") ?: 0.0
+                val clarityGain = call.argument<Double>("clarityGain") ?: 0.0
+                if (enginePtr != 0L) nativeSetTrackEqParams(enginePtr, trackIdx, slotIdx, lowGain.toFloat(), lowFreq.toFloat(), midGain.toFloat(), midFreq.toFloat(), midQ.toFloat(), highGain.toFloat(), highFreq.toFloat(), warmthGain.toFloat(), clarityGain.toFloat())
                 result.success(null)
             }
             "setMasterEqParams" -> {
@@ -510,7 +512,9 @@ class AudioEnginePlugin : FlutterPlugin, MethodCallHandler {
                 val midQ      = call.argument<Double>("midQ") ?: 0.3
                 val highGain  = call.argument<Double>("highGain") ?: 0.0
                 val highFreq  = call.argument<Double>("highFreq") ?: 0.5
-                if (enginePtr != 0L) nativeSetMasterEqParams(enginePtr, slotIdx, lowGain.toFloat(), lowFreq.toFloat(), midGain.toFloat(), midFreq.toFloat(), midQ.toFloat(), highGain.toFloat(), highFreq.toFloat())
+                val warmthGain = call.argument<Double>("warmthGain") ?: 0.0
+                val clarityGain = call.argument<Double>("clarityGain") ?: 0.0
+                if (enginePtr != 0L) nativeSetMasterEqParams(enginePtr, slotIdx, lowGain.toFloat(), lowFreq.toFloat(), midGain.toFloat(), midFreq.toFloat(), midQ.toFloat(), highGain.toFloat(), highFreq.toFloat(), warmthGain.toFloat(), clarityGain.toFloat())
                 result.success(null)
             }
             "setTrackCompressorParams" -> {
@@ -779,8 +783,8 @@ class AudioEnginePlugin : FlutterPlugin, MethodCallHandler {
     private external fun nativeSetMasterChorusParams(ptr: Long, slotIdx: Int, rate: Float, depth: Float, delay: Float, stereo: Int)
     private external fun nativeSetTrackFlangerParams(ptr: Long, trackIdx: Int, slotIdx: Int, rate: Float, depth: Float, delay: Float, feedback: Float, stereo: Int)
     private external fun nativeSetMasterFlangerParams(ptr: Long, slotIdx: Int, rate: Float, depth: Float, delay: Float, feedback: Float, stereo: Int)
-    private external fun nativeSetTrackEqParams(ptr: Long, trackIdx: Int, slotIdx: Int, lowGain: Float, lowFreq: Float, midGain: Float, midFreq: Float, midQ: Float, highGain: Float, highFreq: Float)
-    private external fun nativeSetMasterEqParams(ptr: Long, slotIdx: Int, lowGain: Float, lowFreq: Float, midGain: Float, midFreq: Float, midQ: Float, highGain: Float, highFreq: Float)
+    private external fun nativeSetTrackEqParams(ptr: Long, trackIdx: Int, slotIdx: Int, lowGain: Float, lowFreq: Float, midGain: Float, midFreq: Float, midQ: Float, highGain: Float, highFreq: Float, warmthGain: Float, clarityGain: Float)
+    private external fun nativeSetMasterEqParams(ptr: Long, slotIdx: Int, lowGain: Float, lowFreq: Float, midGain: Float, midFreq: Float, midQ: Float, highGain: Float, highFreq: Float, warmthGain: Float, clarityGain: Float)
     private external fun nativeSetTrackCompressorParams(ptr: Long, trackIdx: Int, slotIdx: Int, threshold: Float, ratio: Float, attack: Float, release: Float, makeup: Float, knee: Int)
     private external fun nativeSetMasterCompressorParams(ptr: Long, slotIdx: Int, threshold: Float, ratio: Float, attack: Float, release: Float, makeup: Float, knee: Int)
     private external fun nativeSetTrackSidechainParams(ptr: Long, trackIdx: Int, slotIdx: Int, sourceTrack: Int, threshold: Float, duck: Float, attack: Float, release: Float)

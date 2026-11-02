@@ -286,6 +286,10 @@ String fxInsertFunctionName(int function) {
   }
 }
 
+// Keep the legacy ID in song files and native transport.
+String insertEffectDisplayName(String effectName) =>
+    effectName == 'LIMITER' ? 'CLIPPER' : effectName;
+
 String fxInsertFunctionNameForEffect(String? effectName, int function) {
   final fx = (effectName ?? '').toUpperCase();
   switch (function) {
@@ -358,6 +362,7 @@ String fxInsertFunctionNameForEffect(String? effectName, int function) {
       }
       break;
     case 'CHORUS':
+    case 'FLANGER':
       switch (function) {
         case 2:
           return 'Stereo mode';
@@ -367,6 +372,17 @@ String fxInsertFunctionNameForEffect(String? effectName, int function) {
           return 'Depth';
         case 5:
           return 'Delay';
+        case 8:
+          if (fx == 'FLANGER') return 'Feedback';
+      }
+      break;
+    case 'EQ-5':
+      switch (function) {
+        case 3: return 'Bass gain';
+        case 4: return 'Presence gain';
+        case 5: return 'Air gain';
+        case 8: return 'Warmth gain';
+        case 9: return 'Clarity gain';
       }
       break;
     case 'EQ':
@@ -411,6 +427,13 @@ String fxInsertFunctionNameForEffect(String? effectName, int function) {
 
 String fxInsertFunctionHintForEffect(String? effectName, int function) {
   final name = fxInsertFunctionNameForEffect(effectName, function);
+  final fx = (effectName ?? '').toUpperCase();
+  if (fx == 'FLANGER' && function == 8) {
+    return '$name - 00=-95%, 49/50=near zero, 99=+95% (ends clamped)';
+  }
+  if (fx == 'EQ-5' && {3, 4, 5, 8, 9}.contains(function)) {
+    return '$name - 00=-10 dB, 49/50=near zero, 99=+10 dB';
+  }
   switch (function) {
     case 0:
       return '$name - trigger command (value ignored; use 00)';
@@ -501,6 +524,7 @@ String fxInsertFunctionShortLabelForEffect(String? effectName, int function) {
       if (function == 3) return 'PUSH';
       break;
     case 'CHORUS':
+    case 'FLANGER':
       switch (function) {
         case 2:
           return 'STEREO';
@@ -510,6 +534,17 @@ String fxInsertFunctionShortLabelForEffect(String? effectName, int function) {
           return 'DEPTH';
         case 5:
           return 'DELAY';
+        case 8:
+          if (fx == 'FLANGER') return 'FDBK';
+      }
+      break;
+    case 'EQ-5':
+      switch (function) {
+        case 3: return 'BASS';
+        case 4: return 'PRES';
+        case 5: return 'AIR';
+        case 8: return 'WARMTH';
+        case 9: return 'CLARITY';
       }
       break;
     case 'EQ':
@@ -573,6 +608,10 @@ bool fxInsertFunctionIsUsedForEffect(String? effectName, int function) {
       return function >= 3 && function <= 4;
     case 'LIMITER':
       return function == 3;
+    case 'FLANGER':
+      return (function >= 2 && function <= 5) || function == 8;
+    case 'EQ-5':
+      return (function >= 3 && function <= 5) || function == 8 || function == 9;
     case 'SIDECHAIN':
       return (function >= 2 && function <= 4) || function == 8 || function == 9;
     default:

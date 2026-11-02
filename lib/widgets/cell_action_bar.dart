@@ -811,7 +811,7 @@ class _FxCmdActions extends StatelessWidget {
   }
 
   String _insertSectionLabel(int slot, String effectName) {
-    return 'Insert FX ${slot + 1}: $effectName';
+    return 'Insert FX ${slot + 1}: ${insertEffectDisplayName(effectName)}';
   }
 
   List<int> _getMasterMixerCommands() => [194, 32, 33];

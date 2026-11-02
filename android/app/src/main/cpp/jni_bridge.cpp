@@ -417,15 +417,15 @@ Java_com_metamind_stria_AudioEnginePlugin_nativeSetMasterFlangerParams(
 JNIEXPORT void JNICALL
 Java_com_metamind_stria_AudioEnginePlugin_nativeSetTrackEqParams(
         JNIEnv*, jobject, jlong ptr, jint trackIdx, jint slotIdx,
-        jfloat lowGain, jfloat lowFreq, jfloat midGain, jfloat midFreq, jfloat midQ, jfloat highGain, jfloat highFreq) {
-    reinterpret_cast<AudioEngine*>(ptr)->setTrackEqParams(trackIdx, slotIdx, lowGain, lowFreq, midGain, midFreq, midQ, highGain, highFreq);
+        jfloat lowGain, jfloat lowFreq, jfloat midGain, jfloat midFreq, jfloat midQ, jfloat highGain, jfloat highFreq, jfloat warmthGain, jfloat clarityGain) {
+    reinterpret_cast<AudioEngine*>(ptr)->setTrackEqParams(trackIdx, slotIdx, lowGain, lowFreq, midGain, midFreq, midQ, highGain, highFreq, warmthGain, clarityGain);
 }
 
 JNIEXPORT void JNICALL
 Java_com_metamind_stria_AudioEnginePlugin_nativeSetMasterEqParams(
         JNIEnv*, jobject, jlong ptr, jint slotIdx,
-        jfloat lowGain, jfloat lowFreq, jfloat midGain, jfloat midFreq, jfloat midQ, jfloat highGain, jfloat highFreq) {
-    reinterpret_cast<AudioEngine*>(ptr)->setMasterEqParams(slotIdx, lowGain, lowFreq, midGain, midFreq, midQ, highGain, highFreq);
+        jfloat lowGain, jfloat lowFreq, jfloat midGain, jfloat midFreq, jfloat midQ, jfloat highGain, jfloat highFreq, jfloat warmthGain, jfloat clarityGain) {
+    reinterpret_cast<AudioEngine*>(ptr)->setMasterEqParams(slotIdx, lowGain, lowFreq, midGain, midFreq, midQ, highGain, highFreq, warmthGain, clarityGain);
 }
 
 JNIEXPORT void JNICALL

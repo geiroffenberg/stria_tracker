@@ -571,7 +571,8 @@ class AudioEngine {
   Future<void> setTrackEqParams(int trackIdx, int slotIdx,
       double lowGain, double lowFreq,
       double midGain, double midFreq, double midQ,
-      double highGain, double highFreq) async {
+      double highGain, double highFreq, {
+      double warmthGain = 0.0, double clarityGain = 0.0}) async {
     if (!_initialised) return;
     await _channel.invokeMethod('setTrackEqParams', {
       'trackIdx': trackIdx,
@@ -583,13 +584,16 @@ class AudioEngine {
       'midQ': midQ,
       'highGain': highGain,
       'highFreq': highFreq,
+      'warmthGain': warmthGain,
+      'clarityGain': clarityGain,
     });
   }
 
   Future<void> setMasterEqParams(int slotIdx,
       double lowGain, double lowFreq,
       double midGain, double midFreq, double midQ,
-      double highGain, double highFreq) async {
+      double highGain, double highFreq, {
+      double warmthGain = 0.0, double clarityGain = 0.0}) async {
     if (!_initialised) return;
     await _channel.invokeMethod('setMasterEqParams', {
       'slotIdx': slotIdx,
@@ -600,8 +604,22 @@ class AudioEngine {
       'midQ': midQ,
       'highGain': highGain,
       'highFreq': highFreq,
+      'warmthGain': warmthGain,
+      'clarityGain': clarityGain,
     });
   }
+
+  Future<void> setTrackEq5Params(int trackIdx, int slotIdx,
+      double bass, double warmth, double presence, double clarity, double air) =>
+      setTrackEqParams(trackIdx, slotIdx,
+        bass / 12.0, 0.07, presence / 12.0, 0.436, 0.091, air / 12.0, 0.862,
+        warmthGain: warmth / 12.0, clarityGain: clarity / 12.0);
+
+  Future<void> setMasterEq5Params(int slotIdx,
+      double bass, double warmth, double presence, double clarity, double air) =>
+      setMasterEqParams(slotIdx,
+        bass / 12.0, 0.07, presence / 12.0, 0.436, 0.091, air / 12.0, 0.862,
+        warmthGain: warmth / 12.0, clarityGain: clarity / 12.0);
 
   Future<void> setTrackCompressorParams(int trackIdx, int slotIdx,
       double threshold, double ratio, double attack, double release,

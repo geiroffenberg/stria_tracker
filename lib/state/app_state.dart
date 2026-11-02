@@ -1391,19 +1391,8 @@ class AppState extends ChangeNotifier {
             );
           }
         case 'EQ-5':
-          // EQ-5 is a UI-only 5-knob view over the native 3-band EQ engine
-          // (see mixer_screen.dart onMasterInsertTap/onInsertSlotTap) — it
-          // shares typeCode 7 and only bass/presence/air map to the 3 bands.
-          final typeCode = 7;
+          final typeCode = 11;
           final wet = d('wet', 1.0);
-          double toNorm(double db) => (db / 12.0).clamp(-1.0, 1.0);
-          final lowGain = toNorm(d('bass', 0.0));
-          final midGain = toNorm(d('presence', 0.0));
-          final highGain = toNorm(d('air', 0.0));
-          const lowFreq = 0.07;
-          const midFreq = 0.436;
-          const midQ = 0.091;
-          const highFreq = 0.862;
           if (onMaster) {
             await AudioEngine.instance.setMasterInsertEffect(
               slot,
@@ -1415,15 +1404,13 @@ class AppState extends ChangeNotifier {
               d('dry', 0.0),
               wet,
             );
-            await AudioEngine.instance.setMasterEqParams(
+            await AudioEngine.instance.setMasterEq5Params(
               slot,
-              lowGain,
-              lowFreq,
-              midGain,
-              midFreq,
-              midQ,
-              highGain,
-              highFreq,
+              d('bass', 0.0),
+              d('warmth', 0.0),
+              d('presence', 0.0),
+              d('clarity', 0.0),
+              d('air', 0.0),
             );
           } else {
             await AudioEngine.instance.setTrackInsertEffect(
@@ -1438,16 +1425,14 @@ class AppState extends ChangeNotifier {
               d('dry', 0.0),
               wet,
             );
-            await AudioEngine.instance.setTrackEqParams(
+            await AudioEngine.instance.setTrackEq5Params(
               trackIdx,
               slot,
-              lowGain,
-              lowFreq,
-              midGain,
-              midFreq,
-              midQ,
-              highGain,
-              highFreq,
+              d('bass', 0.0),
+              d('warmth', 0.0),
+              d('presence', 0.0),
+              d('clarity', 0.0),
+              d('air', 0.0),
             );
           }
         case 'FLANGER':

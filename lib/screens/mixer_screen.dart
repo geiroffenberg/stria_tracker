@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import '../audio/audio_engine.dart';
+import '../models/cell.dart' show insertEffectDisplayName;
 import '../state/app_state.dart';
 import '../theme/app_theme.dart';
 
@@ -685,24 +686,8 @@ class _MixerScreenState extends State<MixerScreen> {
       } else if (effectName == 'EQ-5') {
         final e5 = _trackEq5States[trackIdx][slotIdx];
         AudioEngine.instance.setTrackInsertMix(trackIdx, slotIdx, e5.dry, e5.wet);
-        double toNorm(double db) => (db / 12.0).clamp(-1.0, 1.0);
-        final lowGain = toNorm(e5.bass);
-        final midGain = toNorm(e5.presence);
-        final highGain = toNorm(e5.air);
-        final lowFreq = 0.07;
-        final midFreq = 0.436;
-        final midQ = 0.091;
-        final highFreq = 0.862;
-        AudioEngine.instance.setTrackEqParams(
-          trackIdx,
-          slotIdx,
-          lowGain,
-          lowFreq,
-          midGain,
-          midFreq,
-          midQ,
-          highGain,
-          highFreq,
+        AudioEngine.instance.setTrackEq5Params(
+          trackIdx, slotIdx, e5.bass, e5.warmth, e5.presence, e5.clarity, e5.air,
         );
         if (_trackBypassed[trackIdx][slotIdx]) {
           AudioEngine.instance.setTrackInsertBypass(trackIdx, slotIdx, false);
@@ -1684,37 +1669,14 @@ class _MixerScreenState extends State<MixerScreen> {
         final s = onMaster
             ? _masterEq5States[slot]
             : _trackEq5States[trackIdx!][slot];
-        await setEffect(7, s.wet);
+        await setEffect(11, s.wet);
         await setMix(s.dry, s.wet);
-        double toNorm(double db) => (db / 12.0).clamp(-1.0, 1.0);
-        final lowGain = toNorm(s.bass);
-        final midGain = toNorm(s.presence);
-        final highGain = toNorm(s.air);
-        const lowFreq = 0.07;
-        const midFreq = 0.436;
-        const midQ = 0.091;
-        const highFreq = 0.862;
         await (onMaster
-            ? AudioEngine.instance.setMasterEqParams(
-                slot,
-                lowGain,
-                lowFreq,
-                midGain,
-                midFreq,
-                midQ,
-                highGain,
-                highFreq,
+            ? AudioEngine.instance.setMasterEq5Params(
+                slot, s.bass, s.warmth, s.presence, s.clarity, s.air,
               )
-            : AudioEngine.instance.setTrackEqParams(
-                trackIdx!,
-                slot,
-                lowGain,
-                lowFreq,
-                midGain,
-                midFreq,
-                midQ,
-                highGain,
-                highFreq,
+            : AudioEngine.instance.setTrackEq5Params(
+                trackIdx!, slot, s.bass, s.warmth, s.presence, s.clarity, s.air,
               ));
       case 'EQ':
         final s = onMaster
@@ -2693,28 +2655,12 @@ class _MixerScreenState extends State<MixerScreen> {
           await AudioEngine.instance.setTrackInsertEffect(
             trackIdx,
             slotIdx,
-            7,
+            11,
             es.wet,
           );
           await AudioEngine.instance.setTrackInsertMix(trackIdx, slotIdx, es.dry, es.wet);
-          double toNorm(double db) => (db / 12.0).clamp(-1.0, 1.0);
-          final lowGain = toNorm(es.bass);
-          final midGain = toNorm(es.presence);
-          final highGain = toNorm(es.air);
-          final lowFreq = 0.07;
-          final midFreq = 0.436;
-          final midQ = 0.091;
-          final highFreq = 0.862;
-          await AudioEngine.instance.setTrackEqParams(
-            trackIdx,
-            slotIdx,
-            lowGain,
-            lowFreq,
-            midGain,
-            midFreq,
-            midQ,
-            highGain,
-            highFreq,
+          await AudioEngine.instance.setTrackEq5Params(
+            trackIdx, slotIdx, es.bass, es.warmth, es.presence, es.clarity, es.air,
           );
           await _openEq5Editor(onMaster: false, trackIdx: trackIdx, slotIdx: slotIdx);
         } else if (picked == 'EQ') {
@@ -2915,17 +2861,11 @@ class _MixerScreenState extends State<MixerScreen> {
           await _openDelayEditor(onMaster: true, slotIdx: slotIdx);
         } else if (picked == 'EQ-5') {
           final es = _masterEq5States[slotIdx];
-          await AudioEngine.instance.setMasterInsertEffect(slotIdx, 7, es.wet);
+          await AudioEngine.instance.setMasterInsertEffect(slotIdx, 11, es.wet);
           await AudioEngine.instance.setMasterInsertMix(slotIdx, es.dry, es.wet);
-          double toNorm(double db) => (db / 12.0).clamp(-1.0, 1.0);
-          final lowGain = toNorm(es.bass);
-          final midGain = toNorm(es.presence);
-          final highGain = toNorm(es.air);
-          final lowFreq = 0.07;
-          final midFreq = 0.436;
-          final midQ = 0.091;
-          final highFreq = 0.862;
-          await AudioEngine.instance.setMasterEqParams(slotIdx, lowGain, lowFreq, midGain, midFreq, midQ, highGain, highFreq);
+          await AudioEngine.instance.setMasterEq5Params(
+            slotIdx, es.bass, es.warmth, es.presence, es.clarity, es.air,
+          );
           await _openEq5Editor(onMaster: true, slotIdx: slotIdx);
         } else if (picked == 'FILTER') {
           final fs = _masterFilterStates[slotIdx];
@@ -3114,7 +3054,7 @@ class _FxPicker extends StatelessWidget {
               ListTile(
                 dense: true,
                 title: Text(
-                  fx,
+                  insertEffectDisplayName(fx),
                   style: kStyleBase.copyWith(fontSize: 14, color: kColHeader),
                 ),
                 onTap: () => Navigator.of(context).pop(fx),
@@ -3653,7 +3593,7 @@ class _StripInsertSlot extends StatelessWidget {
       borderRadius: BorderRadius.circular(2),
     ),
     child: Text(
-      fxName ?? '·',
+      fxName == null ? '·' : insertEffectDisplayName(fxName!),
       maxLines: 2,
       overflow: TextOverflow.ellipsis,
       textAlign: TextAlign.center,
@@ -5294,7 +5234,7 @@ class _LimiterEffectEditorState extends State<_LimiterEffectEditor> {
                     children: [
                       Expanded(
                         child: Text(
-                          'LIMITER',
+                          'CLIPPER',
                           style: kStyleHeader.copyWith(
                             fontSize: 18,
                             color: _bypass ? kColInactive : kColAccent,
@@ -5332,7 +5272,7 @@ class _LimiterEffectEditorState extends State<_LimiterEffectEditor> {
                 Padding(
                   padding: const EdgeInsets.only(bottom: 22),
                   child: Text(
-                    'Ceiling $kCeilingLabel',
+                    'Hard clipping at $kCeilingLabel (wet signal)',
                     style: kStyleBase.copyWith(
                       fontSize: 11,
                       color: kColInactive,
@@ -7241,21 +7181,15 @@ class _Eq5EffectEditorState extends State<_Eq5EffectEditor> {
     );
     widget.onParamsChanged(s);
 
-    double toNorm(double db) => (db / 12.0).clamp(-1.0, 1.0);
-    final lowGain = toNorm(_bass);
-    final midGain = toNorm(_presence);
-    final highGain = toNorm(_air);
-
-    final lowFreq = 0.07; // ~60 Hz
-    final midFreq = 0.436; // ~1 kHz
-    final midQ = 0.091; // ~Q=1
-    final highFreq = 0.862; // ~12 kHz
-
     if (widget.onMaster) {
-      AudioEngine.instance.setMasterEqParams(widget.slotIdx, lowGain, lowFreq, midGain, midFreq, midQ, highGain, highFreq);
+      AudioEngine.instance.setMasterEq5Params(
+        widget.slotIdx, _bass, _warmth, _presence, _clarity, _air,
+      );
       AudioEngine.instance.setMasterInsertMix(widget.slotIdx, _dry, _wet);
     } else {
-      AudioEngine.instance.setTrackEqParams(widget.trackIdx ?? 0, widget.slotIdx, lowGain, lowFreq, midGain, midFreq, midQ, highGain, highFreq);
+      AudioEngine.instance.setTrackEq5Params(
+        widget.trackIdx ?? 0, widget.slotIdx, _bass, _warmth, _presence, _clarity, _air,
+      );
       AudioEngine.instance.setTrackInsertMix(widget.trackIdx ?? 0, widget.slotIdx, _dry, _wet);
     }
   }
