@@ -14,6 +14,8 @@ import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 import java.nio.charset.StandardCharsets
+import java.io.File
+import java.io.IOException
 
 class MainActivity : FlutterActivity(), AudioManager.OnAudioFocusChangeListener {
 	private val requestPickProjectFolder = 60241
@@ -172,6 +174,70 @@ class MainActivity : FlutterActivity(), AudioManager.OnAudioFocusChangeListener 
 					} catch (e: Exception) {
 						result.error("write_failed", e.message, null)
 					}
+				}
+				"copyStemExport" -> {
+					val treeUri = call.argument<String>("treeUri")
+					val folderName = call.argument<String>("folderName")
+					val exportName = call.argument<String>("exportName")
+					val sourceDirectory = call.argument<String>("sourceDirectory")
+					val names = call.argument<List<String>>("fileNames")
+					if (treeUri.isNullOrBlank() || folderName.isNullOrBlank() ||
+						exportName == null || !exportName.matches(Regex("stems_[0-9]+")) ||
+						sourceDirectory == null || names.isNullOrEmpty() ||
+						names.any { !it.matches(Regex("[A-Za-z0-9_-]+\\.wav")) }) {
+						result.error("bad_args", "Invalid stem export destination or files", null)
+						return@setMethodCallHandler
+					}
+					Thread {
+						var outputFolder: DocumentFile? = null
+						try {
+							val source = File(sourceDirectory).canonicalFile
+							if (!source.isDirectory || !source.path.startsWith(cacheDir.canonicalPath + File.separator)) {
+								throw IOException("Stem source must be inside the app cache")
+							}
+							val root = DocumentFile.fromTreeUri(this, Uri.parse(treeUri))
+								?: throw IOException("Project root is unavailable")
+							if (!root.isDirectory || !root.canWrite()) throw IOException("Project root is not writable")
+							val project = findDirectoryByName(root, folderName)
+								?: root.createDirectory(folderName)
+								?: throw IOException("Unable to create project folder")
+							if (findChildByName(project, exportName) != null) {
+								throw IOException("Stem export folder already exists")
+							}
+							val folder = project.createDirectory(exportName)
+								?: throw IOException("Unable to create stems folder")
+							outputFolder = folder
+							for (name in names) {
+								val input = File(source, name)
+								if (input.canonicalFile.parentFile != source || !input.isFile) {
+									throw IOException("Missing stem file: $name")
+								}
+								val file = folder.createFile("audio/wav", name)
+									?: throw IOException("Unable to create stem: $name")
+								val output = contentResolver.openOutputStream(file.uri, "wt")
+									?: throw IOException("Unable to open stem: $name")
+								output.use { destination ->
+									input.inputStream().use { it.copyTo(destination) }
+									destination.flush()
+								}
+							}
+							runOnUiThread { result.success(folder.uri.toString()) }
+						} catch (e: Exception) {
+							android.util.Log.e("TrackerAudio", "Saving stems failed", e)
+							var message = e.message ?: "Unable to save stems"
+							val partial = outputFolder
+							if (partial != null) {
+								try {
+									if (!partial.delete()) message += "; could not remove partial export"
+								} catch (cleanup: Exception) {
+									android.util.Log.e("TrackerAudio", "Removing partial stems failed", cleanup)
+									message += "; could not remove partial export"
+								}
+							}
+							val detail = message
+							runOnUiThread { result.error("write_failed", detail, null) }
+						}
+					}.start()
 				}
 				"writeProjectBinaryFile" -> {
 					val treeUriRaw = call.argument<String>("treeUri")

@@ -232,6 +232,8 @@ class AppState extends ChangeNotifier {
 
   SongModel song = SongModel.initial();
   bool _disposed = false;
+  bool _exportingStems = false;
+  bool get isExportingStems => _exportingStems;
   bool _notifyQueued = false;
   bool _playheadPollInFlight = false;
   bool _nextPassScheduled =
@@ -4463,7 +4465,7 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> play() async {
-    if (isPlaying) return;
+    if (isPlaying || _exportingStems) return;
     // Derive song-follow mode from whichever tab is currently active.
     // SONG(0), INST(2), MIXER(3) → song follows arrangement;
     // PATTERN(1) → loops current pattern only.
@@ -4543,6 +4545,7 @@ class AppState extends ChangeNotifier {
   /// the boundary instead of being cut off with a click — the user can end
   /// them with an explicit OFF command if desired.
   void stop({bool keepVoicesRinging = false}) {
+    if (_exportingStems) return;
     _playheadTimer?.cancel();
     _playheadTimer = null;
     _playheadPollInFlight = false;
@@ -4637,6 +4640,148 @@ class AppState extends ChangeNotifier {
     final filePath = '${dir.path}/$fileName';
     await File(filePath).writeAsBytes(wavBytes, flush: true);
     return filePath;
+  }
+
+  /// Export master-routed track buses together, before all master processing.
+  Future<({String path, int count})> exportSongStems({
+    void Function(String message)? onProgress,
+  }) async {
+    if (isPlaying || _exportingStems) {
+      throw StateError('Stop playback before exporting stems');
+    }
+    if (song.patterns.isEmpty || song.patterns.first.isEmpty) {
+      throw StateError('The song is empty');
+    }
+    final tracks = currentPattern.tracks;
+    final usedTracks = <int>{};
+    final destinations = List.generate(tracks.length, (_) => <int>{});
+    for (var t = 0; t < tracks.length; t++) {
+      final dest = tracks[t].sendChannel;
+      if (dest > 0 && dest <= tracks.length) destinations[t].add(dest - 1);
+    }
+    // Match song playback: the first empty pattern ends the arrangement.
+    // Keep any musical data conservatively; do not threshold quiet audio.
+    for (final pattern in song.patterns) {
+      if (pattern.isEmpty) break;
+      for (var t = 0; t < pattern.tracks.length; t++) {
+        for (final cell in pattern.tracks[t].cells.take(pattern.rowCount)) {
+          if (!cell.isEmpty) usedTracks.add(t);
+          for (final fx in cell.fxSlots) {
+            if (fx.value == null || fx.value! <= 0) continue;
+            final dest = switch (fx.command) {
+              kFxSN1 => 13,
+              kFxSN2 => 14,
+              kFxSN3 => 15,
+              _ => null,
+            };
+            if (dest != null) destinations[t].add(dest);
+          }
+        }
+      }
+    }
+    final pending = usedTracks.toList();
+    for (var i = 0; i < pending.length; i++) {
+      for (final dest in destinations[pending[i]]) {
+        if (usedTracks.add(dest)) pending.add(dest);
+      }
+    }
+    final fileNames = List<String>.filled(_audioVoiceCount, '');
+    for (var t = 0; t < tracks.length; t++) {
+      if (tracks[t].sendChannel != 0 || !usedTracks.contains(t)) continue;
+      final name = tracks[t].name
+          .replaceAll(RegExp(r'[^A-Za-z0-9_-]+'), '_')
+          .replaceAll(RegExp(r'^_+|_+$'), '');
+      fileNames[t] = 'Track_${(t + 1).toString().padLeft(2, '0')}'
+          '${name.isEmpty ? '' : '_$name'}.wav';
+    }
+    final count = fileNames.where((name) => name.isNotEmpty).length;
+    if (count == 0) throw StateError('No used tracks are routed to Master');
+    // The existing mixer supports one routing stage, not chained groups.
+    for (var t = 0; t < tracks.length; t++) {
+      final dest = tracks[t].sendChannel;
+      if (dest > 0 && (dest > tracks.length || tracks[dest - 1].sendChannel != 0)) {
+        throw StateError('Stem export requires routed tracks to feed a '
+            'Master-routed bus directly (no chained or self routing)');
+      }
+    }
+
+    final wasFollowing = _playbackFollowsSong;
+    final wasLooping = _loopPlaybackEnabled;
+    final oldRow = playheadRow;
+    final oldSlot = _playheadArrangementSlot;
+    Directory? staging;
+    _exportingStems = true;
+    try {
+      staging = await (await getTemporaryDirectory()).createTemp('stria-stems-');
+      _previewAutoStopTimer?.cancel();
+      _previewAutoStopTimer = null;
+      _synthPreviewStopTimer?.cancel();
+      _synthPreviewStopTimer = null;
+      _previewSamplerSlot = -1;
+      _previewStartedAt = null;
+      _previewBypassVoice = -1;
+      _playbackFollowsSong = true;
+      _loopPlaybackEnabled = false;
+      _resetInstrumentCarry();
+      _captureStartStates();
+      onProgress?.call('Rendering $count stems together…');
+      await AudioEngine.instance.stop();
+      await _applyInsertSnapshotToEngine();
+      await _loadNativeSongPlaybackQueue(startSlot: 0, startRow: 0);
+      await AudioEngine.instance.renderStemsOffline(
+        directory: staging.path,
+        fileNames: fileNames,
+      );
+      final exportName = 'stems_${DateTime.now().microsecondsSinceEpoch}';
+      final names = fileNames.where((name) => name.isNotEmpty).toList();
+      onProgress?.call('Saving $count stems…');
+      if (_usesProjectTreeStorage) {
+        final slug = _slugify(song.name);
+        final path = await _projectStorageChannel.invokeMethod<String>(
+          'copyStemExport',
+          {
+            'treeUri': _projectRootTreeUri,
+            'folderName': slug.isEmpty ? 'untitled' : slug,
+            'exportName': exportName,
+            'sourceDirectory': staging.path,
+            'fileNames': names,
+          },
+        );
+        if (path == null) throw StateError('Storage did not return a stems folder');
+        return (path: path, count: count);
+      }
+      final project = await _projectDirForName(song.name);
+      final output = await project.createTemp('.stems-');
+      try {
+        for (var i = 0; i < names.length; i++) {
+          onProgress?.call('Saving stem ${i + 1} of $count…');
+          await File('${staging.path}/${names[i]}').copy('${output.path}/${names[i]}');
+        }
+        final saved = await output.rename('${project.path}/$exportName');
+        return (path: saved.path, count: count);
+      } catch (_) {
+        await output.delete(recursive: true);
+        rethrow;
+      }
+    } finally {
+      _playbackFollowsSong = wasFollowing;
+      _loopPlaybackEnabled = wasLooping;
+      _playheadArrangementSlot = oldSlot;
+      playheadRow = oldRow;
+      _resetInstrumentCarry();
+      try {
+        await AudioEngine.instance.stop();
+        await AudioEngine.instance.clearQueuedPlaybackRows();
+        await _applyInsertSnapshotToEngine();
+        final mixer = <int>[];
+        _appendFullMixerSnapshot(mixer, currentPattern);
+        await AudioEngine.instance.queueMixerCommands(mixer);
+        await AudioEngine.instance.setSendRouting(_buildStaticSendRouting());
+      } finally {
+        _exportingStems = false;
+        if (staging != null) await staging.delete(recursive: true);
+      }
+    }
   }
 
   /// Renders the current pattern (or current row selection if one exists) to
@@ -6350,16 +6495,18 @@ class AppState extends ChangeNotifier {
         }
       }
 
-      // Apply master mute / master volume multiplier.
+      // Stem buses must also bypass master processing baked into row packets.
       int finalNote = sentNote;
       int finalVol = volCmd;
-      if (song.masterMute) {
-        finalNote = -1;
-      } else if (volCmd > 0) {
-        // Only attenuation is baked into the per-note vol byte; gain >1.0 is
-        // applied solely by the native master-gain stage so it isn't doubled.
-        final atten = song.masterVolume < 1.0 ? song.masterVolume : 1.0;
-        finalVol = (volCmd * atten).round().clamp(0, 255);
+      if (!_exportingStems) {
+        if (song.masterMute) {
+          finalNote = -1;
+        } else if (volCmd > 0) {
+          // Only attenuation is baked into the per-note vol byte; gain >1.0 is
+          // applied solely by the native master-gain stage so it isn't doubled.
+          final atten = song.masterVolume < 1.0 ? song.masterVolume : 1.0;
+          finalVol = (volCmd * atten).round().clamp(0, 255);
+        }
       }
 
       // Only overwrite the engine's v.level when this row actually intends to
@@ -6369,7 +6516,7 @@ class AppState extends ChangeNotifier {
       final int emittedVol = volExplicit ? finalVol : -1;
 
       // Queue delayed note if applicable. C++ will convert delayPct to sample offset.
-      if (delayPct > 0 && noteCmd >= 0 && !song.masterMute) {
+      if (delayPct > 0 && noteCmd >= 0 && (_exportingStems || !song.masterMute)) {
         delayQueue.addAll([delayPct, t, noteCmd, finalVol]);
       }
 
@@ -8236,6 +8383,7 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> _doAutosave() async {
+    if (_exportingStems) return;
     if (_disposed) return;
     if (!_autosaveEnabled) return;
     if (!hasProjectRootFolder) return;
@@ -8244,6 +8392,7 @@ class AppState extends ChangeNotifier {
 
   /// Called when the app loses focus. Silently saves if autosave is enabled.
   Future<void> autosaveOnFocusLost() async {
+    if (_exportingStems) return;
     if (!_autosaveEnabled) return;
     if (!hasProjectRootFolder) return;
     await saveSong();

@@ -1,5 +1,6 @@
 #include "audio_engine.h"
 #include "stria_sola_stretcher.hpp"
+#include "float_wav_writer.h"
 #include <android/log.h>
 #include <algorithm>
 #include <fstream>
@@ -8,6 +9,8 @@
 #include <chrono>
 #include <cmath>
 #include <new>
+#include <memory>
+#include <stdexcept>
 
 namespace {
 float byteToNorm(int v) {
@@ -231,6 +234,30 @@ void syncReverbState(InsertEffect& fx) {
     fx.reverb.setdry(0.0f);
     fx.reverb.setwet(1.0f);
     fx.reverb.setmode(fx.reverbFreeze ? 1.0f : 0.0f);
+}
+
+void resetInsertHistory(InsertEffect& fx) {
+    fx.reverb.setmode(0.0f);
+    fx.reverb.mute();
+    fx.reverb.setmode(fx.reverbFreeze ? 1.0f : 0.0f);
+    std::fill(fx.delayBufL.begin(), fx.delayBufL.end(), 0.0f);
+    std::fill(fx.delayBufR.begin(), fx.delayBufR.end(), 0.0f);
+    fx.delayWritePos = 0;
+    fx.delayHpPrevL = fx.delayHpPrevR = 0.0f;
+    fx.svfLowL = fx.svfLowR = fx.svfBandL = fx.svfBandR = 0.0f;
+    fx.distToneStateL = fx.distToneStateR = 0.0f;
+    fx.crushHoldL = fx.crushHoldR = fx.crushAccum = 0.0f;
+    std::fill(fx.chorusBufL.begin(), fx.chorusBufL.end(), 0.0f);
+    std::fill(fx.chorusBufR.begin(), fx.chorusBufR.end(), 0.0f);
+    fx.chorusBufPos = 0;
+    fx.chorusLfoPhL = fx.chorusLfoPhR = 0.0f;
+    std::fill(fx.flangerBufL.begin(), fx.flangerBufL.end(), 0.0f);
+    std::fill(fx.flangerBufR.begin(), fx.flangerBufR.end(), 0.0f);
+    fx.flangerBufPos = 0;
+    fx.flangerLfoPhL = fx.flangerLfoPhR = 0.0f;
+    std::memset(fx.eqZx, 0, sizeof(fx.eqZx));
+    std::memset(fx.eqZy, 0, sizeof(fx.eqZy));
+    fx.cmpEnvL = fx.cmpEnvR = fx.scEnv = 0.0f;
 }
 
 void applyInsertFxCommand(InsertEffect& fx, int function, int value) {
@@ -4496,7 +4523,8 @@ void AudioEngine::renderAudio(
 
         // Apply per-track bus-level gain, mute, and solo.
         {
-            const bool silenced = mTrackMute[track] || (anySolo && !mTrackSolo[track]);
+            const bool silenced = !mRenderingStems &&
+                (mTrackMute[track] || (anySolo && !mTrackSolo[track]));
             const float gain = silenced ? 0.0f : mTrackVolume[track];
             if (gain != 1.0f) {
                 for (int i = 0; i < numFrames; ++i) {
@@ -4573,7 +4601,8 @@ void AudioEngine::renderAudio(
 
         // Apply per-track bus-level gain, mute, and solo for the send destination.
         {
-            const bool silenced = mTrackMute[track] || (anySolo && !mTrackSolo[track]);
+            const bool silenced = !mRenderingStems &&
+                (mTrackMute[track] || (anySolo && !mTrackSolo[track]));
             const float gain = silenced ? 0.0f : mTrackVolume[track];
             if (gain != 1.0f) {
                 for (int i = 0; i < numFrames; ++i) {
@@ -4604,89 +4633,91 @@ void AudioEngine::renderAudio(
     }
 
 
-    // Apply master mute and volume ───────────────────────────────────────────────
-    const bool masterMute = mMasterMute.load();
-    const float masterVolume = mMasterVolume.load();
-    
-    if (masterMute) {
-        // Master is muted: silence entire output
-        std::fill(out, out + numFrames * 2, 0.0f);
-    } else if (masterVolume < 1.0f) {
-        // Apply master volume gain to all samples
-        for (int i = 0; i < numFrames * 2; ++i) {
-            out[i] *= masterVolume;
+    if (!mRenderingStems) {
+        // Apply master mute and volume ───────────────────────────────────────────────
+        const bool masterMute = mMasterMute.load();
+        const float masterVolume = mMasterVolume.load();
+
+        if (masterMute) {
+            // Master is muted: silence entire output
+            std::fill(out, out + numFrames * 2, 0.0f);
+        } else if (masterVolume < 1.0f) {
+            // Apply master volume gain to all samples
+            for (int i = 0; i < numFrames * 2; ++i) {
+                out[i] *= masterVolume;
+            }
         }
-    }
 
-    // ── Apply master insert effects ─────────────────────────────────────────────
-    // Process reverb and other effects on the master bus.
-    if (static_cast<int>(mMasterBusL.size()) < numFrames) {
-        mMasterBusL.resize(numFrames);
-        mMasterBusR.resize(numFrames);
-    }
+        // ── Apply master insert effects ─────────────────────────────────────────────
+        // Process reverb and other effects on the master bus.
+        if (static_cast<int>(mMasterBusL.size()) < numFrames) {
+            mMasterBusL.resize(numFrames);
+            mMasterBusR.resize(numFrames);
+        }
 
-    for (int i = 0; i < numFrames; ++i) {
-        mMasterBusL[i] = out[i * 2];
-        mMasterBusR[i] = out[i * 2 + 1];
-    }
-
-    processEffects(mMasterBusL.data(), mMasterBusR.data(), numFrames, mMasterInserts);
-
-    for (int i = 0; i < numFrames; ++i) {
-        out[i * 2] = mMasterBusL[i];
-        out[i * 2 + 1] = mMasterBusR[i];
-    }
-
-    // Preview audition should bypass channel routing, inserts, and the master chain.
-    for (int i = 0; i < numFrames; ++i) {
-        out[i * 2] += previewDirectL[i];
-        out[i * 2 + 1] += previewDirectR[i];
-    }
-
-    // ── Master safety limiter ───────────────────────────────────────────────
-    // Always-on (toggleable) lookahead peak limiter. Sits AFTER the master
-    // inserts and AFTER preview-direct injection so nothing can clip the DAC.
-    // Soft knee at -3 dB, brick wall at -0.3 dBFS, 50 ms release.
-    if (mMasterLimiterEnabled.load()) {
-        constexpr float kCeiling = 0.9661f;            // -0.3 dBFS
-        constexpr float kKneeStart = kCeiling * 0.7079f; // -3 dB below ceiling
-        const float peakRelK = std::exp(-1.0f /
-            (0.001f * static_cast<float>(sampleRate)));  // 1 ms peak decay
-        const float gainRelK = 1.0f - std::exp(-1.0f /
-            (0.050f * static_cast<float>(sampleRate))); // 50 ms gain release
         for (int i = 0; i < numFrames; ++i) {
-            const float inL = out[i * 2];
-            const float inR = out[i * 2 + 1];
-            const float peakIn = std::max(std::fabs(inL), std::fabs(inR));
+            mMasterBusL[i] = out[i * 2];
+            mMasterBusR[i] = out[i * 2 + 1];
+        }
 
-            // Peak envelope: instant attack, slow release.
-            mLimPeakEnv = std::max(peakIn, mLimPeakEnv * peakRelK);
+        processEffects(mMasterBusL.data(), mMasterBusR.data(), numFrames, mMasterInserts);
 
-            // Soft-knee target gain.
-            float targetGain;
-            if (mLimPeakEnv <= kKneeStart) {
-                targetGain = 1.0f;
-            } else if (mLimPeakEnv >= kCeiling) {
-                targetGain = kCeiling / mLimPeakEnv;
-            } else {
-                const float t = (mLimPeakEnv - kKneeStart) / (kCeiling - kKneeStart);
-                const float fullGain = kCeiling / mLimPeakEnv;
-                targetGain = 1.0f + (fullGain - 1.0f) * t * t;
+        for (int i = 0; i < numFrames; ++i) {
+            out[i * 2] = mMasterBusL[i];
+            out[i * 2 + 1] = mMasterBusR[i];
+        }
+
+        // Preview audition should bypass channel routing, inserts, and the master chain.
+        for (int i = 0; i < numFrames; ++i) {
+            out[i * 2] += previewDirectL[i];
+            out[i * 2 + 1] += previewDirectR[i];
+        }
+
+        // ── Master safety limiter ───────────────────────────────────────────────
+        // Always-on (toggleable) lookahead peak limiter. Sits AFTER the master
+        // inserts and AFTER preview-direct injection so nothing can clip the DAC.
+        // Soft knee at -3 dB, brick wall at -0.3 dBFS, 50 ms release.
+        if (mMasterLimiterEnabled.load()) {
+            constexpr float kCeiling = 0.9661f;            // -0.3 dBFS
+            constexpr float kKneeStart = kCeiling * 0.7079f; // -3 dB below ceiling
+            const float peakRelK = std::exp(-1.0f /
+                (0.001f * static_cast<float>(sampleRate)));  // 1 ms peak decay
+            const float gainRelK = 1.0f - std::exp(-1.0f /
+                (0.050f * static_cast<float>(sampleRate))); // 50 ms gain release
+            for (int i = 0; i < numFrames; ++i) {
+                const float inL = out[i * 2];
+                const float inR = out[i * 2 + 1];
+                const float peakIn = std::max(std::fabs(inL), std::fabs(inR));
+
+                // Peak envelope: instant attack, slow release.
+                mLimPeakEnv = std::max(peakIn, mLimPeakEnv * peakRelK);
+
+                // Soft-knee target gain.
+                float targetGain;
+                if (mLimPeakEnv <= kKneeStart) {
+                    targetGain = 1.0f;
+                } else if (mLimPeakEnv >= kCeiling) {
+                    targetGain = kCeiling / mLimPeakEnv;
+                } else {
+                    const float t = (mLimPeakEnv - kKneeStart) / (kCeiling - kKneeStart);
+                    const float fullGain = kCeiling / mLimPeakEnv;
+                    targetGain = 1.0f + (fullGain - 1.0f) * t * t;
+                }
+
+                // Fast duck (lookahead absorbs the ramp), slow release.
+                if (targetGain < mLimGainEnv) {
+                    mLimGainEnv = targetGain;
+                } else {
+                    mLimGainEnv += (targetGain - mLimGainEnv) * gainRelK;
+                }
+
+                // Write input into ring, output the delayed sample with current gain.
+                mLimRingL[mLimWriteIdx] = inL;
+                mLimRingR[mLimWriteIdx] = inR;
+                mLimWriteIdx = (mLimWriteIdx + 1) % kMasterLimiterLookahead;
+                out[i * 2]     = mLimRingL[mLimWriteIdx] * mLimGainEnv;
+                out[i * 2 + 1] = mLimRingR[mLimWriteIdx] * mLimGainEnv;
             }
-
-            // Fast duck (lookahead absorbs the ramp), slow release.
-            if (targetGain < mLimGainEnv) {
-                mLimGainEnv = targetGain;
-            } else {
-                mLimGainEnv += (targetGain - mLimGainEnv) * gainRelK;
-            }
-
-            // Write input into ring, output the delayed sample with current gain.
-            mLimRingL[mLimWriteIdx] = inL;
-            mLimRingR[mLimWriteIdx] = inR;
-            mLimWriteIdx = (mLimWriteIdx + 1) % kMasterLimiterLookahead;
-            out[i * 2]     = mLimRingL[mLimWriteIdx] * mLimGainEnv;
-            out[i * 2 + 1] = mLimRingR[mLimWriteIdx] * mLimGainEnv;
         }
     }
 
@@ -4978,26 +5009,91 @@ std::vector<float> AudioEngine::stopExportTap(int& outSampleRate) {
 // Offline render — drives the exact live render path faster than realtime
 // ---------------------------------------------------------------------------
 
-std::vector<float> AudioEngine::renderOffline(int& outSampleRate, int maxTailSeconds) {
+std::vector<float> AudioEngine::renderOffline(int& outSampleRate, int maxTailSeconds,
+                                             const std::vector<std::string>& stemPaths) {
+    const bool stems = !stemPaths.empty();
+    if (stems && stemPaths.size() != kMaxVoices) {
+        throw std::invalid_argument("Expected one stem path per mixer track");
+    }
     const double sr = mCachedSampleRate > 0.0f ? static_cast<double>(mCachedSampleRate) : 48000.0;
     outSampleRate = static_cast<int>(sr);
 
     std::vector<float> result;
-    if (mOfflineRendering.exchange(true)) return result; // already rendering
+    if (mOfflineRendering.exchange(true)) {
+        if (stems) throw std::runtime_error("Another export is already running");
+        return result;
+    }
 
     struct Guard {
-        std::atomic<bool>& flag;
-        ~Guard() { flag.store(false); }
-    } guard{mOfflineRendering};
+        AudioEngine& engine;
+        bool stems;
+        std::array<float, kMaxVoices> volume;
+        std::array<bool, kMaxVoices> mute, solo;
+        std::array<int, kMaxVoices> auxDest, auxPercent;
+        Guard(AudioEngine& e, bool s) : engine(e), stems(s) {
+            std::lock_guard<std::mutex> lock(e.mVoiceMutex);
+            std::copy_n(e.mTrackVolume, kMaxVoices, volume.begin());
+            std::copy_n(e.mTrackMute, kMaxVoices, mute.begin());
+            std::copy_n(e.mTrackSolo, kMaxVoices, solo.begin());
+            auxDest = e.mTrackAuxSendDest;
+            auxPercent = e.mTrackAuxSendPercent;
+        }
+        ~Guard() {
+            std::lock_guard<std::mutex> lock(engine.mVoiceMutex);
+            if (stems) {
+                engine.mPlayheadRunning.store(false);
+                for (auto& v : engine.mVoices) v = Voice{};
+                std::copy(volume.begin(), volume.end(), engine.mTrackVolume);
+                std::copy(mute.begin(), mute.end(), engine.mTrackMute);
+                std::copy(solo.begin(), solo.end(), engine.mTrackSolo);
+                engine.mTrackAuxSendDest = auxDest;
+                engine.mTrackAuxSendPercent = auxPercent;
+                for (auto& track : engine.mTrackInserts) {
+                    for (auto& fx : track) resetInsertHistory(fx);
+                }
+            }
+            engine.mRenderingStems = false;
+            engine.mOfflineRendering.store(false);
+        }
+    } guard{*this, stems};
 
     // Same block size as the live stream so event timing matches playback.
     int32_t block = mStream ? mStream->getFramesPerBurst() : 192;
     block = std::clamp<int32_t>(block, 64, kMaxAudioBurst);
 
     try {
+        std::array<std::unique_ptr<FloatWavWriter>, kMaxVoices> writers;
         {
             std::lock_guard<std::mutex> lock(mVoiceMutex);
-            if (mPlayheadRunning.load() || mQueuedPlaybackRows.empty()) return result;
+            if (mPlayheadRunning.load() || mQueuedPlaybackRows.empty()) {
+                if (stems) throw std::runtime_error("Stop playback and ensure the song contains notes");
+                return result;
+            }
+            if (stems) {
+                bool anyStem = false;
+                for (int t = 0; t < kMaxVoices; ++t) {
+                    if (stemPaths[t].empty()) continue;
+                    if (mTrackSendChannel[t] != 0) {
+                        throw std::runtime_error("Only tracks routed to Master can be exported");
+                    }
+                    writers[t] = std::make_unique<FloatWavWriter>(stemPaths[t], outSampleRate);
+                    anyStem = true;
+                }
+                if (!anyStem) throw std::runtime_error("No tracks are routed to Master");
+                int64_t songFrames = 0;
+                for (const auto& row : mQueuedPlaybackRows) songFrames += row.lineSamples;
+                if (songFrames + static_cast<int64_t>(maxTailSeconds * sr) + block > kMaxExportFrames) {
+                    throw std::runtime_error("Song exceeds the offline export length limit");
+                }
+                // Preview and previous playback must not leak into a new export.
+                for (auto& v : mVoices) v = Voice{};
+                mTrackAuxSendDest.fill(0);
+                mTrackAuxSendPercent.fill(0);
+                for (auto& track : mTrackInserts) {
+                    for (auto& fx : track) resetInsertHistory(fx);
+                }
+            }
+            mRenderingStems = stems;
             // Guarantees the render terminates at the end of the queue.
             mQueuedPlaybackLoop = false;
             // Mirrors the fresh idle->running transition in start().
@@ -5015,10 +5111,24 @@ std::vector<float> AudioEngine::renderOffline(int& outSampleRate, int maxTailSec
 
         const size_t maxSamples = static_cast<size_t>(kMaxExportFrames) * 2;
         std::vector<float> buf(static_cast<size_t>(block) * 2);
+        size_t renderedSamples = 0;
+        auto capture = [&](int frames, float gain = 1.0f, float gainStep = 0.0f) {
+            if (stems) {
+                for (int t = 0; t < kMaxVoices; ++t) {
+                    if (writers[t]) {
+                        writers[t]->append(mTrackBusL[t].data(), mTrackBusR[t].data(),
+                                           frames, gain, gainStep);
+                    }
+                }
+            } else {
+                result.insert(result.end(), buf.begin(), buf.begin() + frames * 2);
+            }
+            renderedSamples += frames * 2;
+        };
 
-        while (mPlayheadRunning.load() && result.size() < maxSamples) {
+        while (mPlayheadRunning.load() && renderedSamples < maxSamples) {
             renderAudio(buf.data(), block, sr, /*offlineCaller=*/true);
-            result.insert(result.end(), buf.begin(), buf.end());
+            capture(block);
         }
 
         // Tail: the sequencer has ended but voices/FX keep ringing, exactly
@@ -5029,18 +5139,39 @@ std::vector<float> AudioEngine::renderOffline(int& outSampleRate, int maxTailSec
         int64_t tailFrames = 0;
         int64_t quietFrames = 0;
         bool silent = false;
-        while (tailFrames < maxTailFrames && result.size() < maxSamples) {
-            renderAudio(buf.data(), block, sr, /*offlineCaller=*/true);
+        while (tailFrames < maxTailFrames && renderedSamples < maxSamples) {
+            const int frames = stems
+                ? static_cast<int>(std::min<int64_t>(block, maxTailFrames - tailFrames)) : block;
+            renderAudio(buf.data(), frames, sr, /*offlineCaller=*/true);
             float peak = 0.0f;
             for (float x : buf) peak = std::max(peak, std::fabs(x));
-            result.insert(result.end(), buf.begin(), buf.end());
-            tailFrames += block;
+            const int64_t fadeFrames = std::min<int64_t>(static_cast<int64_t>(0.25 * sr), maxTailFrames);
+            // Stems share a fixed tail; fade its last 250 ms on every bus.
+            if (stems && fadeFrames > 0 && tailFrames + frames > maxTailFrames - fadeFrames) {
+                const int beforeFade = static_cast<int>(std::max<int64_t>(
+                    0, maxTailFrames - fadeFrames - tailFrames));
+                // Gain is capped at unity by splitting at the fade boundary.
+                for (int t = 0; t < kMaxVoices; ++t) {
+                    if (!writers[t]) continue;
+                    if (beforeFade > 0) {
+                        writers[t]->append(mTrackBusL[t].data(), mTrackBusR[t].data(), beforeFade);
+                    }
+                    const float firstGain = static_cast<float>(maxTailFrames - tailFrames - beforeFade - 1) / fadeFrames;
+                    writers[t]->append(mTrackBusL[t].data() + beforeFade,
+                        mTrackBusR[t].data() + beforeFade, frames - beforeFade,
+                        firstGain, -1.0f / fadeFrames);
+                }
+                renderedSamples += frames * 2;
+            } else {
+                capture(frames);
+            }
+            tailFrames += frames;
             quietFrames = peak < kSilence ? quietFrames + block : 0;
-            if (quietFrames >= quietNeeded) { silent = true; break; }
+            if (!stems && quietFrames >= quietNeeded) { silent = true; break; }
         }
 
         // Endless sounds (e.g. looped samples) hit the cap: fade to avoid a click.
-        if (!silent && tailFrames > 0) {
+        if (!stems && !silent && tailFrames > 0) {
             const int64_t fadeFrames = std::min<int64_t>(
                 static_cast<int64_t>(0.25 * sr), tailFrames);
             const size_t totalFrames = result.size() / 2;
@@ -5051,8 +5182,14 @@ std::vector<float> AudioEngine::renderOffline(int& outSampleRate, int maxTailSec
                 result[f * 2 + 1] *= g;
             }
         }
+        if (stems) {
+            for (auto& writer : writers) {
+                if (writer) writer->finish();
+            }
+        }
     } catch (const std::bad_alloc&) {
         LOGE("renderOffline: out of memory");
+        if (stems) throw;
         result.clear();
         result.shrink_to_fit();
     }

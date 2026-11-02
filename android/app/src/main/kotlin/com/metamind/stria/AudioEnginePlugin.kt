@@ -5,6 +5,7 @@ import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
 import io.flutter.plugin.common.MethodChannel.MethodCallHandler
 import io.flutter.plugin.common.MethodChannel.Result
+import java.io.File
 
 /**
  * Bridges Flutter MethodChannel calls to the native Oboe AudioEngine
@@ -14,17 +15,23 @@ class AudioEnginePlugin : FlutterPlugin, MethodCallHandler {
 
     private lateinit var channel: MethodChannel
     private var enginePtr: Long = 0L // pointer to C++ AudioEngine
+    private lateinit var cacheDir: File
+    private var renderingStems = false
+    private var disposeAfterStemRender = false
 
     // ── FlutterPlugin ────────────────────────────────────────────────────────
 
     override fun onAttachedToEngine(binding: FlutterPlugin.FlutterPluginBinding) {
+        cacheDir = binding.applicationContext.cacheDir
         channel = MethodChannel(binding.binaryMessenger, CHANNEL_NAME)
         channel.setMethodCallHandler(this)
     }
 
     override fun onDetachedFromEngine(binding: FlutterPlugin.FlutterPluginBinding) {
         channel.setMethodCallHandler(null)
-        if (enginePtr != 0L) {
+        if (renderingStems) {
+            disposeAfterStemRender = true
+        } else if (enginePtr != 0L) {
             nativeDispose(enginePtr)
             enginePtr = 0L
         }
@@ -38,6 +45,10 @@ class AudioEnginePlugin : FlutterPlugin, MethodCallHandler {
     // ── MethodCallHandler ────────────────────────────────────────────────────
 
     override fun onMethodCall(call: MethodCall, result: Result) {
+        if (renderingStems && call.method != "getMeterValues") {
+            result.error("export_busy", "Stem export is in progress", null)
+            return
+        }
         when (call.method) {
             "initialize" -> {
                 enginePtr = nativeCreate()
@@ -672,6 +683,55 @@ class AudioEnginePlugin : FlutterPlugin, MethodCallHandler {
                     result.success(mapOf("samples" to FloatArray(0), "sampleRate" to 48000))
                 }
             }
+            "renderStemsOffline" -> {
+                if (enginePtr == 0L) {
+                    result.error("export_failed", "Audio engine is not initialized", null)
+                    return
+                }
+                val directory = call.argument<String>("directory")
+                val names = call.argument<List<String>>("fileNames")
+                if (directory == null || names == null || names.size != 16 ||
+                    names.all { it.isEmpty() } ||
+                    names.any { it.isNotEmpty() && !it.matches(Regex("[A-Za-z0-9_-]+\\.wav")) }) {
+                    result.error("bad_args", "Invalid stem output files", null)
+                    return
+                }
+                val dir: File
+                try {
+                    dir = File(directory).canonicalFile
+                    require(dir.isDirectory && dir.path.startsWith(cacheDir.canonicalPath + File.separator)) {
+                        "Stem staging directory must be inside the app cache"
+                    }
+                } catch (e: Exception) {
+                    android.util.Log.e("TrackerAudio", "Invalid stem staging directory", e)
+                    result.error("bad_args", e.message ?: "Invalid stem staging directory", null)
+                    return
+                }
+                val ptr = enginePtr
+                val paths = names.map { if (it.isEmpty()) "" else File(dir, it).path }.toTypedArray()
+                renderingStems = true
+                Thread {
+                    var failure: Exception? = null
+                    try {
+                        nativeRenderStemsOffline(ptr, paths, 6)
+                    } catch (e: Exception) {
+                        android.util.Log.e("TrackerAudio", "Stem render failed", e)
+                        failure = e
+                    }
+                    android.os.Handler(android.os.Looper.getMainLooper()).post {
+                        renderingStems = false
+                        if (disposeAfterStemRender && enginePtr != 0L) {
+                            nativeDispose(enginePtr)
+                            enginePtr = 0L
+                        }
+                        if (failure != null) {
+                            result.error("export_failed", failure.message ?: "Stem render failed", null)
+                        } else {
+                            result.success(null)
+                        }
+                    }
+                }.start()
+            }
             "renderOffline" -> {
                 if (enginePtr != 0L) {
                     val tailSeconds = call.argument<Int>("tailSeconds") ?: 6
@@ -705,6 +765,7 @@ class AudioEnginePlugin : FlutterPlugin, MethodCallHandler {
     // ── JNI declarations ─────────────────────────────────────────────────────
 
     private external fun nativeCreate(): Long
+    private external fun nativeRenderStemsOffline(ptr: Long, paths: Array<String>, tailSeconds: Int)
     private external fun nativeOpen(ptr: Long): Boolean
     private external fun nativeStart(ptr: Long)
     private external fun nativeStop(ptr: Long)

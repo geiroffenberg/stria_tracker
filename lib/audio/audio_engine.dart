@@ -291,6 +291,20 @@ class AudioEngine {
     return (samples: samples, sampleRate: sampleRate);
   }
 
+  /// Stream master-routed buses to stereo float WAV files in [directory].
+  Future<void> renderStemsOffline({
+    required String directory,
+    required List<String> fileNames,
+  }) async {
+    if (!_initialised) {
+      throw StateError('Audio engine is not initialized');
+    }
+    await _channel.invokeMethod<void>('renderStemsOffline', {
+      'directory': directory,
+      'fileNames': fileNames,
+    });
+  }
+
   /// Configure a master bus insert effect.
   /// [slotIdx] is 0-5 (6 insert slots).
   /// [effectType] is -1=empty, 0=reverb.

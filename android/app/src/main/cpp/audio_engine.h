@@ -763,7 +763,8 @@ public:
     /// and return interleaved stereo floats. Blocks until finished, so call it
     /// from a worker thread. Appends a ringing-out tail of up to
     /// [maxTailSeconds] (stops early once silent). Returns empty on failure.
-    std::vector<float> renderOffline(int& outSampleRate, int maxTailSeconds);
+    std::vector<float> renderOffline(int& outSampleRate, int maxTailSeconds,
+                                    const std::vector<std::string>& stemPaths = {});
 
     /// Set per-track send routing. [routing] has one entry per track:
     /// 0 = route to master, 1-16 = route audio into that channel's bus (1-based).
@@ -874,6 +875,7 @@ private:
     std::mutex                       mExportMutex;
     std::atomic<bool>                mExportTapActive{false};
     std::atomic<bool>                mOfflineRendering{false}; // live callback goes silent while true
+    bool                            mRenderingStems = false; // under mVoiceMutex
     std::vector<float>               mExportBuffer;       // interleaved stereo L,R,...
     static constexpr int             kMaxExportFrames = 48000 * 60 * 20; // 20 min at 48 kHz
 

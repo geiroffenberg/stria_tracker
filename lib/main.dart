@@ -92,6 +92,7 @@ class _TrackerAppState extends State<TrackerApp> with WidgetsBindingObserver {
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (_appState.isExportingStems) return;
     if (state == AppLifecycleState.paused ||
         state == AppLifecycleState.detached) {
       if (_appState.hasUnsavedChanges) {

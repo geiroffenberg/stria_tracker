@@ -541,6 +541,27 @@ Java_com_metamind_stria_AudioEnginePlugin_nativeRenderOffline(
 }
 
 JNIEXPORT void JNICALL
+Java_com_metamind_stria_AudioEnginePlugin_nativeRenderStemsOffline(
+        JNIEnv* env, jobject, jlong ptr, jobjectArray paths, jint tailSeconds) {
+    try {
+        std::vector<std::string> stemPaths;
+        const auto count = env->GetArrayLength(paths);
+        for (jsize i = 0; i < count; ++i) {
+            auto path = static_cast<jstring>(env->GetObjectArrayElement(paths, i));
+            const char* text = env->GetStringUTFChars(path, nullptr);
+            if (!text) return; // JVM has raised an allocation exception.
+            stemPaths.emplace_back(text);
+            env->ReleaseStringUTFChars(path, text);
+            env->DeleteLocalRef(path);
+        }
+        int sampleRate = 48000;
+        reinterpret_cast<AudioEngine*>(ptr)->renderOffline(sampleRate, tailSeconds, stemPaths);
+    } catch (const std::exception& e) {
+        env->ThrowNew(env->FindClass("java/lang/IllegalStateException"), e.what());
+    }
+}
+
+JNIEXPORT void JNICALL
 Java_com_metamind_stria_AudioEnginePlugin_nativeOpenRecordingStream(
         JNIEnv*, jobject, jlong ptr) {
     reinterpret_cast<AudioEngine*>(ptr)->openRecordingStream();

@@ -1,7 +1,7 @@
 import 'dart:math' show sqrt;
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart' show rootBundle;
+import 'package:flutter/services.dart' show rootBundle, PlatformException;
 import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import '../main.dart' show switchPalette, paletteNotifier;
 import '../models/note_value.dart';
@@ -19,6 +19,7 @@ enum _SongMenuAction {
   showProjectPath,
   changePalette,
   exportWav,
+  exportStems,
   showManual,
   autosave,
   stabilityMode,
@@ -749,6 +750,10 @@ class _SongScreenState extends State<SongScreen> {
                       value: _SongMenuAction.exportWav,
                       child: Text('Export WAV', style: TextStyle(fontSize: 16)),
                     ),
+                    const PopupMenuItem(
+                      value: _SongMenuAction.exportStems,
+                      child: Text('Export Stems', style: TextStyle(fontSize: 16)),
+                    ),
                     const PopupMenuDivider(),
                     const PopupMenuItem(
                       value: _SongMenuAction.showManual,
@@ -979,6 +984,9 @@ class _SongScreenState extends State<SongScreen> {
       case _SongMenuAction.exportWav:
         _handleExportWav(ctx, state);
         break;
+      case _SongMenuAction.exportStems:
+        _handleExportStems(ctx, state);
+        break;
       case _SongMenuAction.showManual:
         _showManual(ctx);
         break;
@@ -1204,6 +1212,89 @@ class _SongScreenState extends State<SongScreen> {
         ),
       );
     }
+  }
+
+  Future<void> _handleExportStems(BuildContext ctx, AppState state) async {
+    if (state.isPlaying || state.isExportingStems) {
+      ScaffoldMessenger.of(ctx).showSnackBar(
+        const SnackBar(content: Text('Stop playback before exporting stems.')),
+      );
+      return;
+    }
+    final confirmed = await showDialog<bool>(
+      context: ctx,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Export Stems'),
+        content: const SingleChildScrollView(
+          child: Text(
+            'Exports tracks routed to Master, including their incoming tracks '
+            'and track effects.\n\n'
+            '• Unused tracks with no incoming audio are skipped.\n'
+            '• Mute and Solo are ignored.\n'
+            '• Master effects, master volume and master safety limiter are excluded.\n'
+            '• Your mixer settings remain unchanged.\n\n'
+            'Aligned stereo 32-bit float WAV files, with a shared 6-second tail. '
+            'Recombined stems may differ from your processed master export.',
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('Export'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !ctx.mounted) return;
+    if (!await _ensureProjectFolder(ctx, state) || !ctx.mounted) return;
+    final progress = ValueNotifier<String>('Preparing stems…');
+    final navigator = Navigator.of(ctx, rootNavigator: true);
+    final dialog = showDialog<void>(
+      context: ctx,
+      barrierDismissible: false,
+      builder: (_) => PopScope(
+        canPop: false,
+        child: AlertDialog(
+          title: const Text('Exporting Stems'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const CircularProgressIndicator(),
+              const SizedBox(height: 16),
+              ValueListenableBuilder<String>(
+                valueListenable: progress,
+                builder: (_, message, _) => Text(message),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    String message;
+    try {
+      final saved = await state.exportSongStems(
+        onProgress: (text) => progress.value = text,
+      );
+      message = 'Saved ${saved.count} stems: ${saved.path}';
+    } on PlatformException catch (e) {
+      message = 'Stem export failed: ${e.message ?? e.code}';
+    } on StateError catch (e) {
+      message = 'Stem export failed: ${e.message}';
+    } on Exception catch (e) {
+      message = 'Stem export failed: $e';
+    } finally {
+      if (navigator.mounted) navigator.pop();
+      await dialog;
+      progress.dispose();
+    }
+    if (!ctx.mounted) return;
+    ScaffoldMessenger.of(ctx).showSnackBar(
+      SnackBar(content: Text(message), duration: const Duration(seconds: 6)),
+    );
   }
 
   void _showPalettePicker(BuildContext ctx) {

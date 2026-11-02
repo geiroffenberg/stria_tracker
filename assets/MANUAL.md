@@ -237,6 +237,7 @@ The top-right menu provides:
 | Load Song | Open a scrollable list of saved projects in a bottom sheet; tap a name to load |
 | Choose Project Folder | Set the root folder where projects are saved |
 | Export WAV | Bounce the full song to a stereo WAV file |
+| Export Stems | Export master-routed track buses as separate stereo float WAV files |
 | Change Palette | Cycle the colour theme |
 
 ---
@@ -862,7 +863,20 @@ Use **Choose Project Folder** to grant the app access to a folder via the Androi
 
 ### Export WAV
 
-**Export WAV** bounces the full song in real time to a stereo WAV file saved inside the project folder.
+**Export WAV** renders the full song offline to a stereo 16-bit WAV file saved inside the project folder, including master processing and the current mute/solo settings.
+
+### Export Stems
+
+Stop playback and choose **Song menu → Export Stems**. Confirm the rules before exporting:
+
+- Every used master-routed track gets a stereo **32-bit float WAV**. Tracks with no musical data and no incoming routing or parallel sends are skipped, based on the exported arrangement up to the first empty pattern, not audio loudness. Routed source tracks appear only within their destination bus. Chained/self routing is not supported.
+- Track/bus effects, volume, pan, automation, sidechains and parallel send returns stay active. All stems render together.
+- Mute and Solo are ignored; your mixer settings are preserved.
+- **Master effects, volume, mute and safety limiter are excluded.** Recombined stems represent the unmastered mix, not necessarily the processed master.
+- Files share a start time and duration, with a six-second tail faded over its last 250 ms. Longer tails are cut off.
+- Float WAV retains headroom above 0 dBFS. Reduce levels if needed before playing in another application.
+
+A new `stems_<timestamp>` folder inside your project contains files such as `Track_01_Bass.wav`. Existing exports are not overwritten. Wait for rendering and saving to finish.
 
 ---
 

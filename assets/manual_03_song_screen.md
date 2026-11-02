@@ -133,4 +133,5 @@ The top-right menu provides:
 | Load Song | Open a scrollable list of saved projects in a bottom sheet; tap a name to load |
 | Choose Project Folder | Set the root folder where projects are saved |
 | Export WAV | Bounce the full song to a stereo WAV file |
+| Export Stems | Export master-routed track buses as separate stereo float WAV files |
 | Change Palette | Cycle the colour theme |
