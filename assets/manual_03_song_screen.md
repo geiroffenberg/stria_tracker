@@ -134,4 +134,9 @@ The top-right menu provides:
 | Choose Project Folder | Set the root folder where projects are saved |
 | Export WAV | Bounce the full song to a stereo WAV file |
 | Export Stems | Export master-routed track buses as separate stereo float WAV files |
-| Change Palette | Cycle the colour theme |
+| Change Palette | Open the scrollable colour-theme picker |
+
+There are 30 palettes. Multicolour options include **Graphite**, **Cobalt**,
+**Terracotta**, **Aubergine**, **Moss**, **Wine**, **Espresso**, and **Glacier**.
+For colourful light backgrounds, try **Porcelain** or **Linen**. Your choice is
+saved automatically.
