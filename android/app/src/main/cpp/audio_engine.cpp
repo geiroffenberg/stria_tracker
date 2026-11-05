@@ -1250,7 +1250,7 @@ void AudioEngine::triggerRowLocked(const std::vector<int>& rowData) {
         const int vol  = rowData[base + 1];
         const int pan  = rowData[base + 2];
         const int wave = rowData[base + 3];
-        // instrumentType: 0=synth, 1=sampler, 2=Karplus.
+        // instrumentType: 0=synth, 1=sampler, 2=Karplus, 3=drum, 4=empty.
         // Present in 24- and 25-stride row packets.
         const int instrumentType = (stride >= 24) ? rowData[base + 4] : 0;
         // Synth params (stride 24/23 full; stride 18 compat; stride 4 defaults)
@@ -1305,6 +1305,22 @@ void AudioEngine::triggerRowLocked(const std::vector<int>& rowData) {
         const int lfoModeRaw   = (stride >= 49) ? rowData[pBase + 43] : 2;
         auto& v = mVoices[i];
 
+        if (instrumentType == 4) {
+            v.midiNote = -1;
+            v.noteHeld = false;
+            v.gain = v.gainTarget = 0.0f;
+            v.envLevel = v.filterEnvLevel = 0.0f;
+            v.envStage = v.filterEnvStage = EnvelopeStage::Idle;
+            v.synthQuickFadeActive = false;
+            v.pendingSynthNote = -1;
+            v.pendingWaveform = -1;
+            v.sampleActive = v.karplusActive = v.drumActive = false;
+            v.samplerMode = v.karplusMode = v.drumMode = false;
+            v.pendingRetriggerNote = -1;
+            v.declickTailFramesLeft = 0;
+            continue;
+        }
+
         // note encoding:
         //  0..127   = note-on
         //  -1       = hold
@@ -1317,6 +1333,9 @@ void AudioEngine::triggerRowLocked(const std::vector<int>& rowData) {
         const bool isKarplus = (instrumentType == 2);
         const bool isDrum = (instrumentType == 3);
         const bool synthVoiceWasActive = !isSampler && !isKarplus && !isDrum &&
+            !v.samplerMode && !v.karplusMode && !v.drumMode &&
+            v.midiNote >= 0 &&
+            (v.gain >= 1e-5f || v.gainTarget >= 1e-5f || v.pendingWaveform >= 0) &&
             (v.envStage != EnvelopeStage::Idle ||
              v.gain > 1e-4f ||
              v.gainTarget > 1e-4f);
@@ -1632,13 +1651,10 @@ void AudioEngine::triggerRowLocked(const std::vector<int>& rowData) {
         }
 
         if (n >= 0) {
-            const bool voiceWasActive =
-                (v.envStage != EnvelopeStage::Idle) ||
-                (v.gain > 1e-4f) ||
-                (v.gainTarget > 1e-4f);
-            if (v.synthQuickFadeActive) {
+            // Only defer to a fade that the synth renderer can actually run.
+            if (v.synthQuickFadeActive && synthVoiceWasActive) {
                 v.pendingSynthNote = n;
-            } else if (voiceWasActive) {
+            } else if (synthVoiceWasActive) {
                 v.synthQuickFadeActive = true;
                 v.pendingSynthNote = n;
                 v.synthQuickFadeFramesTotal = std::max(
@@ -1800,7 +1816,9 @@ void AudioEngine::killVoicesLocked(const std::vector<int>& killMask) {
         Voice& v = mVoices[i];
         // Trigger note-off: move to release stage without clearing the voice.
         v.noteHeld = false;
-        v.envStage = EnvelopeStage::Release;
+        if (v.envStage != EnvelopeStage::Idle) {
+            v.envStage = EnvelopeStage::Release;
+        }
         v.synthQuickFadeActive = false;
         v.pendingSynthNote = -1;
         if (v.samplerMode) v.sampleActive = false;

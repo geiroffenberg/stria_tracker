@@ -3954,6 +3954,7 @@ class AppState extends ChangeNotifier {
     if (ins.type == InstrumentType.sampler) return 1;
     if (ins.type == InstrumentType.karplusStrong) return 2;
     if (ins.type == InstrumentType.drumSynth) return 3;
+    if (ins.type == InstrumentType.empty) return 4;
     return 0;
   }
 
@@ -6294,6 +6295,12 @@ class AppState extends ChangeNotifier {
         waveCmd,
       );
 
+      // Empty slots must also clear note carry before RET/ARP/DEL scheduling.
+      if (instruments[currentSlot].type == InstrumentType.empty) {
+        noteCmd = -2;
+        pendingSlide = null;
+      }
+
       // CHA: 00..99 chance that a note-on this row will play.
       // If chance fails, treat as hold (no new note trigger).
       if (noteCmd >= 0 && chancePct != null) {
@@ -7755,6 +7762,7 @@ class AppState extends ChangeNotifier {
         ? cell.instrument!
         : _defaultInstrumentForRow(track, row);
     final slot = (instNum - 1).clamp(0, instruments.length - 1);
+    if (instruments[slot].type == InstrumentType.empty) return;
 
     final waveCmd = _waveCodeForInstrumentSlot(slot);
     final instrumentTypeCmd = _instrumentTypeCodeForSlot(slot);
@@ -8124,11 +8132,7 @@ class AppState extends ChangeNotifier {
       await _setPreviewDryBypass(previewVoice, false);
     } else {
       // Non-looping: hard-stop any lingering reverb tail on the preview
-      // voice only. Must NOT kill every voice — killVoicesLocked() forces
-      // envStage=Release on every voice it touches, and doing that to
-      // unrelated idle synth tracks stales their envStage until the next
-      // real note-on, deadlocking them silent (same bug class as the
-      // manual-Stop synth deadlock documented in repo memory).
+      // voice only, leaving unrelated track voices and their envelopes alone.
       final mask = List<int>.filled(_audioVoiceCount, 0);
       if (previewVoice >= 0 && previewVoice < mask.length) {
         mask[previewVoice] = 1;

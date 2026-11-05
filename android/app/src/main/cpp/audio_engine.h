@@ -528,7 +528,7 @@ public:
     /// volume: 0-255 sets voice level, -1 = no change.
     /// pan: 0-255 sets stereo position, -1 = no change.
     /// wave: 0=sine,1=tri,2=saw,3=square,4=pulse,5=noise.
-    /// instrumentType: 0=simple synth, 1=sampler, 2=Karplus-Strong.
+    /// instrumentType: 0=simple synth, 1=sampler, 2=Karplus-Strong, 3=drum, 4=empty.
     /// cutoff/resonance/filterAttack/filterDecay/filterSustain/filterRelease/
     /// filterEnvAmt/attack/decay/sustain/release/glide/instVol:
     /// 0-255 mapped from instrument params.

@@ -55,6 +55,10 @@ The IN column controls both *which instrument slot* is active and *whether a not
 
 **Key rule:** a note only fires when IN is `01`–`99`. Every new note-on must carry an explicit instrument number. This makes every trigger unambiguous.
 
+The referenced slot must contain an instrument. An **EMPTY** slot produces no
+sound (including note previews and delayed or repeated notes); selecting an empty
+slot also silences the track's previous voice.
+
 `00` is a compact portamento shorthand: write a destination note with IN = `00` to glide to a new pitch without restarting the envelope.
 
 ---

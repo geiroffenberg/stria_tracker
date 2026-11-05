@@ -143,6 +143,7 @@ class AudioEngine {
   /// volume: 0-255 sets level, -1 leaves current level unchanged.
   /// pan: 0-255 sets position, -1 leaves pan unchanged.
   /// wave: 0=sine,1=triangle,2=saw,3=square,4=pulse,5=noise.
+  /// instrumentType: 0=synth, 1=sampler, 2=Karplus, 3=drum, 4=empty (silent).
   /// cutoff/resonance/filterAttack/filterDecay/filterSustain/filterRelease/
   /// filterEnvAmt/attack/decay/sustain/release/glide/instVol:
   ///   0-255 mapped from instrument params.

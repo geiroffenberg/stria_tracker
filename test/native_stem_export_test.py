@@ -1,7 +1,8 @@
 """Run with python3 test/native_stem_export_test.py (requires clang++).
 
-Runs the complete production engine offline; only Android logging and the
-audio-device API are stubbed. No audio device or Android runtime is required.
+Checks voice recovery and stem export using the complete production engine
+offline; only Android logging and the audio-device API are stubbed.
+No audio device or Android runtime is required.
 """
 from pathlib import Path
 import subprocess
@@ -161,7 +162,95 @@ double energy(const std::vector<float>& audio) {
     }
     return sum;
 }
+std::vector<int> voiceRow(int note, int type=0) {
+    std::vector<int> data(16*49, 0);
+    for (int t=0;t<16;++t) {
+        const int b=t*49, p=b+5;
+        data[b]=t==0 ? note : -1;
+        data[b+1]=255;data[b+2]=128;
+        data[b+4]=t==0 ? type : 0;
+        data[p]=128;data[p+1]=255;data[p+6]=255;data[p+8]=128;
+        data[p+11]=255;data[p+14]=255;data[p+20]=255;
+        data[p+23]=data[p+27]=128;
+        data[p+31]=data[p+32]=data[p+33]=2;
+        data[p+38]=255;
+    }
+    return data;
+}
+double renderVoice(AudioEngine& engine, int blocks=100) {
+    oboe::AudioStream stream;
+    std::vector<float> buffer(192*2);
+    double sum=0;
+    for (int b=0;b<blocks;++b) {
+        engine.onAudioReady(&stream,buffer.data(),192);
+        sum+=energy(buffer);
+    }
+    return sum;
+}
+std::unique_ptr<AudioEngine> voiceEngine() {
+    auto engine=std::make_unique<AudioEngine>();
+    check(engine->open(), "voice test stream opened");
+    engine->setMasterLimiterEnabled(false);
+    return engine;
+}
+void checkVoiceRecovery() {
+    auto engine=voiceEngine();
+    engine->triggerRow(voiceRow(60));
+    check(renderVoice(*engine)>1, "fresh synth sounds");
+    engine->triggerRow(voiceRow(64));
+    check(engine->getVoiceEnvelopeStage(0)==4, "audible retrigger keeps anti-click release");
+    engine->triggerRow(voiceRow(67));
+    check(renderVoice(*engine)>1 && engine->isVoicePlaying(0), "audible synth retriggers");
+    auto changedWave=voiceRow(60);
+    changedWave[3]=2;
+    engine->triggerRow(changedWave);
+    check(renderVoice(*engine)>1, "waveform change with retrigger remains audible");
+    engine->triggerRow(voiceRow(-2));
+    renderVoice(*engine);
+    check(!engine->isVoicePlaying(0), "synth release completes");
+    engine->triggerRow(voiceRow(67));
+    check(renderVoice(*engine)>1, "synth restarts after release");
+
+    std::vector<int> mask(16,0);mask[0]=1;
+    engine=voiceEngine();
+    engine->killVoices(mask);
+    engine->triggerRow(voiceRow(60));
+    check(renderVoice(*engine)>1, "idle kill cannot deadlock synth");
+
+    engine=voiceEngine();
+    engine->triggerRow(voiceRow(-2,1));
+    engine->killVoices(mask);
+    engine->triggerRow(voiceRow(60));
+    check(renderVoice(*engine)>1, "sampler preview cleanup cannot deadlock synth");
+
+    engine=voiceEngine();
+    engine->triggerRow(voiceRow(60,3));
+    check(renderVoice(*engine,1250)>.01, "drum control sounds");
+    check(renderVoice(*engine)==0, "drum has finished");
+    engine->triggerRow(voiceRow(60));
+    check(renderVoice(*engine)>1, "finished drum cannot deadlock synth");
+
+    engine=voiceEngine();
+    engine->triggerRow(voiceRow(60,4));
+    check(renderVoice(*engine)==0, "empty instrument is silent");
+    engine->triggerRow(voiceRow(60));
+    check(renderVoice(*engine)>1, "synth starts after empty slot");
+    engine->triggerRow(voiceRow(64,4));
+    check(renderVoice(*engine)==0, "empty slot cannot keep previous synth sounding");
+    engine->triggerRow(voiceRow(67));
+    check(renderVoice(*engine)>1, "synth recovers after switching through empty slot");
+    engine->stop();
+    renderVoice(*engine);
+    engine->triggerRow(voiceRow(72));
+    check(renderVoice(*engine)>1, "stop and replay remain audible");
+    engine=voiceEngine();
+    engine->stop();
+    engine->triggerRow(voiceRow(60));
+    check(renderVoice(*engine)>1, "stopping an idle engine cannot deadlock synth");
+    std::cout << "All synth recovery, retrigger and empty-instrument checks passed\n";
+}
 int main(int argc, char** argv) {
+    checkVoiceRecovery();
     const std::string dir=argv[1];
     std::vector<std::string> paths(16);
     paths[2]=dir+"/group.wav";paths[3]=dir+"/lead.wav";paths[13]=dir+"/return.wav";
