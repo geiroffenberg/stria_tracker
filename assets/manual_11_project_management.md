@@ -29,6 +29,8 @@ Use **Choose Project Folder** to grant the app access to a folder via the Androi
 
 **Export WAV** renders the full song offline to a stereo 16-bit WAV file saved inside the project folder, including master processing and the current mute/solo settings.
 
+Like stem export, WAV export streams audio to a temporary file and copies the completed file to your project folder, avoiding whole-song audio transfers through Flutter. The existing effect tail and final fade are preserved. Storage and export-length errors are reported instead of saving an incomplete render.
+
 ## Export Stems
 
 Stop playback, then choose **Song menu → Export Stems** and confirm the export rules.

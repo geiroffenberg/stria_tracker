@@ -1,6 +1,6 @@
 """Run with python3 test/native_stem_export_test.py (requires clang++).
 
-Checks voice recovery and stem export using the complete production engine
+Checks voice recovery, master WAV and stem export using the complete production engine
 offline; only Android logging and the audio-device API are stubbed.
 No audio device or Android runtime is required.
 """
@@ -81,13 +81,14 @@ inline int __android_log_print(int, const char*, const char*, ...) { return 0; }
 
 tests = r"""
 #include "audio_engine.h"
-#include "float_wav_writer.h"
+#include "wav_writer.h"
 #include <algorithm>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <stdexcept>
+#include <sys/resource.h>
 void check(bool value, const char* message) {
     if (!value) throw std::runtime_error(message);
 }
@@ -110,6 +111,32 @@ std::vector<float> read(const std::string& path) {
     std::vector<float> data(dataSize/4);
     std::memcpy(data.data(), bytes.data()+56, dataSize);
     return data;
+}
+void checkPcm(const std::string& path, const std::vector<float>& reference) {
+    std::ifstream file(path, std::ios::binary);
+    std::vector<char> bytes((std::istreambuf_iterator<char>(file)), {});
+    check(bytes.size()==44+reference.size()*2, "PCM duration matches buffered export exactly");
+    check(std::memcmp(bytes.data(), "RIFF", 4)==0, "PCM RIFF tag");
+    check(bytes[20]==1 && bytes[22]==2 && bytes[34]==16, "stereo 16-bit PCM");
+    check(std::memcmp(bytes.data()+36, "data", 4)==0, "PCM data chunk");
+    uint32_t riffSize, dataSize, sampleRate;
+    std::memcpy(&riffSize, bytes.data()+4, 4);
+    std::memcpy(&dataSize, bytes.data()+40, 4);
+    std::memcpy(&sampleRate, bytes.data()+24, 4);
+    if (riffSize+8!=bytes.size() || dataSize!=reference.size()*2) {
+        throw std::runtime_error("PCM sizes: RIFF="+std::to_string(riffSize)
+            +" data="+std::to_string(dataSize)+" bytes="+std::to_string(bytes.size())
+            +" samples="+std::to_string(reference.size()));
+    }
+    check(sampleRate==48000 && bytes[32]==4, "PCM sample rate and frame alignment");
+    for (size_t i=0;i<reference.size();++i) {
+        const auto lo=static_cast<uint8_t>(bytes[44+i*2]);
+        const auto hi=static_cast<uint8_t>(bytes[45+i*2]);
+        const int16_t actual=static_cast<int16_t>(lo | (hi<<8));
+        const int16_t expected=static_cast<int16_t>(
+            std::clamp(static_cast<double>(reference[i]), -1.0, 1.0)*32767.0);
+        check(actual==expected, "PCM samples match existing WAV encoder exactly");
+    }
 }
 std::unique_ptr<AudioEngine> make(bool alteredMaster, bool flags, bool sidechain=true) {
     auto engine = std::make_unique<AudioEngine>();
@@ -252,6 +279,96 @@ void checkVoiceRecovery() {
 int main(int argc, char** argv) {
     checkVoiceRecovery();
     const std::string dir=argv[1];
+    for (bool master : {false, true}) {
+        for (int tail : {0, 1, 6}) {
+            auto buffered=make(master,false);
+            auto streamed=make(master,false);
+            int rate;
+            const auto expected=buffered->renderOffline(rate,tail);
+            const auto path=dir+"/master.wav";
+            check(streamed->renderOffline(rate,tail,{},path).empty(),
+                  "master WAV streams instead of returning whole-song audio");
+            checkPcm(path,expected);
+        }
+    }
+    {
+        auto buffered=voiceEngine(), streamed=voiceEngine();
+        QueuedPlaybackRow silent;
+        silent.lineSamples=4800;silent.rowData={-1,-1,128,0};
+        buffered->enqueuePlaybackRow(silent);streamed->enqueuePlaybackRow(silent);
+        int rate;
+        const auto expected=buffered->renderOffline(rate,6);
+        streamed->renderOffline(rate,6,{},dir+"/silent.wav");
+        checkPcm(dir+"/silent.wav",expected);
+        check(expected.size()<48000*2, "quiet tail stops early as before");
+    }
+    {
+        std::vector<float> sample(4800);
+        for (size_t i=0;i<sample.size();++i) sample[i]=.4f*std::sin(i*.05f);
+        const auto samplePath=dir+"/sample.wav";
+        WavWriter writer(samplePath,48000,WavWriter::Format::Pcm16);
+        writer.append(sample.data(),sample.data(),sample.size());writer.finish();
+        auto buffered=voiceEngine(), streamed=voiceEngine();
+        check(buffered->setSamplerSample(0,samplePath) &&
+              streamed->setSamplerSample(0,samplePath), "sample loaded into both engines");
+        QueuedPlaybackRow row;
+        row.lineSamples=48000;row.rowData=voiceRow(60,1);
+        row.rowData[5+16]=255; // Sampler end region, unlike synth LFO depth.
+        buffered->enqueuePlaybackRow(row);streamed->enqueuePlaybackRow(row);
+        int rate;
+        const auto expected=buffered->renderOffline(rate,6);
+        check(energy(expected)>.01, "sampler reference is audible");
+        streamed->renderOffline(rate,6,{},dir+"/sampler-master.wav");
+        checkPcm(dir+"/sampler-master.wav",expected);
+    }
+    {
+        auto engine=make(false,false);
+        int rate;
+        bool failed=false;
+        try { engine->renderOffline(rate,6,{},dir+"/missing/master.wav"); }
+        catch(const std::exception&) { failed=true; }
+        check(failed, "master write failure reported");
+        check(engine->renderOffline(rate,6,{},dir+"/recovered.wav").empty(),
+              "master write failure releases render ownership");
+        engine=make(false,false);
+        QueuedPlaybackRow tooLong;
+        tooLong.lineSamples=48000*60*21;tooLong.rowData={-1,-1,128,0};
+        engine->enqueuePlaybackRow(tooLong);
+        failed=false;
+        try { engine->renderOffline(rate,6,{},dir+"/too-long.wav"); }
+        catch(const std::exception&) { failed=true; }
+        check(failed && !std::filesystem::exists(dir+"/too-long.wav"),
+              "overlength master rejected before rendering or creating a file");
+        engine=make(false,false);
+        failed=false;
+        try { engine->renderOffline(rate,6,{},"/dev/full"); }
+        catch(const std::exception&) { failed=true; }
+        check(failed, "master disk-full failure reported");
+        engine->clearQueuedPlaybackRows();
+        QueuedPlaybackRow retry;
+        retry.lineSamples=4800;retry.rowData={60,200,128,0};
+        engine->enqueuePlaybackRow(retry);
+        engine->renderOffline(rate,0,{},dir+"/disk-full-retry.wav");
+        check(std::filesystem::file_size(dir+"/disk-full-retry.wav")>44,
+              "mid-render disk failure leaves engine stopped and reusable");
+    }
+    {
+        auto engine=voiceEngine();
+        QueuedPlaybackRow longSong;
+        longSong.lineSamples=48000*240;longSong.rowData={-1,-1,128,0};
+        engine->enqueuePlaybackRow(longSong);
+        rusage before{}, after{};
+        check(getrusage(RUSAGE_SELF,&before)==0, "read initial memory usage");
+        int rate;
+        const auto path=dir+"/four-minutes.wav";
+        check(engine->renderOffline(rate,0,{},path).empty(), "long master does not return audio");
+        check(getrusage(RUSAGE_SELF,&after)==0, "read final memory usage");
+        check(std::filesystem::file_size(path)==44+uint64_t(48000)*240*4,
+              "four-minute WAV has exact duration without truncation");
+        check(after.ru_maxrss-before.ru_maxrss<16*1024, "long export peak memory growth stays below 16 MiB");
+        std::cout << "Four-minute export peak RSS growth: "
+                  << after.ru_maxrss-before.ru_maxrss << " KiB\n";
+    }
     std::vector<std::string> paths(16);
     paths[2]=dir+"/group.wav";paths[3]=dir+"/lead.wav";paths[13]=dir+"/return.wav";
     auto stems=make(true,true);
@@ -301,17 +418,30 @@ int main(int argc, char** argv) {
     missing->renderOffline(rate,6,paths);
 
     const std::string headroom=dir+"/headroom.wav";
-    FloatWavWriter writer(headroom,48000);
+    WavWriter writer(headroom,48000);
     float l[]={2,-2,.1f},r[]={-3,3,.2f};
     writer.append(l,r,3);writer.finish();
     const auto floats=read(headroom);
     check(floats[0]==2 && floats[1]==-3, "float WAV preserves unclipped headroom");
     failed=false;
     try {
-        FloatWavWriter full("/dev/full",48000);
+        WavWriter full("/dev/full",48000);
         full.append(l,r,3);full.finish();
     } catch(const std::exception&) { failed=true; }
     check(failed, "disk-full errors reported when finalizing WAV");
+    {
+        const std::vector<float> values={2,-3,-2,3,.1f,.2f};
+        WavWriter pcm(dir+"/pcm.wav",48000,WavWriter::Format::Pcm16);
+        pcm.appendInterleaved(values.data(),3);pcm.finish();
+        checkPcm(dir+"/pcm.wav",values);
+        failed=false;
+        try {
+            WavWriter full("/dev/full",48000,WavWriter::Format::Pcm16);
+            full.appendInterleaved(values.data(),3);full.finish();
+        } catch(const std::exception&) { failed=true; }
+        check(failed, "PCM disk-full error reported");
+    }
+    std::cout << "Master streaming matches buffered PCM, processing, tail and fade exactly\n";
     std::cout << "All stem routing, alignment, sidechain, state, errors and WAV checks passed\n";
 }
 """

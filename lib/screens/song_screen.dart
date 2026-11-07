@@ -752,7 +752,10 @@ class _SongScreenState extends State<SongScreen> {
                     ),
                     const PopupMenuItem(
                       value: _SongMenuAction.exportStems,
-                      child: Text('Export Stems', style: TextStyle(fontSize: 16)),
+                      child: Text(
+                        'Export Stems',
+                        style: TextStyle(fontSize: 16),
+                      ),
                     ),
                     const PopupMenuDivider(),
                     const PopupMenuItem(
@@ -1161,9 +1164,9 @@ class _SongScreenState extends State<SongScreen> {
 
   Future<void> _handleExportWav(BuildContext ctx, AppState state) async {
     final ready = await _ensureProjectFolder(ctx, state);
-    if (!ready) return;
+    if (!ready || !ctx.mounted) return;
 
-    if (state.isPlaying) {
+    if (state.isPlaying || state.isExportingAudio) {
       ScaffoldMessenger.of(ctx).showSnackBar(
         const SnackBar(
           content: Text('Stop playback before exporting.'),
@@ -1175,47 +1178,49 @@ class _SongScreenState extends State<SongScreen> {
 
     // Show progress dialog while the engine renders the song offline.
     if (!ctx.mounted) return;
-    showDialog<void>(
+    final navigator = Navigator.of(ctx, rootNavigator: true);
+    final dialog = showDialog<void>(
       context: ctx,
       barrierDismissible: false,
-      builder: (_) => const AlertDialog(
-        title: Text('Exporting WAV'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            SizedBox(height: 16),
-            CircularProgressIndicator(),
-            SizedBox(height: 16),
-            Text('Rendering song…'),
-          ],
+      builder: (_) => const PopScope(
+        canPop: false,
+        child: AlertDialog(
+          title: Text('Exporting WAV'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              SizedBox(height: 16),
+              CircularProgressIndicator(),
+              SizedBox(height: 16),
+              Text('Rendering song…'),
+            ],
+          ),
         ),
       ),
     );
 
-    final path = await state.exportSongToWav();
-
-    if (!ctx.mounted) return;
-    Navigator.of(ctx).pop(); // close progress dialog
-
-    if (path == null) {
-      ScaffoldMessenger.of(ctx).showSnackBar(
-        const SnackBar(
-          content: Text('Export failed or song is empty.'),
-          duration: Duration(seconds: 3),
-        ),
-      );
-    } else {
-      ScaffoldMessenger.of(ctx).showSnackBar(
-        SnackBar(
-          content: Text('Saved: $path'),
-          duration: const Duration(seconds: 5),
-        ),
-      );
+    String message;
+    try {
+      final path = await state.exportSongToWav();
+      message = path == null ? 'Song is empty.' : 'Saved: $path';
+    } on PlatformException catch (e) {
+      message = 'WAV export failed: ${e.message ?? e.code}';
+    } on StateError catch (e) {
+      message = 'WAV export failed: ${e.message}';
+    } on Exception catch (e) {
+      message = 'WAV export failed: $e';
+    } finally {
+      if (navigator.mounted) navigator.pop();
+      await dialog;
     }
+    if (!ctx.mounted) return;
+    ScaffoldMessenger.of(ctx).showSnackBar(
+      SnackBar(content: Text(message), duration: const Duration(seconds: 6)),
+    );
   }
 
   Future<void> _handleExportStems(BuildContext ctx, AppState state) async {
-    if (state.isPlaying || state.isExportingStems) {
+    if (state.isPlaying || state.isExportingAudio) {
       ScaffoldMessenger.of(ctx).showSnackBar(
         const SnackBar(content: Text('Stop playback before exporting stems.')),
       );

@@ -1,6 +1,6 @@
 #include "audio_engine.h"
 #include "stria_sola_stretcher.hpp"
-#include "float_wav_writer.h"
+#include "wav_writer.h"
 #include <android/log.h>
 #include <algorithm>
 #include <fstream>
@@ -5028,8 +5028,14 @@ std::vector<float> AudioEngine::stopExportTap(int& outSampleRate) {
 // ---------------------------------------------------------------------------
 
 std::vector<float> AudioEngine::renderOffline(int& outSampleRate, int maxTailSeconds,
-                                             const std::vector<std::string>& stemPaths) {
+                                             const std::vector<std::string>& stemPaths,
+                                             const std::string& masterPath) {
     const bool stems = !stemPaths.empty();
+    const bool masterFile = !masterPath.empty();
+    const bool files = stems || masterFile;
+    if ((stems && masterFile) || (files && (maxTailSeconds < 0 || maxTailSeconds > 6))) {
+        throw std::invalid_argument("Invalid offline export output or tail");
+    }
     if (stems && stemPaths.size() != kMaxVoices) {
         throw std::invalid_argument("Expected one stem path per mixer track");
     }
@@ -5038,17 +5044,17 @@ std::vector<float> AudioEngine::renderOffline(int& outSampleRate, int maxTailSec
 
     std::vector<float> result;
     if (mOfflineRendering.exchange(true)) {
-        if (stems) throw std::runtime_error("Another export is already running");
+        if (files) throw std::runtime_error("Another export is already running");
         return result;
     }
 
     struct Guard {
         AudioEngine& engine;
-        bool stems;
+        bool files;
         std::array<float, kMaxVoices> volume;
         std::array<bool, kMaxVoices> mute, solo;
         std::array<int, kMaxVoices> auxDest, auxPercent;
-        Guard(AudioEngine& e, bool s) : engine(e), stems(s) {
+        Guard(AudioEngine& e, bool f) : engine(e), files(f) {
             std::lock_guard<std::mutex> lock(e.mVoiceMutex);
             std::copy_n(e.mTrackVolume, kMaxVoices, volume.begin());
             std::copy_n(e.mTrackMute, kMaxVoices, mute.begin());
@@ -5058,7 +5064,7 @@ std::vector<float> AudioEngine::renderOffline(int& outSampleRate, int maxTailSec
         }
         ~Guard() {
             std::lock_guard<std::mutex> lock(engine.mVoiceMutex);
-            if (stems) {
+            if (files) {
                 engine.mPlayheadRunning.store(false);
                 for (auto& v : engine.mVoices) v = Voice{};
                 std::copy(volume.begin(), volume.end(), engine.mTrackVolume);
@@ -5073,19 +5079,31 @@ std::vector<float> AudioEngine::renderOffline(int& outSampleRate, int maxTailSec
             engine.mRenderingStems = false;
             engine.mOfflineRendering.store(false);
         }
-    } guard{*this, stems};
+    } guard{*this, files};
 
     // Same block size as the live stream so event timing matches playback.
     int32_t block = mStream ? mStream->getFramesPerBurst() : 192;
     block = std::clamp<int32_t>(block, 64, kMaxAudioBurst);
 
     try {
-        std::array<std::unique_ptr<FloatWavWriter>, kMaxVoices> writers;
+        std::array<std::unique_ptr<WavWriter>, kMaxVoices> writers;
+        std::unique_ptr<WavWriter> masterWriter;
         {
             std::lock_guard<std::mutex> lock(mVoiceMutex);
             if (mPlayheadRunning.load() || mQueuedPlaybackRows.empty()) {
-                if (stems) throw std::runtime_error("Stop playback and ensure the song contains notes");
+                if (files) throw std::runtime_error("Stop playback and ensure the song contains notes");
                 return result;
+            }
+            if (files) {
+                int64_t songFrames = 0;
+                for (const auto& row : mQueuedPlaybackRows) songFrames += row.lineSamples;
+                if (songFrames + static_cast<int64_t>(maxTailSeconds * sr) + block > kMaxExportFrames) {
+                    throw std::runtime_error("Song exceeds the offline export length limit");
+                }
+            }
+            if (masterFile) {
+                masterWriter = std::make_unique<WavWriter>(
+                    masterPath, outSampleRate, WavWriter::Format::Pcm16);
             }
             if (stems) {
                 bool anyStem = false;
@@ -5094,15 +5112,10 @@ std::vector<float> AudioEngine::renderOffline(int& outSampleRate, int maxTailSec
                     if (mTrackSendChannel[t] != 0) {
                         throw std::runtime_error("Only tracks routed to Master can be exported");
                     }
-                    writers[t] = std::make_unique<FloatWavWriter>(stemPaths[t], outSampleRate);
+                    writers[t] = std::make_unique<WavWriter>(stemPaths[t], outSampleRate);
                     anyStem = true;
                 }
                 if (!anyStem) throw std::runtime_error("No tracks are routed to Master");
-                int64_t songFrames = 0;
-                for (const auto& row : mQueuedPlaybackRows) songFrames += row.lineSamples;
-                if (songFrames + static_cast<int64_t>(maxTailSeconds * sr) + block > kMaxExportFrames) {
-                    throw std::runtime_error("Song exceeds the offline export length limit");
-                }
                 // Preview and previous playback must not leak into a new export.
                 for (auto& v : mVoices) v = Voice{};
                 mTrackAuxSendDest.fill(0);
@@ -5129,6 +5142,9 @@ std::vector<float> AudioEngine::renderOffline(int& outSampleRate, int maxTailSec
 
         const size_t maxSamples = static_cast<size_t>(kMaxExportFrames) * 2;
         std::vector<float> buf(static_cast<size_t>(block) * 2);
+        // Only the fixed, at-most-six-second tail is buffered for its final fade.
+        std::vector<float> tail;
+        bool capturingTail = false;
         size_t renderedSamples = 0;
         auto capture = [&](int frames, float gain = 1.0f, float gainStep = 0.0f) {
             if (stems) {
@@ -5138,6 +5154,10 @@ std::vector<float> AudioEngine::renderOffline(int& outSampleRate, int maxTailSec
                                            frames, gain, gainStep);
                     }
                 }
+            } else if (masterFile && !capturingTail) {
+                masterWriter->appendInterleaved(buf.data(), frames);
+            } else if (masterFile) {
+                tail.insert(tail.end(), buf.begin(), buf.begin() + frames * 2);
             } else {
                 result.insert(result.end(), buf.begin(), buf.begin() + frames * 2);
             }
@@ -5157,6 +5177,7 @@ std::vector<float> AudioEngine::renderOffline(int& outSampleRate, int maxTailSec
         int64_t tailFrames = 0;
         int64_t quietFrames = 0;
         bool silent = false;
+        capturingTail = true;
         while (tailFrames < maxTailFrames && renderedSamples < maxSamples) {
             const int frames = stems
                 ? static_cast<int>(std::min<int64_t>(block, maxTailFrames - tailFrames)) : block;
@@ -5192,12 +5213,13 @@ std::vector<float> AudioEngine::renderOffline(int& outSampleRate, int maxTailSec
         if (!stems && !silent && tailFrames > 0) {
             const int64_t fadeFrames = std::min<int64_t>(
                 static_cast<int64_t>(0.25 * sr), tailFrames);
-            const size_t totalFrames = result.size() / 2;
+            auto& fadeBuffer = masterFile ? tail : result;
+            const size_t totalFrames = fadeBuffer.size() / 2;
             for (int64_t i = 0; i < fadeFrames; ++i) {
                 const float g = 1.0f - static_cast<float>(i + 1) / static_cast<float>(fadeFrames);
                 const size_t f = totalFrames - static_cast<size_t>(fadeFrames) + static_cast<size_t>(i);
-                result[f * 2] *= g;
-                result[f * 2 + 1] *= g;
+                fadeBuffer[f * 2] *= g;
+                fadeBuffer[f * 2 + 1] *= g;
             }
         }
         if (stems) {
@@ -5205,9 +5227,16 @@ std::vector<float> AudioEngine::renderOffline(int& outSampleRate, int maxTailSec
                 if (writer) writer->finish();
             }
         }
+        if (masterFile) {
+            for (size_t offset = 0; offset < tail.size(); offset += block * 2) {
+                const int frames = static_cast<int>(std::min<size_t>(block, (tail.size() - offset) / 2));
+                masterWriter->appendInterleaved(tail.data() + offset, frames);
+            }
+            masterWriter->finish();
+        }
     } catch (const std::bad_alloc&) {
         LOGE("renderOffline: out of memory");
-        if (stems) throw;
+        if (files) throw;
         result.clear();
         result.shrink_to_fit();
     }

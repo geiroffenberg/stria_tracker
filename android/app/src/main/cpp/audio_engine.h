@@ -762,9 +762,11 @@ public:
     /// Render the already-queued playback (song/pattern) faster than realtime
     /// and return interleaved stereo floats. Blocks until finished, so call it
     /// from a worker thread. Appends a ringing-out tail of up to
-    /// [maxTailSeconds] (stops early once silent). Returns empty on failure.
+    /// [maxTailSeconds] (stops early once silent). With output paths, streams
+    /// WAV files instead of returning samples, and throws on failure.
     std::vector<float> renderOffline(int& outSampleRate, int maxTailSeconds,
-                                    const std::vector<std::string>& stemPaths = {});
+                                    const std::vector<std::string>& stemPaths = {},
+                                    const std::string& masterPath = {});
 
     /// Set per-track send routing. [routing] has one entry per track:
     /// 0 = route to master, 1-16 = route audio into that channel's bus (1-based).

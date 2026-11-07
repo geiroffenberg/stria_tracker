@@ -28,6 +28,16 @@ class _StemUiState extends AppState {
   }
 }
 
+class _WavUiState extends AppState {
+  final completion = Completer<String?>();
+
+  @override
+  bool get hasProjectRootFolder => true;
+
+  @override
+  Future<String?> exportSongToWav() => completion.future;
+}
+
 Future<void> _openStemConfirmation(WidgetTester tester, AppState state) async {
   tester.view.physicalSize = const Size(1400, 1200);
   tester.view.devicePixelRatio = 1;
@@ -102,6 +112,19 @@ void main() {
               }
             }
           }
+          if (call.method == 'renderWavOffline') {
+            if (renderGate != null) await renderGate!.future;
+            if (failRender) {
+              throw PlatformException(
+                code: 'export_failed',
+                message: 'Disk full',
+              );
+            }
+            final args = call.arguments as Map;
+            await File(
+              '${args['directory']}/${args['fileName']}',
+            ).writeAsBytes([1, 2, 3]);
+          }
           return null;
         });
     await AudioEngine.instance.initialize();
@@ -111,6 +134,79 @@ void main() {
     state.currentPattern.tracks[0].cells[0].note = NoteValue.fromScrollIndex(
       49,
     );
+  });
+
+  test(
+    'WAV copies a staged file without transferring audio or bypassing mute',
+    () async {
+      state.song.name = 'Test / song';
+      state.song.masterMute = true;
+      state.song.masterVolume = 0.1;
+      state.currentPattern.tracks[0].mixerMute = true;
+      final before = jsonEncode(state.song.toJson());
+      final saved = await state.exportSongToWav();
+      expect(saved, endsWith('/Test_song.wav'));
+      expect(await File(saved!).readAsBytes(), [1, 2, 3]);
+      final render = calls.singleWhere((c) => c.method == 'renderWavOffline');
+      expect(
+        (render.arguments as Map).keys,
+        unorderedEquals(['directory', 'fileName']),
+      );
+      expect(calls.where((c) => c.method == 'renderOffline'), isEmpty);
+      expect(calls.where((c) => c.method == 'renderStemsOffline'), isEmpty);
+      expect(jsonEncode(state.song.toJson()), before);
+      expect(cache.listSync(), isEmpty);
+      expect(state.isExportingAudio, isFalse);
+      expect(calls.where((c) => c.method == 'clearQueuedPlaybackRows'), isNotEmpty);
+      final queued = calls.singleWhere(
+        (c) => c.method == 'enqueueAllPlaybackRows',
+      );
+      final first = ((queued.arguments as Map)['rows'] as List).first as Map;
+      expect((first['rowData'] as List).first, -1);
+      await state.exportSongToWav();
+      expect(await File(saved).readAsBytes(), [1, 2, 3]);
+    },
+  );
+
+  test(
+    'WAV render and storage failures release export state and staging',
+    () async {
+      failRender = true;
+      await expectLater(
+        state.exportSongToWav(),
+        throwsA(isA<PlatformException>()),
+      );
+      expect(state.isExportingAudio, isFalse);
+      expect(cache.listSync(), isEmpty);
+      failRender = false;
+      await File('${temporary.path}/songs').writeAsString('not a directory');
+      await expectLater(
+        state.exportSongToWav(),
+        throwsA(isA<FileSystemException>()),
+      );
+      expect(state.isExportingAudio, isFalse);
+      expect(cache.listSync(), isEmpty);
+    },
+  );
+
+  test('WAV export blocks competing exports and transport changes', () async {
+    renderGate = Completer<void>();
+    final pending = state.exportSongToWav();
+    while (!calls.any((c) => c.method == 'renderWavOffline')) {
+      await Future<void>.delayed(Duration.zero);
+    }
+    expect(state.isExportingAudio, isTrue);
+    expect(state.isExportingStems, isFalse);
+    await expectLater(state.exportSongToWav(), throwsStateError);
+    await expectLater(state.exportSongStems(), throwsStateError);
+    await state.play();
+    expect(state.isPlaying, isFalse);
+    final stops = calls.where((c) => c.method == 'stop').length;
+    state.stop();
+    expect(calls.where((c) => c.method == 'stop').length, stops);
+    renderGate!.complete();
+    await pending;
+    expect(state.isExportingAudio, isFalse);
   });
 
   tearDown(() async {
@@ -185,56 +281,70 @@ void main() {
     );
   });
 
-  test('skips unused tracks and empty buses fed only by unused sources', () async {
-    state.currentPattern.tracks[1].sendChannel = 5;
-    final saved = await state.exportSongStems();
-    expect(saved.count, 1);
-    final render = calls.singleWhere((c) => c.method == 'renderStemsOffline');
-    final names = ((render.arguments as Map)['fileNames'] as List).cast<String>();
-    expect(names[0], startsWith('Track_01'));
-    expect(names.skip(1).every((name) => name.isEmpty), isTrue);
-  });
+  test(
+    'skips unused tracks and empty buses fed only by unused sources',
+    () async {
+      state.currentPattern.tracks[1].sendChannel = 5;
+      final saved = await state.exportSongStems();
+      expect(saved.count, 1);
+      final render = calls.singleWhere((c) => c.method == 'renderStemsOffline');
+      final names = ((render.arguments as Map)['fileNames'] as List)
+          .cast<String>();
+      expect(names[0], startsWith('Track_01'));
+      expect(names.skip(1).every((name) => name.isEmpty), isTrue);
+    },
+  );
 
-  test('keeps quiet data in later patterns but ignores data after song end', () async {
-    final later = PatternModel(name: 'Later');
-    later.tracks[6].cells[3].note = NoteValue.fromScrollIndex(49);
-    later.tracks[6].cells[3].instrument = 1;
-    later.tracks[6].cells[3].volume = 0;
-    final excluded = PatternModel(name: 'After separator');
-    excluded.tracks[8].cells[0].note = NoteValue.fromScrollIndex(49);
-    state.song.patterns.addAll([
-      later,
-      PatternModel(name: 'Separator'),
-      excluded,
-    ]);
-    final saved = await state.exportSongStems();
-    expect(saved.count, 2);
-    final render = calls.singleWhere((c) => c.method == 'renderStemsOffline');
-    final names = ((render.arguments as Map)['fileNames'] as List).cast<String>();
-    expect(names[6], startsWith('Track_07'));
-    expect(names[8], '');
-  });
+  test(
+    'keeps quiet data in later patterns but ignores data after song end',
+    () async {
+      final later = PatternModel(name: 'Later');
+      later.tracks[6].cells[3].note = NoteValue.fromScrollIndex(49);
+      later.tracks[6].cells[3].instrument = 1;
+      later.tracks[6].cells[3].volume = 0;
+      final excluded = PatternModel(name: 'After separator');
+      excluded.tracks[8].cells[0].note = NoteValue.fromScrollIndex(49);
+      state.song.patterns.addAll([
+        later,
+        PatternModel(name: 'Separator'),
+        excluded,
+      ]);
+      final saved = await state.exportSongStems();
+      expect(saved.count, 2);
+      final render = calls.singleWhere((c) => c.method == 'renderStemsOffline');
+      final names = ((render.arguments as Map)['fileNames'] as List)
+          .cast<String>();
+      expect(names[6], startsWith('Track_07'));
+      expect(names[8], '');
+    },
+  );
 
   for (final (command, destination) in [
     (kFxSN1, 13),
     (kFxSN2, 14),
     (kFxSN3, 15),
   ]) {
-    test('keeps an empty parallel return for send $command from a routed source', () async {
-      state.currentPattern.tracks[0].sendChannel = 4;
-      final later = PatternModel(name: 'Later send');
-      later.tracks[0].cells[2].fxSlots[0].command = command;
-      later.tracks[0].cells[2].fxSlots[0].value = 1;
-      state.song.patterns.add(later);
-      final saved = await state.exportSongStems();
-      expect(saved.count, 2);
-      final render = calls.singleWhere((c) => c.method == 'renderStemsOffline');
-      final names = ((render.arguments as Map)['fileNames'] as List).cast<String>();
-      expect(names[0], '');
-      expect(names[3], startsWith('Track_04'));
-      expect(names[destination], isNotEmpty);
-      expect(names.where((name) => name.isNotEmpty).length, 2);
-    });
+    test(
+      'keeps an empty parallel return for send $command from a routed source',
+      () async {
+        state.currentPattern.tracks[0].sendChannel = 4;
+        final later = PatternModel(name: 'Later send');
+        later.tracks[0].cells[2].fxSlots[0].command = command;
+        later.tracks[0].cells[2].fxSlots[0].value = 1;
+        state.song.patterns.add(later);
+        final saved = await state.exportSongStems();
+        expect(saved.count, 2);
+        final render = calls.singleWhere(
+          (c) => c.method == 'renderStemsOffline',
+        );
+        final names = ((render.arguments as Map)['fileNames'] as List)
+            .cast<String>();
+        expect(names[0], '');
+        expect(names[3], startsWith('Track_04'));
+        expect(names[destination], isNotEmpty);
+        expect(names.where((name) => name.isNotEmpty).length, 2);
+      },
+    );
   }
 
   test('disabled parallel sends do not create unused return files', () async {
@@ -318,6 +428,7 @@ void main() {
     }
     expect(state.isExportingStems, isTrue);
     await expectLater(state.exportSongStems(), throwsStateError);
+    await expectLater(state.exportSongToWav(), throwsStateError);
     await state.play();
     expect(state.isPlaying, isFalse);
     state.stop();
@@ -345,6 +456,40 @@ void main() {
   });
 
   for (final fails in [false, true]) {
+    testWidgets('WAV progress closes after ${fails ? 'failure' : 'success'}', (
+      tester,
+    ) async {
+      state.dispose();
+      final ui = _WavUiState();
+      state = ui;
+      await _openStemConfirmation(tester, state);
+      await tester.tap(find.text('Cancel'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip('Song actions'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Export WAV'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(find.text('Exporting WAV'), findsOneWidget);
+      expect(tester.widget<PopScope>(find.byType(PopScope)).canPop, isFalse);
+      if (fails) {
+        ui.completion.completeError(
+          PlatformException(code: 'export_failed', message: 'Disk full'),
+        );
+      } else {
+        ui.completion.complete('/project/song.wav');
+      }
+      await tester.pumpAndSettle();
+      expect(find.text('Exporting WAV'), findsNothing);
+      expect(
+        find.text(
+          fails ? 'WAV export failed: Disk full' : 'Saved: /project/song.wav',
+        ),
+        findsOneWidget,
+      );
+      await tester.pumpWidget(const SizedBox.shrink());
+    });
+
     testWidgets('progress closes after ${fails ? 'failure' : 'success'}', (
       tester,
     ) async {

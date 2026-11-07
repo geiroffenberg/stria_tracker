@@ -522,22 +522,21 @@ Java_com_metamind_stria_AudioEnginePlugin_nativeStopExportTap(
     return result;
 }
 
-JNIEXPORT jfloatArray JNICALL
-Java_com_metamind_stria_AudioEnginePlugin_nativeRenderOffline(
-        JNIEnv* env, jobject, jlong ptr, jintArray outSampleRate, jint tailSeconds) {
-    int sampleRate = 48000;
-    std::vector<float> samples =
-        reinterpret_cast<AudioEngine*>(ptr)->renderOffline(sampleRate, tailSeconds);
-
-    jint* ratePtr = env->GetIntArrayElements(outSampleRate, nullptr);
-    ratePtr[0] = sampleRate;
-    env->ReleaseIntArrayElements(outSampleRate, ratePtr, 0);
-
-    jfloatArray result = env->NewFloatArray(static_cast<jsize>(samples.size()));
-    if (result != nullptr && !samples.empty()) {
-        env->SetFloatArrayRegion(result, 0, static_cast<jsize>(samples.size()), samples.data());
+JNIEXPORT void JNICALL
+Java_com_metamind_stria_AudioEnginePlugin_nativeRenderWavOffline(
+        JNIEnv* env, jobject, jlong ptr, jstring path, jint tailSeconds) {
+    const char* text = env->GetStringUTFChars(path, nullptr);
+    if (!text) return; // JVM has raised an allocation exception.
+    try {
+        const std::string masterPath(text);
+        env->ReleaseStringUTFChars(path, text);
+        text = nullptr;
+        int sampleRate = 48000;
+        reinterpret_cast<AudioEngine*>(ptr)->renderOffline(sampleRate, tailSeconds, {}, masterPath);
+    } catch (const std::exception& e) {
+        if (text) env->ReleaseStringUTFChars(path, text);
+        env->ThrowNew(env->FindClass("java/lang/IllegalStateException"), e.what());
     }
-    return result;
 }
 
 JNIEXPORT void JNICALL

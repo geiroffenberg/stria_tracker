@@ -274,22 +274,18 @@ class AudioEngine {
     return (samples: samples, sampleRate: sampleRate);
   }
 
-  /// Render the queued playback faster than realtime and return interleaved
-  /// stereo float samples plus the sample rate. Empty samples on failure.
-  Future<({List<double> samples, int sampleRate})> renderOffline({
-    int tailSeconds = 6,
+  /// Stream the processed master to a stereo 16-bit WAV in [directory].
+  Future<void> renderWavOffline({
+    required String directory,
+    required String fileName,
   }) async {
-    if (!_initialised) return (samples: const <double>[], sampleRate: 48000);
-    final result = await _channel.invokeMethod<Map>('renderOffline', {
-      'tailSeconds': tailSeconds,
+    if (!_initialised) {
+      throw StateError('Audio engine is not initialized');
+    }
+    await _channel.invokeMethod<void>('renderWavOffline', {
+      'directory': directory,
+      'fileName': fileName,
     });
-    final rawSamples = result?['samples'];
-    final sampleRate = (result?['sampleRate'] as int?) ?? 48000;
-    // The platform codec delivers a Float32List; avoid boxing millions of doubles.
-    final samples = rawSamples is List<double>
-        ? rawSamples
-        : const <double>[];
-    return (samples: samples, sampleRate: sampleRate);
   }
 
   /// Stream master-routed buses to stereo float WAV files in [directory].

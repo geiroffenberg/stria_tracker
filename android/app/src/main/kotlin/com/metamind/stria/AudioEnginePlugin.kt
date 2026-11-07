@@ -16,8 +16,8 @@ class AudioEnginePlugin : FlutterPlugin, MethodCallHandler {
     private lateinit var channel: MethodChannel
     private var enginePtr: Long = 0L // pointer to C++ AudioEngine
     private lateinit var cacheDir: File
-    private var renderingStems = false
-    private var disposeAfterStemRender = false
+    private var renderingOffline = false
+    private var disposeAfterRender = false
 
     // ── FlutterPlugin ────────────────────────────────────────────────────────
 
@@ -29,8 +29,8 @@ class AudioEnginePlugin : FlutterPlugin, MethodCallHandler {
 
     override fun onDetachedFromEngine(binding: FlutterPlugin.FlutterPluginBinding) {
         channel.setMethodCallHandler(null)
-        if (renderingStems) {
-            disposeAfterStemRender = true
+        if (renderingOffline) {
+            disposeAfterRender = true
         } else if (enginePtr != 0L) {
             nativeDispose(enginePtr)
             enginePtr = 0L
@@ -39,14 +39,14 @@ class AudioEnginePlugin : FlutterPlugin, MethodCallHandler {
 
     // ── Audio-focus helpers (called by MainActivity) ──────────────────────────
 
-    fun pauseStream()  { if (enginePtr != 0L) nativePauseStream(enginePtr) }
-    fun resumeStream() { if (enginePtr != 0L) nativeResumeStream(enginePtr) }
+    fun pauseStream()  { if (enginePtr != 0L && !renderingOffline) nativePauseStream(enginePtr) }
+    fun resumeStream() { if (enginePtr != 0L && !renderingOffline) nativeResumeStream(enginePtr) }
 
     // ── MethodCallHandler ────────────────────────────────────────────────────
 
     override fun onMethodCall(call: MethodCall, result: Result) {
-        if (renderingStems && call.method != "getMeterValues") {
-            result.error("export_busy", "Stem export is in progress", null)
+        if (renderingOffline && call.method != "getMeterValues") {
+            result.error("export_busy", "Audio export is in progress", null)
             return
         }
         when (call.method) {
@@ -683,73 +683,58 @@ class AudioEnginePlugin : FlutterPlugin, MethodCallHandler {
                     result.success(mapOf("samples" to FloatArray(0), "sampleRate" to 48000))
                 }
             }
-            "renderStemsOffline" -> {
+            "renderStemsOffline", "renderWavOffline" -> {
                 if (enginePtr == 0L) {
                     result.error("export_failed", "Audio engine is not initialized", null)
                     return
                 }
+                val stems = call.method == "renderStemsOffline"
                 val directory = call.argument<String>("directory")
-                val names = call.argument<List<String>>("fileNames")
-                if (directory == null || names == null || names.size != 16 ||
+                val names = if (stems) call.argument<List<String>>("fileNames")
+                    else call.argument<String>("fileName")?.let { listOf(it) }
+                if (directory == null || names == null || names.size != (if (stems) 16 else 1) ||
                     names.all { it.isEmpty() } ||
                     names.any { it.isNotEmpty() && !it.matches(Regex("[A-Za-z0-9_-]+\\.wav")) }) {
-                    result.error("bad_args", "Invalid stem output files", null)
+                    result.error("bad_args", "Invalid export output files", null)
                     return
                 }
                 val dir: File
                 try {
                     dir = File(directory).canonicalFile
                     require(dir.isDirectory && dir.path.startsWith(cacheDir.canonicalPath + File.separator)) {
-                        "Stem staging directory must be inside the app cache"
+                        "Export staging directory must be inside the app cache"
                     }
                 } catch (e: Exception) {
-                    android.util.Log.e("TrackerAudio", "Invalid stem staging directory", e)
-                    result.error("bad_args", e.message ?: "Invalid stem staging directory", null)
+                    android.util.Log.e("TrackerAudio", "Invalid export staging directory", e)
+                    result.error("bad_args", e.message ?: "Invalid export staging directory", null)
                     return
                 }
                 val ptr = enginePtr
                 val paths = names.map { if (it.isEmpty()) "" else File(dir, it).path }.toTypedArray()
-                renderingStems = true
+                renderingOffline = true
                 Thread {
                     var failure: Exception? = null
                     try {
-                        nativeRenderStemsOffline(ptr, paths, 6)
+                        if (stems) nativeRenderStemsOffline(ptr, paths, 6)
+                        else nativeRenderWavOffline(ptr, paths[0], 6)
                     } catch (e: Exception) {
-                        android.util.Log.e("TrackerAudio", "Stem render failed", e)
+                        android.util.Log.e("TrackerAudio", "Audio render failed", e)
                         failure = e
                     }
                     android.os.Handler(android.os.Looper.getMainLooper()).post {
-                        renderingStems = false
-                        if (disposeAfterStemRender && enginePtr != 0L) {
+                        renderingOffline = false
+                        if (disposeAfterRender && enginePtr != 0L) {
                             nativeDispose(enginePtr)
                             enginePtr = 0L
                         }
+                        disposeAfterRender = false
                         if (failure != null) {
-                            result.error("export_failed", failure.message ?: "Stem render failed", null)
+                            result.error("export_failed", failure.message ?: "Audio render failed", null)
                         } else {
                             result.success(null)
                         }
                     }
                 }.start()
-            }
-            "renderOffline" -> {
-                if (enginePtr != 0L) {
-                    val tailSeconds = call.argument<Int>("tailSeconds") ?: 6
-                    val ptr = enginePtr
-                    // Blocking render: keep it off the UI thread.
-                    Thread {
-                        val outRate = IntArray(1)
-                        val samples = nativeRenderOffline(ptr, outRate, tailSeconds)
-                        android.os.Handler(android.os.Looper.getMainLooper()).post {
-                            result.success(mapOf(
-                                "samples" to (samples ?: FloatArray(0)),
-                                "sampleRate" to outRate[0]
-                            ))
-                        }
-                    }.start()
-                } else {
-                    result.success(mapOf("samples" to FloatArray(0), "sampleRate" to 48000))
-                }
             }
             "dispose" -> {
                 if (enginePtr != 0L) {
@@ -862,7 +847,7 @@ class AudioEnginePlugin : FlutterPlugin, MethodCallHandler {
     private external fun nativeGetMeterValues(ptr: Long): FloatArray
     private external fun nativeStartExportTap(ptr: Long)
     private external fun nativeStopExportTap(ptr: Long, outSampleRate: IntArray): FloatArray?
-    private external fun nativeRenderOffline(ptr: Long, outSampleRate: IntArray, tailSeconds: Int): FloatArray?
+    private external fun nativeRenderWavOffline(ptr: Long, path: String, tailSeconds: Int)
     private external fun nativeSetSendRouting(ptr: Long, routing: IntArray)
     private external fun nativeDispose(ptr: Long)
 

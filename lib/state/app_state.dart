@@ -234,6 +234,8 @@ class AppState extends ChangeNotifier {
   bool _disposed = false;
   bool _exportingStems = false;
   bool get isExportingStems => _exportingStems;
+  bool _exportingWav = false;
+  bool get isExportingAudio => _exportingStems || _exportingWav;
   bool _notifyQueued = false;
   bool _playheadPollInFlight = false;
   bool _nextPassScheduled =
@@ -4466,7 +4468,7 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> play() async {
-    if (isPlaying || _exportingStems) return;
+    if (isPlaying || isExportingAudio) return;
     // Derive song-follow mode from whichever tab is currently active.
     // SONG(0), INST(2), MIXER(3) → song follows arrangement;
     // PATTERN(1) → loops current pattern only.
@@ -4546,7 +4548,7 @@ class AppState extends ChangeNotifier {
   /// the boundary instead of being cut off with a click — the user can end
   /// them with an explicit OFF command if desired.
   void stop({bool keepVoicesRinging = false}) {
-    if (_exportingStems) return;
+    if (isExportingAudio) return;
     _playheadTimer?.cancel();
     _playheadTimer = null;
     _playheadPollInFlight = false;
@@ -4582,72 +4584,87 @@ class AppState extends ChangeNotifier {
   /// queued song faster than realtime (no audio device involved), including
   /// a ringing-out tail for reverb/delay/release.
   ///
-  /// Returns the path of the saved file on success, or null on failure.
+  /// Streams to a staging file and copies it without transferring audio through
+  /// the platform channel. Returns null for an empty song; throws on failure.
   Future<String?> exportSongToWav() async {
-    if (isPlaying) return null; // don't interrupt live playback
+    if (isPlaying || isExportingAudio) {
+      throw StateError('Stop playback before exporting WAV');
+    }
     if (song.patterns.isEmpty) return null;
 
-    // Ensure song-follow mode so the whole arrangement plays once.
     final wasFollowing = _playbackFollowsSong;
     final wasLooping = _loopPlaybackEnabled;
-    _playbackFollowsSong = true;
-    _loopPlaybackEnabled = false;
-    _playheadArrangementSlot = 0;
-    _syncCurrentPatternToSongPlayhead();
-    playheadRow = 0;
-
-    ({List<double> samples, int sampleRate}) tap;
+    Directory? staging;
+    _exportingWav = true;
     try {
+      staging = await (await getTemporaryDirectory()).createTemp('stria-wav-');
+      _previewAutoStopTimer?.cancel();
+      _previewAutoStopTimer = null;
+      _synthPreviewStopTimer?.cancel();
+      _synthPreviewStopTimer = null;
+      _playbackFollowsSong = true;
+      _loopPlaybackEnabled = false;
+      _playheadArrangementSlot = 0;
+      _syncCurrentPatternToSongPlayhead();
+      playheadRow = 0;
       _resetInstrumentCarry();
       _captureStartStates();
       await _loadNativeSongPlaybackQueue(startSlot: 0, startRow: 0);
-      tap = await AudioEngine.instance.renderOffline();
+      final safeName = song.name
+          .replaceAll(RegExp(r'[^\w\s\-]'), '')
+          .trim()
+          .replaceAll(RegExp(r'\s+'), '_');
+      final fileName = '${safeName.isEmpty ? 'export' : safeName}.wav';
+      await AudioEngine.instance.renderWavOffline(
+        directory: staging.path,
+        fileName: fileName,
+      );
+      final source = File('${staging.path}/$fileName');
+      if (_usesProjectTreeStorage) {
+        final slug = _slugify(song.name);
+        final uri = await _projectStorageChannel
+            .invokeMethod<String>('copyProjectBinaryFile', {
+              'treeUri': _projectRootTreeUri,
+              'folderName': slug.isEmpty ? 'untitled' : slug,
+              'fileName': fileName,
+              'sourcePath': source.path,
+            });
+        if (uri == null) throw StateError('Storage did not return a WAV file');
+        return uri;
+      }
+      final dir = await _projectDirForName(song.name);
+      final filePath = '${dir.path}/$fileName';
+      // Rename a completed copy so failed copies do not replace an older WAV.
+      final pending = await dir.createTemp('.wav-');
+      try {
+        final copied = await source.copy('${pending.path}/$fileName');
+        await copied.rename(filePath);
+      } finally {
+        await pending.delete(recursive: true);
+      }
+      return filePath;
     } finally {
       _playbackFollowsSong = wasFollowing;
       _loopPlaybackEnabled = wasLooping;
-      // Reset transport/UI state and release the voices left ringing.
-      stop();
+      try {
+        await AudioEngine.instance.stop();
+        await AudioEngine.instance.clearQueuedPlaybackRows();
+      } finally {
+        try {
+          if (staging != null) await staging.delete(recursive: true);
+        } finally {
+          _exportingWav = false;
+          stop();
+        }
+      }
     }
-
-    if (tap.samples.isEmpty) return null;
-
-    // Build stereo WAV — samples are interleaved L,R floats.
-    final wavBytes = WavEncoder.encodeWav(
-      samples: tap.samples,
-      sampleRate: tap.sampleRate,
-      numChannels: 2,
-    );
-
-    final safeName = song.name
-        .replaceAll(RegExp(r'[^\w\s\-]'), '')
-        .trim()
-        .replaceAll(RegExp(r'\s+'), '_');
-    final fileName = '${safeName.isEmpty ? 'export' : safeName}.wav';
-
-    if (_usesProjectTreeStorage) {
-      final slug = _slugify(song.name);
-      final folderName = slug.isEmpty ? 'untitled' : slug;
-      final uri = await _projectStorageChannel
-          .invokeMethod<String>('writeProjectBinaryFile', {
-            'treeUri': _projectRootTreeUri,
-            'folderName': folderName,
-            'fileName': fileName,
-            'bytes': wavBytes,
-          });
-      return uri;
-    }
-
-    final dir = await _projectDirForName(song.name);
-    final filePath = '${dir.path}/$fileName';
-    await File(filePath).writeAsBytes(wavBytes, flush: true);
-    return filePath;
   }
 
   /// Export master-routed track buses together, before all master processing.
   Future<({String path, int count})> exportSongStems({
     void Function(String message)? onProgress,
   }) async {
-    if (isPlaying || _exportingStems) {
+    if (isPlaying || isExportingAudio) {
       throw StateError('Stop playback before exporting stems');
     }
     if (song.patterns.isEmpty || song.patterns.first.isEmpty) {
@@ -8387,7 +8404,7 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> _doAutosave() async {
-    if (_exportingStems) return;
+    if (isExportingAudio) return;
     if (_disposed) return;
     if (!_autosaveEnabled) return;
     if (!hasProjectRootFolder) return;
@@ -8396,7 +8413,7 @@ class AppState extends ChangeNotifier {
 
   /// Called when the app loses focus. Silently saves if autosave is enabled.
   Future<void> autosaveOnFocusLost() async {
-    if (_exportingStems) return;
+    if (isExportingAudio) return;
     if (!_autosaveEnabled) return;
     if (!hasProjectRootFolder) return;
     await saveSong();
