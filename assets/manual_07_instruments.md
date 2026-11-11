@@ -19,6 +19,11 @@ The Sampler plays an audio file loaded from storage.
 | Release | 0–1 | Fade-out length |
 | Loop Mode | Off / Forward / Ping-pong | Looping behaviour |
 
+Every new sampler note restarts the Attack fade-in, including notes triggered
+when the pattern loops, with or without a preceding OFF. Empty/hold rows let the
+existing note continue; the sample's own Forward/Ping-pong loop does not restart
+the attack.
+
 ### Filter (HP → LP)
 
 The FILTER section sits below PARAMS in the instrument editor. It inserts a **high-pass filter followed by a low-pass filter in series** on the sampler audio path.

@@ -1,6 +1,6 @@
 """Run with python3 test/native_stem_export_test.py (requires clang++).
 
-Checks voice recovery, master WAV and stem export using the complete production engine
+Checks voice recovery, sampler loop attacks, master WAV and stem export using the complete production engine
 offline; only Android logging and the audio-device API are stubbed.
 No audio device or Android runtime is required.
 """
@@ -276,9 +276,77 @@ void checkVoiceRecovery() {
     check(renderVoice(*engine)>1, "stopping an idle engine cannot deadlock synth");
     std::cout << "All synth recovery, retrigger and empty-instrument checks passed\n";
 }
+void checkSamplerLoopAttack(const std::string& dir) {
+    const auto path=dir+"/sampler-attack.wav";
+    std::vector<float> sample(480000,.25f);
+    WavWriter writer(path,48000,WavWriter::Format::Pcm16);
+    writer.append(sample.data(),sample.data(),sample.size());writer.finish();
+    for (int loopMode : {0,1,2}) {
+        // OFF may finish before the next pass, or still be releasing there.
+        for (int release : {-1,0,255}) {
+            for (int attack : {0,128}) {
+                auto engine=voiceEngine();
+                check(engine->setSamplerSample(0,path), "attack test sample loaded");
+                QueuedPlaybackRow note;
+                note.lineSamples=24000;note.rowData=voiceRow(60,1);
+                note.rowData[5+9]=attack;
+                note.rowData[5+12]=std::max(0,release);
+                note.rowData[5+16]=255;
+                note.rowData[5+18]=loopMode;
+                note.rowData[5+38]=5; // Internal sample loops wrap during the attack.
+                auto end=note;
+                end.rowData[0]=release<0 ? -1 : -2;
+                engine->enqueuePlaybackRow(note);
+                engine->enqueuePlaybackRow(end);
+                engine->setQueuedPlaybackLooping(true);
+                engine->start();
+                oboe::AudioStream stream;
+                std::vector<float> audio(144000*2);
+                for (int frame=0;frame<144000;frame+=192) {
+                    engine->onAudioReady(&stream,audio.data()+frame*2,192);
+                }
+                auto windowEnergy=[&](int start) {
+                    double sum=0;
+                    for (int f=start;f<start+480;++f) {
+                        sum+=audio[f*2]*audio[f*2]+audio[f*2+1]*audio[f*2+1];
+                    }
+                    return sum;
+                };
+                // The first row lasts 0.5 s; measure full level before OFF.
+                const double full=windowEnergy(23000);
+                check(full>.01, "sampler reaches audible level before OFF");
+                for (int pass=0;pass<3;++pass) {
+                    const double ratio=windowEnergy(pass*48000+480)/full;
+                    const std::string context=" (mode="+std::to_string(loopMode)
+                        +", release="+std::to_string(release)+", attack="+std::to_string(attack)
+                        +", pass="+std::to_string(pass)+", ratio="+std::to_string(ratio)+")";
+                    if (attack>0) {
+                        check(ratio>.0002 && ratio<.003,
+                              ("every pattern pass restarts the configured sampler attack, including after OFF"+context).c_str());
+                    } else {
+                        check(ratio>.95 && ratio<1.05,
+                              ("zero-attack sampler stays immediate on every pattern pass"+context).c_str());
+                    }
+                }
+                if (release<0 && attack>0) {
+                    note.rowData[0]=-1;
+                    engine->beginPendingRows();
+                    engine->appendPendingRow(note);
+                    engine->appendPendingRow(end);
+                    renderVoice(*engine,250);
+                    const double heldRatio=renderVoice(*engine,5)/(2*windowEnergy(36000));
+                    check(heldRatio>.95 && heldRatio<1.05,
+                          "hold rows across pattern loops keep the existing sampler envelope");
+                }
+            }
+        }
+    }
+    std::cout << "All sampler pattern-loop attack and OFF checks passed\n";
+}
 int main(int argc, char** argv) {
     checkVoiceRecovery();
     const std::string dir=argv[1];
+    checkSamplerLoopAttack(dir);
     for (bool master : {false, true}) {
         for (int tail : {0, 1, 6}) {
             auto buffered=make(master,false);

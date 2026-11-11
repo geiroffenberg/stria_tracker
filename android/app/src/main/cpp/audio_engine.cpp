@@ -1545,20 +1545,7 @@ void AudioEngine::triggerRowLocked(const std::vector<int>& rowData) {
                             startFrame + 1, sampleFrames);
                         v.samplePos = v.sampleReverse ? static_cast<double>(endFrame - 1)
                                                       : static_cast<double>(startFrame);
-                        // A loop-boundary retrigger of the same sample is a
-                        // continuity point, not a fresh attack. Starting its
-                        // minimum envelope from zero creates the small gap
-                        // audible at every cycle after the declick tail has
-                        // been bypassed. Preserve full attack gain only for
-                        // this boundary case; ordinary note-ons keep their
-                        // normal attack ramp.
-                        const bool preserveLoopGain =
-                            mLoopBoundaryRow && v.sampleSlot == prevSampleSlot;
-                        v.sampleElapsedFrames = preserveLoopGain
-                            ? static_cast<double>(std::max(
-                                  0.002f * mCachedSampleRate,
-                                  v.attackSec * mCachedSampleRate))
-                            : 0.0;
+                        v.sampleElapsedFrames = 0.0;
                         v.samplePingDir = v.sampleReverse;
                         v.sampleActive = true;
                         v.samplerReleaseActive = false;
