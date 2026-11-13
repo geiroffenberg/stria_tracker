@@ -1,26 +1,87 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../state/app_state.dart';
 import '../theme/app_theme.dart';
 
 /// Global bottom bar: Play/Stop toggle | BPM | BEATS | LPB.
-class TransportBar extends StatelessWidget {
-  const TransportBar({super.key});
+class TransportBar extends StatefulWidget {
+  final Future<void> Function()? onPlay;
+
+  const TransportBar({super.key, this.onPlay});
+
+  @override
+  State<TransportBar> createState() => _TransportBarState();
+}
+
+class _TransportBarState extends State<TransportBar> {
+  AppState? _state;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final state = AppStateScope.of(context);
+    if (identical(state, _state)) return;
+    _state?.playbackError.removeListener(_showPlaybackError);
+    _state = state;
+    state.playbackError.addListener(_showPlaybackError);
+  }
+
+  void _showPlaybackError() {
+    final error = _state?.playbackError.value;
+    if (!mounted ||
+        error == null ||
+        ModalRoute.of(context)?.isCurrent != true) {
+      return;
+    }
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(error)));
+  }
+
+  Future<void> _play(AppState state) async {
+    try {
+      await (widget.onPlay ?? state.play)();
+    } on StateError catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(error.message.toString())));
+      }
+    } on PlatformException catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(error.message ?? error.code)));
+      }
+    } on MissingPluginException catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(error.toString())));
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    _state?.playbackError.removeListener(_showPlaybackError);
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     final state = AppStateScope.of(context);
+    final running = state.isPlaying || state.songPlanStarting;
 
     return Container(
       height: 76,
-      color:  kBgTrackHeader,
+      color: kBgTrackHeader,
       padding: const EdgeInsets.symmetric(horizontal: 12),
       child: Row(
         children: [
           _TransportButton(
-            icon: state.isPlaying ? Icons.stop : Icons.play_arrow,
-            color: state.isPlaying ? kColStopBtn : kColPlayBtn,
-            label: state.isPlaying ? 'STOP' : 'PLAY',
-            onTap: state.isPlaying ? state.stop : state.play,
+            icon: running ? Icons.stop : Icons.play_arrow,
+            color: running ? kColStopBtn : kColPlayBtn,
+            label: running ? 'STOP' : 'PLAY',
+            onTap: running ? state.stop : () => _play(state),
           ),
           const SizedBox(width: 8),
           _TransportButton(
@@ -28,7 +89,8 @@ class TransportBar extends StatelessWidget {
             color: state.loopPlaybackEnabled ? kColAccent : kColInactive,
             label: 'LOOP',
             pressed: state.loopPlaybackEnabled,
-            onTap: () => state.setLoopPlaybackEnabled(!state.loopPlaybackEnabled),
+            onTap: () =>
+                state.setLoopPlaybackEnabled(!state.loopPlaybackEnabled),
           ),
           const SizedBox(width: 10),
           Expanded(
@@ -104,7 +166,9 @@ class _TransportValueControlState extends State<_TransportValueControl> {
     final labelColor = widget.enabled ? kColHeader : kColInactive;
 
     return GestureDetector(
-      behavior: widget.enabled ? HitTestBehavior.opaque : HitTestBehavior.deferToChild,
+      behavior: widget.enabled
+          ? HitTestBehavior.opaque
+          : HitTestBehavior.deferToChild,
       onPanStart: widget.enabled ? (_) => _dragAccum = 0 : null,
       onPanUpdate: widget.enabled ? (d) => _applyDragDelta(d.delta) : null,
       child: SizedBox(
@@ -130,8 +194,8 @@ class _TransportValueControlState extends State<_TransportValueControl> {
 
 class _TransportButton extends StatelessWidget {
   final IconData icon;
-  final Color    color;
-  final String   label;
+  final Color color;
+  final String label;
   final bool pressed;
   final VoidCallback onTap;
 
@@ -163,8 +227,10 @@ class _TransportButton extends StatelessWidget {
           children: [
             Icon(icon, color: color, size: 38),
             const SizedBox(height: 2),
-            Text(label,
-                style: kStyleHeader.copyWith(color: color, fontSize: 14)),
+            Text(
+              label,
+              style: kStyleHeader.copyWith(color: color, fontSize: 14),
+            ),
           ],
         ),
       ),

@@ -23,3 +23,12 @@ target_link_libraries(tracker_audio
 
 # Use C++17
 target_compile_features(tracker_audio PRIVATE cxx_std_17)
+
+option(STRIA_BUILD_QUEUE_TESTS "Build the non-audible Song Plan queue test" OFF)
+if(STRIA_BUILD_QUEUE_TESTS)
+    add_executable(song_plan_queue_test
+        ../../../../../test/native/song_plan_queue_test.cpp
+    )
+    target_link_libraries(song_plan_queue_test tracker_audio oboe::oboe)
+    target_compile_features(song_plan_queue_test PRIVATE cxx_std_17)
+endif()

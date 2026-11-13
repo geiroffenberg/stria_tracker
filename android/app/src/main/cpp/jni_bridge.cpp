@@ -76,6 +76,34 @@ Java_com_metamind_stria_AudioEnginePlugin_nativeSetQueuedPlaybackLooping(
     reinterpret_cast<AudioEngine*>(ptr)->setQueuedPlaybackLooping(loop);
 }
 
+JNIEXPORT jboolean JNICALL
+Java_com_metamind_stria_AudioEnginePlugin_nativeConfigureSongPlanRows(
+        JNIEnv* env, jobject, jlong ptr, jboolean pending,
+        jintArray endFlags, jintArray passStartFlags) {
+    auto toVector = [env](jintArray array) {
+        const jsize length = env->GetArrayLength(array);
+        std::vector<int> values(length);
+        env->GetIntArrayRegion(array, 0, length, values.data());
+        return values;
+    };
+    return reinterpret_cast<AudioEngine*>(ptr)->configureSongPlanRows(
+        pending, toVector(endFlags), toVector(passStartFlags));
+}
+
+JNIEXPORT jintArray JNICALL
+Java_com_metamind_stria_AudioEnginePlugin_nativeConsumeSongPlanPlaybackStatus(
+        JNIEnv* env, jobject, jlong ptr) {
+    auto* engine = reinterpret_cast<AudioEngine*>(ptr);
+    const jint status[] = {
+        engine->consumePendingRowAdvances(),
+        engine->isPlayheadRunning() ? 1 : 0,
+        engine->consumeSongPlanUnderrun() ? 1 : 0,
+    };
+    jintArray result = env->NewIntArray(3);
+    env->SetIntArrayRegion(result, 0, 3, status);
+    return result;
+}
+
 JNIEXPORT void JNICALL
 Java_com_metamind_stria_AudioEnginePlugin_nativeEnqueuePlaybackRow(
         JNIEnv* env,

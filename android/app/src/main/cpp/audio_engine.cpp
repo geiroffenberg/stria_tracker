@@ -1731,6 +1731,10 @@ void AudioEngine::clearQueuedPlaybackRows() {
     mQueuedPlaybackRows.clear();
     mQueuedPlaybackRowIndex = 0;
     mPendingNextLoopRows.clear(); // discard any pre-built next pass
+    mSongPlanQueue = false;
+    mPendingSongPlanReady = false;
+    mLastSongPlanRowWasEnd = false;
+    mSongPlanUnderrun.store(false);
 }
 
 void AudioEngine::enqueuePlaybackRow(const QueuedPlaybackRow& row) {
@@ -1746,11 +1750,34 @@ void AudioEngine::setQueuedPlaybackLooping(bool loop) {
 void AudioEngine::beginPendingRows() {
     std::lock_guard<std::mutex> lock(mVoiceMutex);
     mPendingNextLoopRows.clear();
+    mPendingSongPlanReady = false;
 }
 
 void AudioEngine::appendPendingRow(const QueuedPlaybackRow& row) {
     std::lock_guard<std::mutex> lock(mVoiceMutex);
     mPendingNextLoopRows.push_back(row);
+}
+
+bool AudioEngine::configureSongPlanRows(
+        bool pending, const std::vector<int>& endFlags,
+        const std::vector<int>& passStartFlags) {
+    std::lock_guard<std::mutex> lock(mVoiceMutex);
+    auto& rows = pending ? mPendingNextLoopRows : mQueuedPlaybackRows;
+    if (rows.empty() || rows.size() != endFlags.size() ||
+        rows.size() != passStartFlags.size()) return false;
+    for (size_t i = 0; i < rows.size(); ++i) {
+        rows[i].songPlanEnd = endFlags[i] != 0;
+        rows[i].songPlanPassStart = passStartFlags[i] != 0;
+    }
+    if (pending) {
+        // Publish only after the entire batch and its flags are ready.
+        mPendingSongPlanReady = true;
+    } else {
+        mSongPlanQueue = true;
+        mLastSongPlanRowWasEnd = false;
+        mSongPlanUnderrun.store(false);
+    }
+    return true;
 }
 
 void AudioEngine::applyQueuedPlaybackRowLocked(const QueuedPlaybackRow& row) {
@@ -1772,21 +1799,35 @@ void AudioEngine::applyQueuedPlaybackRowLocked(const QueuedPlaybackRow& row) {
 
 bool AudioEngine::primeNextQueuedPlaybackRowLocked() {
     if (mQueuedPlaybackRows.empty()) return false;
+    if (mSongPlanQueue && mLastSongPlanRowWasEnd && !mQueuedPlaybackLoop) {
+        return false;
+    }
     bool loopBoundary = false;
     if (mQueuedPlaybackRowIndex >= mQueuedPlaybackRows.size()) {
-        if (!mQueuedPlaybackLoop) {
-            return false;
-        }
-        loopBoundary = true;
-        // Double-buffer swap: if a new pass was pre-built by Dart, use it.
-        if (!mPendingNextLoopRows.empty()) {
+        if (mSongPlanQueue) {
+            if (!mPendingSongPlanReady) {
+                mSongPlanUnderrun.store(true);
+                return false;
+            }
             mQueuedPlaybackRows = std::move(mPendingNextLoopRows);
             mPendingNextLoopRows.clear();
+            mPendingSongPlanReady = false;
+        } else if (!mQueuedPlaybackLoop) {
+            return false;
+        } else {
+            loopBoundary = true;
+            // Double-buffer swap: if a new pass was pre-built by Dart, use it.
+            if (!mPendingNextLoopRows.empty()) {
+                mQueuedPlaybackRows = std::move(mPendingNextLoopRows);
+                mPendingNextLoopRows.clear();
+            }
         }
         mQueuedPlaybackRowIndex = 0;
     }
-    mLoopBoundaryRow = loopBoundary;
-    applyQueuedPlaybackRowLocked(mQueuedPlaybackRows[mQueuedPlaybackRowIndex++]);
+    const auto& row = mQueuedPlaybackRows[mQueuedPlaybackRowIndex++];
+    mLoopBoundaryRow = loopBoundary || (mSongPlanQueue && row.songPlanPassStart);
+    mLastSongPlanRowWasEnd = mSongPlanQueue && row.songPlanEnd;
+    applyQueuedPlaybackRowLocked(row);
     mLoopBoundaryRow = false;
     return true;
 }

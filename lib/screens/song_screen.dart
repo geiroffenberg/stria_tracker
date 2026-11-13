@@ -633,6 +633,14 @@ class _SongScreenState extends State<SongScreen> {
                     overflow: TextOverflow.ellipsis,
                   ),
                 ),
+                if (state.song.songPlanEnabled)
+                  Padding(
+                    padding: const EdgeInsets.only(right: 4),
+                    child: Tooltip(
+                      message: 'Song Plan ON: planned song playback',
+                      child: Icon(Icons.route, size: 20, color: kColAccent),
+                    ),
+                  ),
                 GestureDetector(
                   onTap: () => _startRename(state),
                   child: Icon(Icons.edit, size: 22, color: kColInactive),

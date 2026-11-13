@@ -84,6 +84,35 @@ class AudioEngine {
     await _channel.invokeMethod('scheduleNextLoopRows', {'rows': rows});
   }
 
+  Future<void> configureSongPlanRows({
+    required bool pending,
+    required List<int> endFlags,
+    required List<int> passStartFlags,
+  }) async {
+    if (!_initialised) throw StateError('Audio engine is not initialized.');
+    await _channel.invokeMethod('configureSongPlanRows', {
+      'pending': pending,
+      'endFlags': endFlags,
+      'passStartFlags': passStartFlags,
+    });
+  }
+
+  Future<({int advances, bool running, bool underrun})>
+  consumeSongPlanPlaybackStatus() async {
+    if (!_initialised) throw StateError('Audio engine is not initialized.');
+    final status = await _channel.invokeListMethod<int>(
+      'consumeSongPlanPlaybackStatus',
+    );
+    if (status == null || status.length != 3) {
+      throw StateError('Audio engine returned an invalid Song Plan status.');
+    }
+    return (
+      advances: status[0],
+      running: status[1] != 0,
+      underrun: status[2] != 0,
+    );
+  }
+
   /// Atomically clear the active playback queue, set the loop flag, and load
   /// all [rows] in a single platform-channel round-trip.
   ///

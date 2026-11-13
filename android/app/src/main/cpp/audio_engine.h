@@ -361,6 +361,8 @@ struct QueuedPlaybackRow {
     /// Send-routing changes: groups of 2 ints — [trackIdx, destChannel]. From SN1/SN2/SN3.
     std::vector<int> sendRoutingCommandData;
     int32_t lineSamples = 0;
+    bool songPlanEnd = false;
+    bool songPlanPassStart = false;
 };
 
 /// Effect state for a single insert effect slot
@@ -567,6 +569,11 @@ public:
     /// At the next native loop boundary the pending buffer is atomically
     /// swapped into the live queue so playback continues without a gap.
     void appendPendingRow(const QueuedPlaybackRow& row);
+
+    bool configureSongPlanRows(bool pending, const std::vector<int>& endFlags,
+                              const std::vector<int>& passStartFlags);
+    bool isPlayheadRunning() const { return mPlayheadRunning.load(); }
+    bool consumeSongPlanUnderrun() { return mSongPlanUnderrun.exchange(false); }
 
     /// Queue sample-accurate retrigger events for the current row.
     /// [data] is packed in groups of 4: [sampleOffset, trackIdx, note, volume].
@@ -777,6 +784,7 @@ public:
     std::array<float, kMaxVoices * 2 + 2> getMeterValues() const;
 
 private:
+    friend class SongPlanQueueTest;
     // Core render, shared by onAudioReady() and renderOffline().
     void renderAudio(float* out, int32_t numFrames, double sampleRateHz, bool offlineCaller);
 
@@ -864,6 +872,10 @@ private:
     bool                     mQueuedPlaybackLoop = false;
     bool                     mLoopBoundaryRow = false;
     std::vector<QueuedPlaybackRow> mPendingNextLoopRows; // double-buffer: swapped in at each loop boundary
+    bool mSongPlanQueue = false;
+    bool mPendingSongPlanReady = false;
+    bool mLastSongPlanRowWasEnd = false;
+    std::atomic<bool> mSongPlanUnderrun{false};
 
     // Recording state
     std::mutex                       mRecordingMutex;

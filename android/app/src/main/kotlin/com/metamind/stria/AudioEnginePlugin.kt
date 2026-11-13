@@ -241,6 +241,28 @@ class AudioEnginePlugin : FlutterPlugin, MethodCallHandler {
                 }
                 result.success(null)
             }
+            "configureSongPlanRows" -> {
+                val pending = call.argument<Boolean>("pending")
+                val endFlags = call.argument<List<Int>>("endFlags")
+                val passStartFlags = call.argument<List<Int>>("passStartFlags")
+                if (enginePtr == 0L || pending == null || endFlags == null ||
+                    passStartFlags == null || endFlags.isEmpty() ||
+                    endFlags.size != passStartFlags.size) {
+                    result.error("SONG_PLAN", "Invalid Song Plan batch or unavailable audio engine", null)
+                } else if (!nativeConfigureSongPlanRows(
+                        enginePtr, pending, endFlags.toIntArray(), passStartFlags.toIntArray())) {
+                    result.error("SONG_PLAN", "Song Plan batch does not match the queued rows", null)
+                } else {
+                    result.success(null)
+                }
+            }
+            "consumeSongPlanPlaybackStatus" -> {
+                if (enginePtr == 0L) {
+                    result.error("SONG_PLAN", "Audio engine is unavailable", null)
+                } else {
+                    result.success(nativeConsumeSongPlanPlaybackStatus(enginePtr).toList())
+                }
+            }
             "setRowData" -> {
                 @Suppress("UNCHECKED_CAST")
                 val data = call.argument<List<Int>>("data") ?: emptyList()
@@ -763,6 +785,10 @@ class AudioEnginePlugin : FlutterPlugin, MethodCallHandler {
     private external fun nativeResetPlayheadPhase(ptr: Long)
     private external fun nativeClearQueuedPlaybackRows(ptr: Long)
     private external fun nativeSetQueuedPlaybackLooping(ptr: Long, loop: Boolean)
+    private external fun nativeConfigureSongPlanRows(
+        ptr: Long, pending: Boolean, endFlags: IntArray, passStartFlags: IntArray,
+    ): Boolean
+    private external fun nativeConsumeSongPlanPlaybackStatus(ptr: Long): IntArray
     private external fun nativeEnqueuePlaybackRow(
         ptr: Long,
         lineSamples: Int,

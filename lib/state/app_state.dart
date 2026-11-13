@@ -17,6 +17,7 @@ import '../models/instrument_model.dart';
 import '../models/note_value.dart';
 import '../models/pattern_model.dart';
 import '../models/song_model.dart';
+import '../models/song_plan_step.dart';
 import '../models/track_model.dart';
 
 /// Selected cell within the pattern grid.
@@ -110,6 +111,28 @@ class _ScheduledPlaybackRow {
     required this.sendRoutingCommandData,
     required this.lineSamples,
   });
+
+  Map<String, dynamic> toChannelData() => {
+    'lineSamples': lineSamples,
+    'rowData': rowData,
+    'immediateKillMask': immediateKillMask,
+    'retrigData': retrigData,
+    'arpData': arpData,
+    'delayData': delayData,
+    'killData': killData,
+    'sliceCommandData': sliceCommandData,
+    'mixerCommandData': mixerCommandData,
+    'insertFxCommandData': insertFxCommandData,
+    'pitchRampData': pitchRampData,
+    'sendRoutingCommandData': sendRoutingCommandData,
+  };
+}
+
+class _SongPlanBatch {
+  final List<SongPlanPosition> positions;
+  final List<Map<String, dynamic>> rows;
+
+  const _SongPlanBatch(this.positions, this.rows);
 }
 
 /// Per-track playback carry state. Replaces what used to be 12 parallel
@@ -272,6 +295,25 @@ class AppState extends ChangeNotifier {
   List<({int arrangementSlot, int rowWithinSlot})> _pendingSongRowMap = [];
   int? _pendingSongTargetSlot;
   int _songJumpRequestVersion = 0;
+  int _selectedSongPlanStep = 0;
+  int? _playingSongPlanStep;
+  int _playingSongPlanPass = 1;
+  bool _playingSongPlan = false;
+  bool _songPlanStarting = false;
+  int _songPlanSession = 0;
+  Iterator<SongPlanPosition>? _songPlanIterator;
+  _SongPlanBatch? _songPlanBatch;
+  _SongPlanBatch? _nextSongPlanBatch;
+  int _songPlanRowIndex = 0;
+  Future<void>? _songPlanUpload;
+  final ValueNotifier<String?> playbackError = ValueNotifier(null);
+
+  int get selectedSongPlanStep => _selectedSongPlanStep;
+  int? get playingSongPlanStep => _playingSongPlanStep;
+  int get playingSongPlanPass => _playingSongPlanPass;
+  bool get playingSongPlan => _playingSongPlan;
+  bool get songPlanStarting => _songPlanStarting;
+  bool get canEditSongPlan => !isPlaying && !_songPlanStarting && !isExportingAudio;
 
   // Per-track segments from the last row trigger (for DEL replay).
   List<List<int>> _rowSegments = [];
@@ -1050,6 +1092,8 @@ class AppState extends ChangeNotifier {
   bool _isMixerFxCommand(int? cmd) => isMixerValueCommand(cmd);
 
   void _resetSongScopedState() {
+    _selectedSongPlanStep = 0;
+    _playingSongPlanStep = null;
     _trackInsertOccupied.clear();
     _trackInsertEffectNames.clear();
     _pendingInsertResets.clear();
@@ -3864,6 +3908,7 @@ class AppState extends ChangeNotifier {
 
   /// Set the editor focus to a pattern by its position in the song.
   void selectSongPattern(int patternIndex) {
+    if (_playingSongPlan) return;
     if (patternIndex < 0 || patternIndex >= song.patterns.length) return;
     _currentArrangementSlotIndex = patternIndex;
 
@@ -3889,6 +3934,7 @@ class AppState extends ChangeNotifier {
   /// This is intentionally silent (no notify) so UI can opt into a cheap
   /// local redraw without forcing a whole-app rebuild during playback.
   void queueSongPatternJump(int patternIndex) {
+    if (_playingSongPlan) return;
     if (patternIndex < 0 || patternIndex >= song.patterns.length) return;
     // Empty patterns are non-playable separators — can't jump playback there.
     if (song.patterns[patternIndex].isEmpty) return;
@@ -4468,7 +4514,11 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> play() async {
-    if (isPlaying || isExportingAudio) return;
+    if (isPlaying || isExportingAudio || _songPlanStarting) return;
+    if (song.songPlanEnabled && _activeTabIndex != 1) {
+      await playSongPlan();
+      return;
+    }
     // Derive song-follow mode from whichever tab is currently active.
     // SONG(0), INST(2), MIXER(3) → song follows arrangement;
     // PATTERN(1) → loops current pattern only.
@@ -4531,7 +4581,20 @@ class AppState extends ChangeNotifier {
 
   void setLoopPlaybackEnabled(bool enabled) {
     if (_loopPlaybackEnabled == enabled) return;
+    if (enabled && _playingSongPlan) {
+      try {
+        if (song.validateSongPlan(0) == 0) {
+          throw StateError('Song Plan step 01 references an empty pattern.');
+        }
+      } on StateError catch (error) {
+        playbackError.value = error.message.toString();
+        return;
+      }
+    }
     _loopPlaybackEnabled = enabled;
+    if (_playingSongPlan) {
+      unawaited(_updateSongPlanLoop(enabled, _songPlanSession));
+    }
     if (isPlaying && !_playbackFollowsSong) {
       // Sync the native looping flag immediately so the engine stops/continues
       // at the current pass boundary without waiting for the next poll.
@@ -4554,6 +4617,14 @@ class AppState extends ChangeNotifier {
     _playheadPollInFlight = false;
     _songPollInFlight = false;
     isPlaying = false;
+    final wasPlan = _playingSongPlan;
+    _songPlanSession++;
+    _playingSongPlan = false;
+    _playingSongPlanStep = null;
+    _songPlanIterator = null;
+    _songPlanBatch = null;
+    _nextSongPlanBatch = null;
+    if (wasPlan) unawaited(AudioEngine.instance.clearQueuedPlaybackRows());
     _queuedArrangementSlot = null;
     playheadRow = 0;
     _songRowMap = [];
@@ -4587,6 +4658,9 @@ class AppState extends ChangeNotifier {
   /// Streams to a staging file and copies it without transferring audio through
   /// the platform channel. Returns null for an empty song; throws on failure.
   Future<String?> exportSongToWav() async {
+    if (song.songPlanEnabled) {
+      throw StateError('Turn Song Plan OFF before exporting. Plan export is not available yet.');
+    }
     if (isPlaying || isExportingAudio) {
       throw StateError('Stop playback before exporting WAV');
     }
@@ -4664,6 +4738,9 @@ class AppState extends ChangeNotifier {
   Future<({String path, int count})> exportSongStems({
     void Function(String message)? onProgress,
   }) async {
+    if (song.songPlanEnabled) {
+      throw StateError('Turn Song Plan OFF before exporting. Plan export is not available yet.');
+    }
     if (isPlaying || isExportingAudio) {
       throw StateError('Stop playback before exporting stems');
     }
@@ -5140,10 +5217,56 @@ class AppState extends ChangeNotifier {
 
   // ── Song arrangement undo / redo ──────────────────────────────────────────
 
-  bool get canUndoSong => _songUndo.canUndo;
-  bool get canRedoSong => _songUndo.canRedo;
+  bool _isSongPlanAction(String? label) =>
+      label == 'edit song plan' ||
+      label == 'reset song plan' ||
+      label == 'switch song plan';
+
+  bool get canUndoSong => _songUndo.canUndo &&
+      (canEditSongPlan || !_isSongPlanAction(_songUndo.undoLabel));
+  bool get canRedoSong => _songUndo.canRedo &&
+      (canEditSongPlan || !_isSongPlanAction(_songUndo.redoLabel));
   String? get undoSongLabel => _songUndo.undoLabel;
   String? get redoSongLabel => _songUndo.redoLabel;
+
+  void setSongPlanStep(int index, SongPlanStep step) {
+    if (!canEditSongPlan) throw StateError('Stop playback before editing Song Plan.');
+    if (index < 0 || index >= kMaxSongPatterns) {
+      throw RangeError.range(index, 0, kMaxSongPatterns - 1, 'index');
+    }
+    if (song.planStepAt(index) == step) return;
+    _pushSongUndo('edit song plan');
+    final plan = List.generate(kMaxSongPatterns, song.planStepAt);
+    plan[index] = step;
+    song.songPlan = List.unmodifiable(plan);
+    _songStateVersion++;
+    notifyListeners();
+  }
+
+  void resetSongPlan() {
+    if (!canEditSongPlan) throw StateError('Stop playback before resetting Song Plan.');
+    if (song.songPlan == null) return;
+    _pushSongUndo('reset song plan');
+    song.songPlan = null;
+    _songStateVersion++;
+    notifyListeners();
+  }
+
+  void selectSongPlanStep(int index) {
+    RangeError.checkValueInInterval(index, 0, kMaxSongPatterns - 1);
+    if (!canEditSongPlan) return;
+    _selectedSongPlanStep = index;
+    notifyListeners();
+  }
+
+  void setSongPlanEnabled(bool enabled) {
+    if (!canEditSongPlan) throw StateError('Stop playback before switching Song Plan.');
+    if (song.songPlanEnabled == enabled) return;
+    _pushSongUndo('switch song plan');
+    song.songPlanEnabled = enabled;
+    _songStateVersion++;
+    notifyListeners();
+  }
 
   /// Serialize the current arrangement to JSON: the patterns list plus the
   /// insert-FX rack (params + slot occupancy + effect names). The rack is
@@ -5151,6 +5274,8 @@ class AppState extends ChangeNotifier {
   /// undo/redo of those operations needs to restore it along with the data.
   String _songArrangementJson() => jsonEncode({
     'patterns': song.patterns.map((p) => p.toJson()).toList(),
+    'songPlan': song.songPlan?.map((step) => step.toJson()).toList(),
+    'songPlanEnabled': song.songPlanEnabled,
     'inserts': _insertSnapshot,
     'trackInsertOccupied': _trackInsertOccupied,
     'trackInsertEffectNames': _trackInsertEffectNames,
@@ -5167,8 +5292,18 @@ class AppState extends ChangeNotifier {
   /// [json], clamp indices, and re-sync the native engine's insert slots
   /// (cleared first, since the restored rack may have fewer/more active
   /// effects than what's currently loaded).
-  void _restoreArrangementFromJson(String json) {
+  void _restoreArrangementFromJson(String json, {bool planOnly = false}) {
     final raw = jsonDecode(json) as Map<String, dynamic>;
+    final restoredPlan = SongModel.readSongPlan(raw['songPlan']);
+    if (jsonEncode(song.songPlan?.map((step) => step.toJson()).toList()) !=
+        jsonEncode(raw['songPlan'])) {
+      _songStateVersion++;
+    }
+    song.songPlan = restoredPlan;
+    final restoredEnabled = (raw['songPlanEnabled'] as bool?) ?? false;
+    if (song.songPlanEnabled != restoredEnabled) _songStateVersion++;
+    song.songPlanEnabled = restoredEnabled;
+    if (planOnly) return;
     final patternsRaw = raw['patterns'] as List<dynamic>;
     song.patterns = patternsRaw
         .map((j) => PatternModel.fromJson(j as Map<String, dynamic>))
@@ -5205,24 +5340,26 @@ class AppState extends ChangeNotifier {
 
   /// Undo the most recent arrangement mutation (add/remove/move/duplicate…).
   void undoSong() {
-    if (!_songUndo.canUndo) return;
+    if (!canUndoSong) return;
     final entry = _songUndo.popUndoSwap(_songArrangementJson());
     if (entry == null) return;
-    _restoreArrangementFromJson(entry.json);
+    final planOnly = _isSongPlanAction(entry.label);
+    _restoreArrangementFromJson(entry.json, planOnly: planOnly);
     // Mixer fields (volume/pan/mute/solo/send) may have changed as part of
     // the restored arrangement (e.g. full-track swap/move) — re-sync the
     // native audio engine so live playback matches immediately.
-    _queueCurrentMixerSnapshotToEngine();
+    if (!planOnly) _queueCurrentMixerSnapshotToEngine();
     notifyListeners();
   }
 
   /// Redo the most recently undone arrangement mutation.
   void redoSong() {
-    if (!_songUndo.canRedo) return;
+    if (!canRedoSong) return;
     final entry = _songUndo.popRedoSwap(_songArrangementJson());
     if (entry == null) return;
-    _restoreArrangementFromJson(entry.json);
-    _queueCurrentMixerSnapshotToEngine();
+    final planOnly = _isSongPlanAction(entry.label);
+    _restoreArrangementFromJson(entry.json, planOnly: planOnly);
+    if (!planOnly) _queueCurrentMixerSnapshotToEngine();
     notifyListeners();
   }
 
@@ -5460,6 +5597,217 @@ class AppState extends ChangeNotifier {
   }
 
   // ── Song mode native queue helpers ────────────────────────────────────────
+
+  Future<void> playSongPlan() async {
+    if (!song.songPlanEnabled) {
+      await play();
+      return;
+    }
+    if (isPlaying || _songPlanStarting || isExportingAudio) return;
+    if (song.validateSongPlan(_selectedSongPlanStep) == _selectedSongPlanStep) {
+      throw StateError(
+        'Song Plan step ${_selectedSongPlanStep + 1} references an empty pattern.',
+      );
+    }
+    if (_loopPlaybackEnabled && song.validateSongPlan(0) == 0) {
+      throw StateError('Song Plan step 01 references an empty pattern.');
+    }
+    _songPlanStarting = true;
+    final session = ++_songPlanSession;
+    playbackError.value = null;
+    notifyListeners();
+    try {
+      await _songPlanUpload;
+      if (session != _songPlanSession || _disposed) return;
+      _playbackFollowsSong = true;
+      _playingSongPlan = true;
+      _queuedArrangementSlot = null;
+      _songJumpRequestVersion++;
+      _pendingSongRowMap = [];
+      _pendingSongTargetSlot = null;
+      _resetInstrumentCarry();
+      _captureStartStates();
+      _songPlanIterator = song.songPlanPositions(_selectedSongPlanStep).iterator;
+      final first = _buildSongPlanBatch();
+      if (first == null) throw StateError('Song Plan has no playable lines.');
+      _songPlanBatch = first;
+      _songPlanRowIndex = 0;
+      _showSongPlanPosition(first.positions.first);
+      await _reapplyStretchForBpmChange();
+      if (session != _songPlanSession || _disposed) return;
+      await AudioEngine.instance.setSendRouting(_buildStaticSendRouting());
+      await _uploadSongPlanBatch(first, pending: false);
+      if (session != _songPlanSession || _disposed) return;
+      final next = _buildSongPlanBatch();
+      if (next != null) await _uploadSongPlanBatch(next, pending: true);
+      if (session != _songPlanSession || _disposed) return;
+      _nextSongPlanBatch = next;
+      isPlaying = true;
+      await AudioEngine.instance.start();
+      if (session != _songPlanSession || _disposed) return;
+      _playheadTimer?.cancel();
+      _playheadTimer = Timer.periodic(const Duration(milliseconds: 16), (_) {
+        unawaited(_pollSongPlanPlayhead());
+      });
+      notifyListeners();
+    } on StateError {
+      if (session != _songPlanSession || _disposed) return;
+      stop();
+      rethrow;
+    } on PlatformException {
+      if (session != _songPlanSession || _disposed) return;
+      stop();
+      rethrow;
+    } on MissingPluginException {
+      if (session != _songPlanSession || _disposed) return;
+      stop();
+      rethrow;
+    } finally {
+      _songPlanStarting = false;
+      if (!_disposed) notifyListeners();
+    }
+  }
+
+  _SongPlanBatch? _buildSongPlanBatch() {
+    final iterator = _songPlanIterator;
+    if (iterator == null) return null;
+    final positions = <SongPlanPosition>[];
+    final rows = <Map<String, dynamic>>[];
+    final originalSlot = _playheadArrangementSlot;
+    final originalRow = playheadRow;
+    final originalSuppressReset = _suppressCarryResetAtRowZero;
+    var samples = 0;
+    try {
+      // Two seconds of look-ahead where possible, with a hard memory bound.
+      while (rows.length < 256 && (rows.length < 64 || samples < 96000)) {
+        if (!iterator.moveNext()) break;
+        final position = iterator.current;
+        _playheadArrangementSlot = position.patternIndex;
+        if (position.passStart) {
+          _suppressCarryResetAtRowZero =
+              _carryPatternIndex == position.patternIndex &&
+              _trackCarry.length == song.patterns[position.patternIndex].tracks.length;
+          // Restore carry/tempo from omitted prefix lines, without sounding them.
+          for (var row = 0; row < position.line - 1; row++) {
+            playheadRow = row;
+            _triggerCurrentRow();
+          }
+        }
+        playheadRow = position.line - 1;
+        final row = _triggerCurrentRow();
+        positions.add(position);
+        rows.add(row.toChannelData());
+        samples += row.lineSamples;
+      }
+    } finally {
+      _playheadArrangementSlot = originalSlot;
+      playheadRow = originalRow;
+      _suppressCarryResetAtRowZero = originalSuppressReset;
+    }
+    return rows.isEmpty ? null : _SongPlanBatch(positions, rows);
+  }
+
+  Future<void> _uploadSongPlanBatch(
+    _SongPlanBatch batch, {
+    required bool pending,
+  }) async {
+    if (pending) {
+      await AudioEngine.instance.scheduleNextLoopRows(batch.rows);
+    } else {
+      await AudioEngine.instance.enqueueAllPlaybackRows(
+        loop: _loopPlaybackEnabled,
+        rows: batch.rows,
+      );
+    }
+    await AudioEngine.instance.configureSongPlanRows(
+      pending: pending,
+      endFlags: batch.positions.map((p) => p.planEnd ? 1 : 0).toList(),
+      passStartFlags: batch.positions.map((p) => p.passStart ? 1 : 0).toList(),
+    );
+  }
+
+  void _showSongPlanPosition(SongPlanPosition position) {
+    _playingSongPlanStep = position.stepIndex;
+    _playingSongPlanPass = position.pass;
+    _playheadArrangementSlot = position.patternIndex;
+    _syncCurrentPatternToSongPlayhead();
+    playheadRow = position.line - 1;
+  }
+
+  Future<void> _prepareNextSongPlanBatch(int session) async {
+    try {
+      final next = _buildSongPlanBatch();
+      if (next != null) await _uploadSongPlanBatch(next, pending: true);
+      if (session == _songPlanSession && !_disposed) _nextSongPlanBatch = next;
+    } on StateError catch (error) {
+      _reportSongPlanError(error.toString(), session);
+    } on PlatformException catch (error) {
+      _reportSongPlanError(error.message ?? error.code, session);
+    } on MissingPluginException catch (error) {
+      _reportSongPlanError(error.toString(), session);
+    }
+  }
+
+  Future<void> _updateSongPlanLoop(bool enabled, int session) async {
+    try {
+      await AudioEngine.instance.setQueuedPlaybackLooping(enabled);
+    } on PlatformException catch (error) {
+      _reportSongPlanError(error.message ?? error.code, session);
+    } on MissingPluginException catch (error) {
+      _reportSongPlanError(error.toString(), session);
+    }
+  }
+
+  void _reportSongPlanError(String message, int session) {
+    if (session != _songPlanSession || _disposed) return;
+    stop(keepVoicesRinging: true);
+    playbackError.value = message;
+  }
+
+  Future<void> _pollSongPlanPlayhead() async {
+    if (!isPlaying || !_playingSongPlan || _songPollInFlight) return;
+    final session = _songPlanSession;
+    _songPollInFlight = true;
+    try {
+      final status = await AudioEngine.instance.consumeSongPlanPlaybackStatus();
+      if (session != _songPlanSession || _disposed) return;
+      if (status.underrun) {
+        throw StateError(
+          'Song Plan stopped: the next audio batch was not ready in time.',
+        );
+      }
+      if (!status.running) {
+        stop(keepVoicesRinging: true);
+        return;
+      }
+      if (status.advances <= 0) return;
+      _songPlanRowIndex += status.advances;
+      final current = _songPlanBatch!;
+      if (_songPlanRowIndex >= current.positions.length) {
+        final next = _nextSongPlanBatch;
+        if (next == null) throw StateError('Song Plan playback position was lost.');
+        _songPlanRowIndex -= current.positions.length;
+        if (_songPlanRowIndex >= next.positions.length) {
+          throw StateError('Song Plan stopped: playback monitoring fell behind.');
+        }
+        _songPlanBatch = next;
+        _nextSongPlanBatch = null;
+        _songPlanUpload = _prepareNextSongPlanBatch(session);
+        await _songPlanUpload;
+        if (session != _songPlanSession || _disposed) return;
+      }
+      _showSongPlanPosition(_songPlanBatch!.positions[_songPlanRowIndex]);
+      notifyListeners();
+    } on StateError catch (error) {
+      _reportSongPlanError(error.toString(), session);
+    } on PlatformException catch (error) {
+      _reportSongPlanError(error.message ?? error.code, session);
+    } on MissingPluginException catch (error) {
+      _reportSongPlanError(error.toString(), session);
+    } finally {
+      if (session == _songPlanSession) _songPollInFlight = false;
+    }
+  }
 
   /// Preloads the entire song arrangement (from [startSlot]/[startRow] onward)
   /// into the native C++ playback queue as a flat sequence of rows.
@@ -5727,6 +6075,7 @@ class AppState extends ChangeNotifier {
 
   void _restartPlayheadTimerIfNeeded() {
     if (!isPlaying) return;
+    if (_playingSongPlan) return;
     if (_playbackFollowsSong) {
       unawaited(
         _loadNativeSongPlaybackQueue(
@@ -8748,6 +9097,7 @@ class AppState extends ChangeNotifier {
 
   /// Save current song then reset to a blank new song with the specified name.
   Future<bool> newSongWithName(String name) async {
+    if (_playingSongPlan || _songPlanStarting) stop();
     final saved = await saveSong();
     await _clearInsertEffectsInEngine();
     song = SongModel(name: name);
@@ -8770,6 +9120,7 @@ class AppState extends ChangeNotifier {
 
   /// Save current song then reset to a blank new song.
   Future<bool> newSong() async {
+    if (_playingSongPlan || _songPlanStarting) stop();
     final saved = await saveSong();
     await _clearInsertEffectsInEngine();
     song = SongModel.initial();
@@ -9018,6 +9369,7 @@ class AppState extends ChangeNotifier {
 
   /// Load a song by its display name.
   Future<bool> loadSongByName(String name) async {
+    if (_playingSongPlan || _songPlanStarting) stop();
     try {
       _lastLoadError = null;
       ({String folderName, String source, bool isUri})? selected;
@@ -9170,6 +9522,8 @@ class AppState extends ChangeNotifier {
   @override
   void dispose() {
     _disposed = true;
+    _songPlanSession++;
+    playbackError.dispose();
     _autosaveTimer?.cancel();
     _instrumentParamRebuildTimer?.cancel();
     _playheadTimer?.cancel();

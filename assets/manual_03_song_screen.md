@@ -131,7 +131,7 @@ The top-right menu provides:
 | New Song | Clear everything and start fresh |
 | Save Song | Write the project to the project folder |
 | Load Song | Open a scrollable list of saved projects in a bottom sheet; tap a name to load |
-| Song Plan | View the read-only default sequential playback plan |
+| Song Plan | Edit a saved playback plan and switch planned playback ON/OFF |
 | Choose Project Folder | Set the root folder where projects are saved |
 | Export WAV | Bounce the full song to a stereo WAV file |
 | Export Stems | Export master-routed track buses as separate stereo float WAV files |
@@ -144,16 +144,92 @@ saved automatically.
 
 ## Song Plan
 
-Open **Song Plan** from the Song screen menu to view **Default / Sequential**.
+Open **Song Plan** from the Song screen menu to view the default sequential plan.
 The table shows 99 plan steps: each references the matching song row, plays
-**ALL** its lines once (**Repeat 1**), then continues to **NEXT**.
+all its lines once (**Repeat 1**), then continues to the next step.
+The columns are **Step**, **Pattern**, **Start**, **End**, **Repeat**, and **Count**.
 
-The first empty song row is highlighted as **End of song**; later steps are
-dimmed because sequential playback does not reach them. If all 99 rows contain
-data, the sequence ends after row 99.
+### Live performance or planned playback
 
-With Loop off, playback stops at the end. With Loop on, it returns to the
-existing loop start. This screen only previews the current arrangement:
-it does not edit the song, change mute/solo settings, or control playback.
-The default plan follows Song View changes automatically and is not stored
-separately in the project.
+The **ON/OFF** button selects the playback mode and is saved with the song.
+New songs and older projects default to **OFF**. Editing a plan does not
+automatically enable it.
+
+- **OFF** preserves normal Song View playback, including live row jumps and
+  looping islands separated by empty pattern rows. An edited plan is ignored.
+- **ON** plays the plan's patterns, line ranges, and repeats. Song View follows
+  the plan; Song View row taps cannot override it during playback. A route icon
+  beside the song name indicates that planned song playback is enabled.
+- Pattern View's own Play still plays the current pattern/range. Song Plan's
+  Play uses the enabled plan regardless of which tab was previously active.
+
+While stopped, **tap STEP** to select the starting step without opening an
+editor. Tapping another value selects the step and opens its editor. Step 01
+is selected initially; the selected row stays highlighted when stopped.
+While playing, step selection, plan editing/reset, and ON/OFF changes are
+disabled. There are no live jumps between plan steps.
+
+The editable fields are:
+
+- **Pattern** selects a Song View pattern slot (1–99), not a copy of its music.
+- **Count** defaults to 1 and includes that many consecutive Song View patterns,
+  starting at Pattern. The group must fit within slots 1–99. This does not group
+  or skip Song Plan steps.
+- **Start** defaults to line 1, using the same numbering as Pattern View.
+- **End** defaults to the pattern's last line and follows length changes.
+  Enter a lower number to keep a fixed end limit. An end at or above the current
+  length follows the last line instead. Saved fixed limits are capped to the
+  current length for display without losing the limit if the pattern grows.
+- **Repeat** accepts 1–999 and repeats the whole counted pattern group.
+  For example, Pattern 05, Count 2, Repeat 4 plays 05 → 06 four times,
+  then advances to the next Song Plan step.
+
+Start and End apply separately to every included pattern. Automatic End follows
+each pattern's own length; the table and editor show the first pattern's end.
+A fixed End is capped separately to each pattern's length. Start must be valid
+in every populated pattern reached in the group.
+
+**Apply** changes the plan in memory; **Cancel** discards the dialog edits.
+Use **Save Song** in the Song screen menu to save the whole song, including its
+plan. Autosave also includes the plan; there is no separate Song Plan save button.
+The reset icon restores the automatic sequential default after confirmation.
+Plan edits and resets participate in Song View's undo/redo.
+
+If a pattern becomes shorter than a step's start line, that step is shown in
+the palette's stop colour. Edit it to choose a valid range; the start is not
+silently changed.
+
+Steps referencing empty patterns are dimmed. Other steps retain their normal
+colour even after an empty reference. With the plan ON, the first empty
+referenced pattern ends the plan run, even inside a counted group (before any
+remaining repeats or later steps); an empty Song View slot that the plan
+does not reference does not interrupt planned playback. The run also ends
+after step 99. Starting on an empty or invalid step displays an error instead
+of starting audio.
+
+With the plan ON and **Loop off**, the run stops at its end and allows audio
+tails to ring out. With **Loop on**, playback restarts the whole plan at
+**step 01**, even if the first run started on another selected step.
+Repeat counts apply to each step independently of Loop. Chance notes receive
+a fresh decision for each performed occurrence, rather than replaying a
+single pre-generated random pass.
+
+The shared transport controls stay visible at the bottom. During planned
+playback, exactly the executing step has the palette's playhead background
+and an accent stripe, even when several steps reference the same pattern.
+With the plan OFF, the marker follows the live Song View slot. Pattern-only
+playback does not mark a playing plan step.
+
+Playback is prepared in bounded batches ahead of the audio engine. If the
+next batch cannot be delivered in time, playback stops with a visible error
+instead of silently replaying old music.
+
+**Audio export of enabled plans is not available yet.** Turn Song Plan OFF
+before exporting WAV or stems; exports then use the normal Song View arrangement.
+Pattern-to-sampler rendering remains independent of the song plan.
+
+Songs without a saved plan use the automatic sequential default. The first
+edit creates a custom plan stored inside the existing project JSON; no separate
+plan file is needed. Older saved steps without Count use Count 1.
+Pattern references identify numbered slots, so moving
+music between Song View slots changes what those references point to.
