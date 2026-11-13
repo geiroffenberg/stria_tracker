@@ -10,11 +10,13 @@ import '../models/song_model.dart';
 import '../models/track_model.dart';
 import '../state/app_state.dart';
 import '../theme/app_theme.dart';
+import 'song_plan_screen.dart';
 
 enum _SongMenuAction {
   newSong,
   saveSong,
   loadSong,
+  songPlan,
   chooseProjectFolder,
   showProjectPath,
   changePalette,
@@ -689,6 +691,10 @@ class _SongScreenState extends State<SongScreen> {
                       child: Text('Load Song', style: TextStyle(fontSize: 16)),
                     ),
                     const PopupMenuItem(
+                      value: _SongMenuAction.songPlan,
+                      child: Text('Song Plan', style: TextStyle(fontSize: 16)),
+                    ),
+                    const PopupMenuItem(
                       value: _SongMenuAction.chooseProjectFolder,
                       child: Text(
                         'Project Folder',
@@ -974,6 +980,11 @@ class _SongScreenState extends State<SongScreen> {
         break;
       case _SongMenuAction.loadSong:
         _handleLoadMenu(ctx, state);
+        break;
+      case _SongMenuAction.songPlan:
+        Navigator.of(ctx).push<void>(
+          MaterialPageRoute<void>(builder: (_) => const SongPlanScreen()),
+        );
         break;
       case _SongMenuAction.chooseProjectFolder:
         _handleChooseProjectFolder(ctx, state);

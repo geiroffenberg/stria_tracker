@@ -131,6 +131,7 @@ The top-right menu provides:
 | New Song | Clear everything and start fresh |
 | Save Song | Write the project to the project folder |
 | Load Song | Open a scrollable list of saved projects in a bottom sheet; tap a name to load |
+| Song Plan | View the read-only default sequential playback plan |
 | Choose Project Folder | Set the root folder where projects are saved |
 | Export WAV | Bounce the full song to a stereo WAV file |
 | Export Stems | Export master-routed track buses as separate stereo float WAV files |
@@ -140,3 +141,19 @@ There are 30 palettes. Multicolour options include **Graphite**, **Cobalt**,
 **Terracotta**, **Aubergine**, **Moss**, **Wine**, **Espresso**, and **Glacier**.
 For colourful light backgrounds, try **Porcelain** or **Linen**. Your choice is
 saved automatically.
+
+## Song Plan
+
+Open **Song Plan** from the Song screen menu to view **Default / Sequential**.
+The table shows 99 plan steps: each references the matching song row, plays
+**ALL** its lines once (**Repeat 1**), then continues to **NEXT**.
+
+The first empty song row is highlighted as **End of song**; later steps are
+dimmed because sequential playback does not reach them. If all 99 rows contain
+data, the sequence ends after row 99.
+
+With Loop off, playback stops at the end. With Loop on, it returns to the
+existing loop start. This screen only previews the current arrangement:
+it does not edit the song, change mute/solo settings, or control playback.
+The default plan follows Song View changes automatically and is not stored
+separately in the project.
