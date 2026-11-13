@@ -51,6 +51,10 @@ class SongPlanScreen extends StatelessWidget {
                   'the table shows the first pattern end. Empty patterns stop the run. '
                   'While stopped, tap STEP to select, or tap another value to select and edit. '
                   'Switching mode, editing, and selecting are disabled during playback. '
+                  'The mute row shows the selected step when stopped and the playing step when running. '
+                  'Tap a track number to mute it (M); tap M to clear it. '
+                  'Mutes apply to the whole counted group and all repeats, only with the plan ON. '
+                  'Live mute/solo still applies independently. '
                   'Save Song in the Song menu saves the plan and its ON/OFF setting. '
                   'Plan audio export is not available yet; turn the plan OFF to export Song View.',
                 ),
@@ -175,25 +179,100 @@ class SongPlanScreen extends StatelessWidget {
         top: false,
         child: LayoutBuilder(
           builder: (context, constraints) => Container(
-            height: 76,
             color: kBgTrackHeader,
-            child: FittedBox(
-              fit: BoxFit.scaleDown,
-              child: SizedBox(
-                // The shared transport has fixed-width controls.
-                width: constraints.maxWidth < 360 ? 360 : constraints.maxWidth,
-                child: MediaQuery.withClampedTextScaling(
-                  maxScaleFactor: 1,
-                  child: TransportBar(
-                    onPlay: state.song.songPlanEnabled
-                        ? state.playSongPlan
-                        : state.play,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _muteRow(state),
+                SizedBox(
+                  height: 76,
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: SizedBox(
+                      // The shared transport has fixed-width controls.
+                      width: constraints.maxWidth < 360
+                          ? 360
+                          : constraints.maxWidth,
+                      child: MediaQuery.withClampedTextScaling(
+                        maxScaleFactor: 1,
+                        child: TransportBar(
+                          onPlay: state.song.songPlanEnabled
+                              ? state.playSongPlan
+                              : state.play,
+                        ),
+                      ),
+                    ),
                   ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _muteRow(AppState state) {
+    final index = state.playingSongPlanStep ?? state.selectedSongPlanStep;
+    final step = state.song.planStepAt(index);
+    final number = (index + 1).toString().padLeft(2, '0');
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'STEP $number MUTES',
+            key: const ValueKey('song-plan-mute-label'),
+            style: kStyleHeader.copyWith(color: kColHeader, fontSize: 12),
+          ),
+          LayoutBuilder(
+            builder: (context, constraints) => SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: SizedBox(
+                width: constraints.maxWidth < 512 ? 512 : constraints.maxWidth,
+                child: Row(
+                  children: [
+                    for (var track = 0; track < 16; track++)
+                      Expanded(
+                        child: Semantics(
+                          label: 'Track ${track + 1} plan mute',
+                          toggled: step.isTrackMuted(track),
+                          enabled: state.canEditSongPlan,
+                          button: true,
+                          child: InkWell(
+                            key: ValueKey('song-plan-mute-$track'),
+                            onTap: state.canEditSongPlan
+                                ? () => state.toggleSongPlanTrackMute(track)
+                                : null,
+                            child: Container(
+                              height: 40,
+                              alignment: Alignment.center,
+                              decoration: BoxDecoration(
+                                color: step.isTrackMuted(track)
+                                    ? kBgSelected
+                                    : kBgHeader,
+                                border: Border.all(color: kBgTrackHeader),
+                              ),
+                              child: Text(
+                                step.isTrackMuted(track) ? 'M' : '${track + 1}',
+                                style: kStyleBase.copyWith(
+                                  color: step.isTrackMuted(track)
+                                      ? kColAccent
+                                      : kColHeader,
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                  ],
                 ),
               ),
             ),
           ),
-        ),
+        ],
       ),
     );
   }
@@ -452,6 +531,7 @@ class _SongPlanStepDialogState extends State<_SongPlanStepDialog> {
                 count: int.parse(_count.text),
                 startLine: int.parse(_start.text),
                 endLine: _fixedEnd,
+                muteMask: widget.song.planStepAt(widget.index).muteMask,
                 repeats: int.parse(_repeat.text),
               ),
             );

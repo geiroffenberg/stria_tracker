@@ -245,12 +245,15 @@ class AudioEnginePlugin : FlutterPlugin, MethodCallHandler {
                 val pending = call.argument<Boolean>("pending")
                 val endFlags = call.argument<List<Int>>("endFlags")
                 val passStartFlags = call.argument<List<Int>>("passStartFlags")
+                val muteMasks = call.argument<List<Int>>("muteMasks")
                 if (enginePtr == 0L || pending == null || endFlags == null ||
-                    passStartFlags == null || endFlags.isEmpty() ||
-                    endFlags.size != passStartFlags.size) {
+                    passStartFlags == null || muteMasks == null || endFlags.isEmpty() ||
+                    endFlags.size != passStartFlags.size ||
+                    endFlags.size != muteMasks.size || muteMasks.any { it !in 0..0xffff }) {
                     result.error("SONG_PLAN", "Invalid Song Plan batch or unavailable audio engine", null)
                 } else if (!nativeConfigureSongPlanRows(
-                        enginePtr, pending, endFlags.toIntArray(), passStartFlags.toIntArray())) {
+                        enginePtr, pending, endFlags.toIntArray(), passStartFlags.toIntArray(),
+                        muteMasks.toIntArray())) {
                     result.error("SONG_PLAN", "Song Plan batch does not match the queued rows", null)
                 } else {
                     result.success(null)
@@ -787,6 +790,7 @@ class AudioEnginePlugin : FlutterPlugin, MethodCallHandler {
     private external fun nativeSetQueuedPlaybackLooping(ptr: Long, loop: Boolean)
     private external fun nativeConfigureSongPlanRows(
         ptr: Long, pending: Boolean, endFlags: IntArray, passStartFlags: IntArray,
+        muteMasks: IntArray,
     ): Boolean
     private external fun nativeConsumeSongPlanPlaybackStatus(ptr: Long): IntArray
     private external fun nativeEnqueuePlaybackRow(

@@ -220,6 +220,30 @@ and an accent stripe, even when several steps reference the same pattern.
 With the plan OFF, the marker follows the live Song View slot. Pattern-only
 playback does not mark a playing plan step.
 
+### Per-step track mutes
+
+The fixed row above the transport shows **STEP nn MUTES** and 16 track cells.
+Each cell shows its track number when not muted by the step, or **M** when muted.
+Tap to toggle while stopped. On narrow screens, swipe the row horizontally to
+reach all tracks. The row shows the selected step while stopped and follows the
+executing step during planned playback, when it is read-only.
+
+Every step starts with no plan mutes. Its mutes apply throughout its counted
+pattern group and all repeats; the next step uses its own settings, without
+inheriting the previous step's mutes. They only affect playback with the plan
+**ON**, and do not alter patterns or the existing live mute/solo settings.
+A track is silent if the step mutes it or the live mixer controls silence it;
+a track number does not override live mute/solo. Plan mutes are removed when
+plan playback stops. They are saved with the song, support undo/redo, and are
+cleared by resetting the plan. Older songs load with no plan mutes.
+
+During planned playback, Song View and Pattern View track indicators show **M**
+for either an active plan mute or a live mute. Mixer mute buttons also light up
+for either source. Plan mute takes display precedence over solo. These indicators
+follow the executing step, not the selected step or pattern number, and return
+to the live mixer state when playback stops. Taps and reset gestures still
+control only live mute/solo; clearing a live mute cannot override a plan mute.
+
 Playback is prepared in bounded batches ahead of the audio engine. If the
 next batch cannot be delivered in time, playback stops with a visible error
 instead of silently replaying old music.

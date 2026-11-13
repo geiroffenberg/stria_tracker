@@ -363,6 +363,7 @@ struct QueuedPlaybackRow {
     int32_t lineSamples = 0;
     bool songPlanEnd = false;
     bool songPlanPassStart = false;
+    int songPlanMuteMask = 0;
 };
 
 /// Effect state for a single insert effect slot
@@ -571,7 +572,8 @@ public:
     void appendPendingRow(const QueuedPlaybackRow& row);
 
     bool configureSongPlanRows(bool pending, const std::vector<int>& endFlags,
-                              const std::vector<int>& passStartFlags);
+                              const std::vector<int>& passStartFlags,
+                              const std::vector<int>& muteMasks);
     bool isPlayheadRunning() const { return mPlayheadRunning.load(); }
     bool consumeSongPlanUnderrun() { return mSongPlanUnderrun.exchange(false); }
 
@@ -908,6 +910,8 @@ private:
     float mTrackVolume[kMaxVoices]; // 0..1, 1.0 = unity
     bool  mTrackMute[kMaxVoices];   // true = silenced
     bool  mTrackSolo[kMaxVoices];   // true = this track is soloed
+    int mSongPlanMuteMask = 0;
+    std::vector<int> mSongPlanMuteMasksPerFrame;
     std::array<std::vector<float>, kMaxVoices> mTrackBusL;
     std::array<std::vector<float>, kMaxVoices> mTrackBusR;
     // Per-callback snapshot of each track's raw bus (pre-insert-FX, pre-gain)

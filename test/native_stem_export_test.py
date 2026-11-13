@@ -3,6 +3,7 @@
 Checks voice recovery, sampler loop attacks, master WAV and stem export using the complete production engine
 offline; only Android logging and the audio-device API are stubbed.
 No audio device or Android runtime is required.
+Also checks Song Plan queue boundaries and sample-aligned track mutes.
 """
 from pathlib import Path
 import subprocess
@@ -533,3 +534,13 @@ with tempfile.TemporaryDirectory(prefix="stria-native-stems-") as directory:
         str(cpp / "freeverb.cpp"), "-o", str(executable),
     ], check=True)
     subprocess.run([str(executable), str(directory)], check=True)
+    plan_executable = directory / "song-plan-check"
+    subprocess.run([
+        "clang++", "-std=c++17", "-O1", "-g", "-fsanitize=address,undefined",
+        "-fno-omit-frame-pointer", "-fno-sanitize-recover=all",
+        "-pthread", "-include", str(directory / "host_math.h"),
+        "-I", str(directory), "-I", str(cpp),
+        str(root / "test/native/song_plan_queue_test.cpp"), str(cpp / "audio_engine.cpp"),
+        str(cpp / "freeverb.cpp"), "-o", str(plan_executable),
+    ], check=True)
+    subprocess.run([str(plan_executable)], check=True)

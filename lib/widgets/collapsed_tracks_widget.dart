@@ -353,7 +353,7 @@ class _CollapsedTracksWidgetState extends State<CollapsedTracksWidget>
                       // Single-icon live control: mute wins the display, so a
                       // both-lit track shows 'M'. Single tap toggles mute
                       // (no-op while soloed); double tap toggles solo.
-                      final muted = tracks[i].mixerMute;
+                      final muted = state.isTrackEffectivelyMuted(i);
                       final soloed = tracks[i].mixerSolo;
                       final label = muted
                           ? 'M'
@@ -365,6 +365,7 @@ class _CollapsedTracksWidgetState extends State<CollapsedTracksWidget>
                           : (soloed ? kColStopBtn : kColAccent);
                       return Text(
                         label,
+                        key: ValueKey('collapsed-track-status-$i'),
                         style: kStyleHeader.copyWith(color: color),
                       );
                     },

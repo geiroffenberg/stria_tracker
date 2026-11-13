@@ -92,6 +92,7 @@ void main() {
       repeats: 999,
       startLine: 5,
       endLine: 12,
+      muteMask: 0x8001,
     );
     loaded.songPlan = plan;
     final restored = SongModel.fromJson(
@@ -102,7 +103,67 @@ void main() {
     expect(SongModel.initial().songPlan, isNull);
     final oldStep = plan[0].toJson()..remove('count');
     expect(SongPlanStep.fromJson(oldStep).count, 1);
+    oldStep.remove('muteMask');
+    expect(SongPlanStep.fromJson(oldStep).muteMask, 0);
   });
+
+  test('mute toggles cover 16 tracks and preserve all other step fields', () {
+    final original = SongPlanStep(
+      patternIndex: 2,
+      count: 4,
+      repeats: 3,
+      startLine: 5,
+      endLine: 12,
+    );
+    final muted = original.toggleTrackMute(0).toggleTrackMute(15);
+    expect(muted.muteMask, 0x8001);
+    expect(muted.isTrackMuted(0), isTrue);
+    expect(muted.isTrackMuted(15), isTrue);
+    expect(muted.isTrackMuted(1), isFalse);
+    expect(muted.toggleTrackMute(0).toggleTrackMute(15), original);
+    expect(muted, isNot(original));
+    expect({original, muted}, hasLength(2));
+    expect(() => original.toggleTrackMute(16), throwsRangeError);
+    expect(() => original.isTrackMuted(-1), throwsRangeError);
+    expect(
+      () => SongPlanStep(patternIndex: 0, muteMask: -1),
+      throwsFormatException,
+    );
+    expect(
+      () => SongPlanStep(patternIndex: 0, muteMask: 0x10000),
+      throwsFormatException,
+    );
+  });
+
+  test(
+    'mute edits are dirty and undoable without altering live mixer state',
+    () {
+      final state = AppState();
+      addTearDown(state.dispose);
+      state.song.patterns.first.tracks[0].mixerMute = true;
+      state.song.patterns.first.tracks[1].mixerSolo = true;
+      final patterns = jsonEncode(
+        state.song.patterns.map((p) => p.toJson()).toList(),
+      );
+      state.selectSongPlanStep(2);
+      state.toggleSongPlanTrackMute(15);
+      expect(state.song.planStepAt(2).muteMask, 0x8000);
+      expect(state.song.planStepAt(0).muteMask, 0);
+      expect(state.hasUnsavedChanges, isTrue);
+      state.undoSong();
+      expect(state.song.planStepAt(2).muteMask, 0);
+      state.redoSong();
+      expect(state.song.planStepAt(2).muteMask, 0x8000);
+      state.resetSongPlan();
+      expect(state.song.planStepAt(2).muteMask, 0);
+      state.undoSong();
+      expect(state.song.planStepAt(2).muteMask, 0x8000);
+      expect(
+        jsonEncode(state.song.patterns.map((p) => p.toJson()).toList()),
+        patterns,
+      );
+    },
+  );
 
   test(
     'plan limits reject malformed data instead of silently replacing it',
@@ -205,6 +266,7 @@ void main() {
         repeats: 999,
         startLine: 3,
         endLine: 8,
+        muteMask: 0x8001,
       );
       state.setSongPlanStep(0, edited);
       state.setSongPlanEnabled(true);
@@ -298,7 +360,10 @@ void main() {
       state.dispose();
     });
     state.song.patterns = [musicalPattern(), musicalPattern()];
-    state.setSongPlanStep(0, SongPlanStep(patternIndex: 0, count: 2, repeats: 64));
+    state.setSongPlanStep(
+      0,
+      SongPlanStep(patternIndex: 0, count: 2, repeats: 64),
+    );
     state.setSongPlanStep(2, SongPlanStep(patternIndex: 0, repeats: 4));
     await showPlan(tester, state);
     await tester.tap(find.text('PLAY'));
@@ -337,7 +402,10 @@ void main() {
     final state = AppState();
     addTearDown(state.dispose);
     state.song.patterns = [musicalPattern()..beats = 2];
-    state.setSongPlanStep(0, SongPlanStep(patternIndex: 0, endLine: 12));
+    state.setSongPlanStep(
+      0,
+      SongPlanStep(patternIndex: 0, endLine: 12, muteMask: 5),
+    );
     await showPlan(tester, state);
     expect(tester.widget<Text>(planCell(1, 3)).data, '8');
     await tester.tap(planCell(1, 4));
@@ -347,6 +415,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(state.song.planStepAt(0).endLine, 12);
     expect(state.song.planStepAt(0).repeats, 4);
+    expect(state.song.planStepAt(0).muteMask, 5);
     state.song.patterns[0].beats = 4;
     state.notifyListeners();
     await tester.pumpAndSettle();
@@ -523,7 +592,10 @@ void main() {
     await tester.scrollUntilVisible(
       step(99),
       500,
-      scrollable: find.byType(Scrollable),
+      scrollable: find.descendant(
+        of: find.byType(CustomScrollView),
+        matching: find.byType(Scrollable),
+      ),
     );
 
     expect(rowColor(tester, 99), kColHeader);

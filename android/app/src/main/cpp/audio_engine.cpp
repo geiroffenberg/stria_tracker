@@ -734,6 +734,7 @@ bool AudioEngine::open() {
     mFxWetR.assign(kMaxAudioBurst, 0.0f);
     mPreviewDirectL.assign(kMaxAudioBurst, 0.0f);
     mPreviewDirectR.assign(kMaxAudioBurst, 0.0f);
+    mSongPlanMuteMasksPerFrame.assign(kMaxAudioBurst, 0);
 
     // Reserve capacity for pending event vectors so push/erase in the audio
     // path never reallocates. clear()/erase don't shrink capacity, so this
@@ -1732,6 +1733,7 @@ void AudioEngine::clearQueuedPlaybackRows() {
     mQueuedPlaybackRowIndex = 0;
     mPendingNextLoopRows.clear(); // discard any pre-built next pass
     mSongPlanQueue = false;
+    mSongPlanMuteMask = 0;
     mPendingSongPlanReady = false;
     mLastSongPlanRowWasEnd = false;
     mSongPlanUnderrun.store(false);
@@ -1760,14 +1762,17 @@ void AudioEngine::appendPendingRow(const QueuedPlaybackRow& row) {
 
 bool AudioEngine::configureSongPlanRows(
         bool pending, const std::vector<int>& endFlags,
-        const std::vector<int>& passStartFlags) {
+        const std::vector<int>& passStartFlags, const std::vector<int>& muteMasks) {
     std::lock_guard<std::mutex> lock(mVoiceMutex);
     auto& rows = pending ? mPendingNextLoopRows : mQueuedPlaybackRows;
     if (rows.empty() || rows.size() != endFlags.size() ||
-        rows.size() != passStartFlags.size()) return false;
+        rows.size() != passStartFlags.size() || rows.size() != muteMasks.size() ||
+        std::any_of(muteMasks.begin(), muteMasks.end(),
+                    [](int mask) { return mask < 0 || mask > 0xffff; })) return false;
     for (size_t i = 0; i < rows.size(); ++i) {
         rows[i].songPlanEnd = endFlags[i] != 0;
         rows[i].songPlanPassStart = passStartFlags[i] != 0;
+        rows[i].songPlanMuteMask = muteMasks[i];
     }
     if (pending) {
         // Publish only after the entire batch and its flags are ready.
@@ -1781,6 +1786,7 @@ bool AudioEngine::configureSongPlanRows(
 }
 
 void AudioEngine::applyQueuedPlaybackRowLocked(const QueuedPlaybackRow& row) {
+    mSongPlanMuteMask = mSongPlanQueue ? row.songPlanMuteMask : 0;
     mLineSamplesPerRow = std::max<int32_t>(1, row.lineSamples);
     triggerRowLocked(row.rowData);
     if (!row.immediateKillMask.empty()) {
@@ -3075,6 +3081,12 @@ void AudioEngine::renderAudio(
     // silence. Checked under the lock so no live block can interleave.
     if (!offlineCaller && mOfflineRendering.load()) return;
 
+    if (static_cast<int>(mSongPlanMuteMasksPerFrame.size()) < numFrames) {
+        mSongPlanMuteMasksPerFrame.resize(numFrames);
+    }
+    std::fill_n(mSongPlanMuteMasksPerFrame.data(), numFrames, mSongPlanMuteMask);
+    int callbackPlanMuteMask = mSongPlanMuteMask;
+
     // Advance the per-row sample counter and fire due sub-row events BEFORE
     // handling row-boundary advancement below. Ordering matters here: a
     // pending DEL/ARP/RET/KIL event can be scheduled very close to the end
@@ -3392,6 +3404,12 @@ void AudioEngine::renderAudio(
                 mPlayheadRunning.store(false);
                 break;
             }
+            // Preserve the old mask before the boundary, including on ringing voices and sends.
+            const int muteOffset = std::clamp(
+                numFrames - static_cast<int>(mPlayheadSampleCounter), 0, numFrames);
+            std::fill(mSongPlanMuteMasksPerFrame.begin() + muteOffset,
+                      mSongPlanMuteMasksPerFrame.begin() + numFrames, mSongPlanMuteMask);
+            callbackPlanMuteMask |= mSongPlanMuteMask;
         }
         mCurrentRowFireSampleOffset = 0;
     }
@@ -4572,10 +4590,14 @@ void AudioEngine::renderAudio(
             const bool silenced = !mRenderingStems &&
                 (mTrackMute[track] || (anySolo && !mTrackSolo[track]));
             const float gain = silenced ? 0.0f : mTrackVolume[track];
-            if (gain != 1.0f) {
+            const bool planMayMuteTrack = !mRenderingStems &&
+                (callbackPlanMuteMask & (1 << track)) != 0;
+            if (gain != 1.0f || planMayMuteTrack) {
                 for (int i = 0; i < numFrames; ++i) {
-                    mTrackBusL[track][i] *= gain;
-                    mTrackBusR[track][i] *= gain;
+                    const float frameGain = planMayMuteTrack &&
+                        (mSongPlanMuteMasksPerFrame[i] & (1 << track)) ? 0.0f : gain;
+                    mTrackBusL[track][i] *= frameGain;
+                    mTrackBusR[track][i] *= frameGain;
                 }
             }
         }
@@ -4650,10 +4672,14 @@ void AudioEngine::renderAudio(
             const bool silenced = !mRenderingStems &&
                 (mTrackMute[track] || (anySolo && !mTrackSolo[track]));
             const float gain = silenced ? 0.0f : mTrackVolume[track];
-            if (gain != 1.0f) {
+            const bool planMayMuteTrack = !mRenderingStems &&
+                (callbackPlanMuteMask & (1 << track)) != 0;
+            if (gain != 1.0f || planMayMuteTrack) {
                 for (int i = 0; i < numFrames; ++i) {
-                    mTrackBusL[track][i] *= gain;
-                    mTrackBusR[track][i] *= gain;
+                    const float frameGain = planMayMuteTrack &&
+                        (mSongPlanMuteMasksPerFrame[i] & (1 << track)) ? 0.0f : gain;
+                    mTrackBusL[track][i] *= frameGain;
+                    mTrackBusR[track][i] *= frameGain;
                 }
             }
         }

@@ -10,6 +10,7 @@ class SongPlanStep {
 
   /// Null follows the pattern's last line as its length changes.
   final int? endLine;
+  final int muteMask;
 
   factory SongPlanStep({
     required int patternIndex,
@@ -17,6 +18,7 @@ class SongPlanStep {
     int repeats = 1,
     int startLine = 1,
     int? endLine,
+    int muteMask = 0,
   }) {
     if (patternIndex < 0 || patternIndex >= 99) {
       throw const FormatException(
@@ -40,7 +42,19 @@ class SongPlanStep {
         (endLine < startLine || endLine > kMaxSongPlanLines)) {
       throw const FormatException('Song Plan end line is out of range.');
     }
-    return SongPlanStep._(patternIndex, count, repeats, startLine, endLine);
+    if (muteMask < 0 || muteMask > 0xffff) {
+      throw const FormatException(
+        'Song Plan mute mask must contain 16 tracks.',
+      );
+    }
+    return SongPlanStep._(
+      patternIndex,
+      count,
+      repeats,
+      startLine,
+      endLine,
+      muteMask,
+    );
   }
 
   const SongPlanStep._(
@@ -49,7 +63,25 @@ class SongPlanStep {
     this.repeats,
     this.startLine,
     this.endLine,
+    this.muteMask,
   );
+
+  bool isTrackMuted(int trackIndex) {
+    RangeError.checkValueInInterval(trackIndex, 0, 15, 'trackIndex');
+    return (muteMask & (1 << trackIndex)) != 0;
+  }
+
+  SongPlanStep toggleTrackMute(int trackIndex) {
+    RangeError.checkValueInInterval(trackIndex, 0, 15, 'trackIndex');
+    return SongPlanStep(
+      patternIndex: patternIndex,
+      count: count,
+      repeats: repeats,
+      startLine: startLine,
+      endLine: endLine,
+      muteMask: muteMask ^ (1 << trackIndex),
+    );
+  }
 
   int effectiveEndLine(int patternLines) =>
       endLine == null || endLine! > patternLines ? patternLines : endLine!;
@@ -63,6 +95,7 @@ class SongPlanStep {
     'repeats': repeats,
     'startLine': startLine,
     'endLine': endLine,
+    'muteMask': muteMask,
   };
 
   factory SongPlanStep.fromJson(Map<String, dynamic> json) => SongPlanStep(
@@ -71,6 +104,7 @@ class SongPlanStep {
     repeats: json['repeats'] as int,
     startLine: json['startLine'] as int,
     endLine: json['endLine'] as int?,
+    muteMask: json.containsKey('muteMask') ? json['muteMask'] as int : 0,
   );
 
   @override
@@ -80,9 +114,10 @@ class SongPlanStep {
       other.count == count &&
       other.repeats == repeats &&
       other.startLine == startLine &&
-      other.endLine == endLine;
+      other.endLine == endLine &&
+      other.muteMask == muteMask;
 
   @override
   int get hashCode =>
-      Object.hash(patternIndex, count, repeats, startLine, endLine);
+      Object.hash(patternIndex, count, repeats, startLine, endLine, muteMask);
 }

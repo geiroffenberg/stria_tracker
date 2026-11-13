@@ -568,7 +568,7 @@ class _SongScreenState extends State<SongScreen> {
                         final soloed =
                             inRange && state.currentPattern.tracks[t].mixerSolo;
                         final muted =
-                            inRange && state.currentPattern.tracks[t].mixerMute;
+                            inRange && state.isTrackEffectivelyMuted(t);
                         final label = muted ? 'M' : (soloed ? 'S' : '${t + 1}');
                         final active = muted || soloed;
                         final color = muted
@@ -589,6 +589,7 @@ class _SongScreenState extends State<SongScreen> {
                             ),
                             child: Text(
                               label,
+                              key: ValueKey('song-track-status-$t'),
                               style: kStyleHeader.copyWith(
                                 fontSize: 16,
                                 fontWeight: FontWeight.w700,

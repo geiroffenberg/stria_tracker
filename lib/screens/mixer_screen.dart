@@ -2264,7 +2264,7 @@ class _MixerScreenState extends State<MixerScreen> {
                 pan: tracks[i].mixerPan,
                 meterLeft: _meterValues[i],
                 meterRight: _meterValues[16 + i],
-                muted: tracks[i].mixerMute,
+                muted: state.isTrackEffectivelyMuted(i),
                 soloed: tracks[i].mixerSolo,
                 inserts: _inserts[i],
                 bypassed: _trackBypassed[i],

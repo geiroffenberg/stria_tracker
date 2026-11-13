@@ -315,6 +315,17 @@ class AppState extends ChangeNotifier {
   bool get songPlanStarting => _songPlanStarting;
   bool get canEditSongPlan => !isPlaying && !_songPlanStarting && !isExportingAudio;
 
+  /// Display active plan mutes without changing the saved live mixer controls.
+  bool isTrackEffectivelyMuted(int trackIndex) {
+    RangeError.checkValidIndex(trackIndex, currentPattern.tracks, 'trackIndex');
+    final step = _playingSongPlanStep;
+    return currentPattern.tracks[trackIndex].mixerMute ||
+        (isPlaying &&
+            _playingSongPlan &&
+            step != null &&
+            song.planStepAt(step).isTrackMuted(trackIndex));
+  }
+
   // Per-track segments from the last row trigger (for DEL replay).
   List<List<int>> _rowSegments = [];
 
@@ -5252,6 +5263,13 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  void toggleSongPlanTrackMute(int trackIndex) {
+    setSongPlanStep(
+      _selectedSongPlanStep,
+      song.planStepAt(_selectedSongPlanStep).toggleTrackMute(trackIndex),
+    );
+  }
+
   void selectSongPlanStep(int index) {
     RangeError.checkValueInInterval(index, 0, kMaxSongPatterns - 1);
     if (!canEditSongPlan) return;
@@ -5723,6 +5741,9 @@ class AppState extends ChangeNotifier {
       pending: pending,
       endFlags: batch.positions.map((p) => p.planEnd ? 1 : 0).toList(),
       passStartFlags: batch.positions.map((p) => p.passStart ? 1 : 0).toList(),
+      muteMasks: batch.positions
+          .map((p) => song.planStepAt(p.stepIndex).muteMask)
+          .toList(),
     );
   }
 

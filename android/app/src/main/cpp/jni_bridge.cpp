@@ -79,7 +79,7 @@ Java_com_metamind_stria_AudioEnginePlugin_nativeSetQueuedPlaybackLooping(
 JNIEXPORT jboolean JNICALL
 Java_com_metamind_stria_AudioEnginePlugin_nativeConfigureSongPlanRows(
         JNIEnv* env, jobject, jlong ptr, jboolean pending,
-        jintArray endFlags, jintArray passStartFlags) {
+        jintArray endFlags, jintArray passStartFlags, jintArray muteMasks) {
     auto toVector = [env](jintArray array) {
         const jsize length = env->GetArrayLength(array);
         std::vector<int> values(length);
@@ -87,7 +87,7 @@ Java_com_metamind_stria_AudioEnginePlugin_nativeConfigureSongPlanRows(
         return values;
     };
     return reinterpret_cast<AudioEngine*>(ptr)->configureSongPlanRows(
-        pending, toVector(endFlags), toVector(passStartFlags));
+        pending, toVector(endFlags), toVector(passStartFlags), toVector(muteMasks));
 }
 
 JNIEXPORT jintArray JNICALL

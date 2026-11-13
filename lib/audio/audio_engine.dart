@@ -88,12 +88,14 @@ class AudioEngine {
     required bool pending,
     required List<int> endFlags,
     required List<int> passStartFlags,
+    required List<int> muteMasks,
   }) async {
     if (!_initialised) throw StateError('Audio engine is not initialized.');
     await _channel.invokeMethod('configureSongPlanRows', {
       'pending': pending,
       'endFlags': endFlags,
       'passStartFlags': passStartFlags,
+      'muteMasks': muteMasks,
     });
   }
 

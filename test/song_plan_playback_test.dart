@@ -11,6 +11,10 @@ import 'package:stria/models/pattern_model.dart';
 import 'package:stria/models/song_model.dart';
 import 'package:stria/models/song_plan_step.dart';
 import 'package:stria/screens/song_plan_screen.dart';
+import 'package:stria/screens/song_screen.dart';
+import 'package:stria/screens/pattern_screen.dart';
+import 'package:stria/screens/mixer_screen.dart';
+import 'package:stria/widgets/collapsed_tracks_widget.dart';
 import 'package:stria/state/app_state.dart';
 import 'package:stria/theme/app_theme.dart';
 
@@ -121,6 +125,148 @@ void main() {
     state.redoSong();
     expect(state.song.songPlanEnabled, isTrue);
   });
+
+  testWidgets(
+    'Song track indicators follow executing plan mutes without changing live state',
+    (tester) async {
+      state.song.patterns = [pattern(40, lines: 2)];
+      state.setSongPlanStep(0, SongPlanStep(patternIndex: 0, muteMask: 1));
+      state.setSongPlanStep(1, SongPlanStep(patternIndex: 0, muteMask: 0x8000));
+      state.toggleTrackMixerMute(2);
+      state.toggleTrackMixerSolo(0);
+      state.setSongPlanEnabled(true);
+      await tester.pumpWidget(
+        AppStateScope(
+          state: state,
+          child: MaterialApp(
+            theme: buildAppTheme(),
+            builder: (context, child) => MediaQuery(
+              data: MediaQuery.of(
+                context,
+              ).copyWith(textScaler: TextScaler.linear(0.4)),
+              child: child!,
+            ),
+            home: const Scaffold(body: SongScreen()),
+          ),
+        ),
+      );
+      String? status(int track) => tester
+          .widget<Text>(find.byKey(ValueKey('song-track-status-$track')))
+          .data;
+      expect(status(0), 'S');
+      expect(status(2), 'M');
+      expect(status(15), '16');
+      expect(state.isTrackEffectivelyMuted(0), isFalse);
+      await state.playSongPlan();
+      await tester.pump();
+      expect(status(0), 'M'); // Plan mute wins over live solo.
+      expect(status(2), 'M');
+      expect(status(15), '16'); // Prepared later steps do not affect display.
+      expect(state.song.patterns.first.tracks[0].mixerMute, isFalse);
+      advances = 2;
+      await tester.pump(const Duration(milliseconds: 32));
+      await tester.pump();
+      expect(state.selectedSongPlanStep, 0);
+      expect(state.playingSongPlanStep, 1);
+      expect(status(0), 'S');
+      expect(status(15), 'M');
+      await tester.longPress(
+        find.byKey(const ValueKey('song-track-status-15')),
+      );
+      await tester.pump();
+      expect(status(0), '1');
+      expect(status(2), '3');
+      expect(status(15), 'M'); // Live reset does not erase plan settings.
+      expect(state.song.planStepAt(1).muteMask, 0x8000);
+      state.toggleTrackMixerMute(2);
+      state.stop();
+      await tester.pump();
+      expect(status(2), 'M');
+      expect(status(15), '16');
+      expect(state.isTrackEffectivelyMuted(15), isFalse);
+      state.setSongPlanEnabled(false);
+      await state.play();
+      await tester.pump();
+      expect(status(0), '1');
+      expect(status(15), '16');
+      expect(status(2), 'M');
+      state.stop();
+      state.setSongPlanEnabled(true);
+      state.setActiveTabIndex(1);
+      await state.play();
+      await tester.pump();
+      expect(state.playingSongPlan, isFalse);
+      expect(status(0), '1');
+      expect(status(15), '16');
+      state.stop();
+      await tester.pump();
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'Pattern, collapsed and Mixer displays include plan mutes only while playing',
+    (tester) async {
+      state.song.patterns = [pattern(40, lines: 2)];
+      state.setSongPlanStep(0, SongPlanStep(patternIndex: 0, muteMask: 1));
+      state.setSongPlanEnabled(true);
+      await state.playSongPlan();
+      Future<void> display(Widget screen) async {
+        await tester.pumpWidget(
+          AppStateScope(
+            state: state,
+            child: MaterialApp(
+              theme: buildAppTheme(),
+              builder: (context, child) => MediaQuery(
+                data: MediaQuery.of(
+                  context,
+                ).copyWith(textScaler: TextScaler.linear(0.4)),
+                child: child!,
+              ),
+              home: Scaffold(body: screen),
+            ),
+          ),
+        );
+        await tester.pump();
+      }
+
+      await display(const PatternScreen());
+      expect(find.text('M'), findsOneWidget);
+      await display(const CollapsedTracksWidget());
+      expect(
+        tester
+            .widget<Text>(
+              find.byKey(const ValueKey('collapsed-track-status-0')),
+            )
+            .data,
+        'M',
+      );
+      await display(const MixerScreen());
+      expect(
+        tester.widget<Text>(find.text('M').at(1)).style!.color,
+        kColRecBtn,
+      );
+      state.stop();
+      await tester.pump();
+      expect(
+        tester.widget<Text>(find.text('M').at(1)).style!.color,
+        kMixerLabelColor,
+      );
+      expect(state.song.patterns.first.tracks[0].mixerMute, isFalse);
+      await display(const CollapsedTracksWidget());
+      expect(
+        tester
+            .widget<Text>(
+              find.byKey(const ValueKey('collapsed-track-status-0')),
+            )
+            .data,
+        'T01',
+      );
+      await display(const PatternScreen());
+      expect(find.text('M'), findsNothing);
+      expect(tester.takeException(), isNull);
+    },
+  );
 
   test(
     'iterator follows steps, partial lines, repeats, then loops from 01',
@@ -378,6 +524,123 @@ void main() {
   );
 
   test(
+    'queued masks follow counted groups, repeats and step changes without changing live mutes',
+    () async {
+      state.song.patterns = [pattern(40, lines: 2), pattern(60, lines: 2)];
+      state.song.patterns[0].tracks[2].mixerMute = true;
+      state.song.patterns[0].tracks[3].mixerSolo = true;
+      state.setSongPlanStep(
+        0,
+        SongPlanStep(
+          patternIndex: 0,
+          count: 2,
+          repeats: 2,
+          startLine: 2,
+          muteMask: 0x8001,
+        ),
+      );
+      state.setSongPlanStep(1, SongPlanStep(patternIndex: 0, endLine: 1));
+      state.setSongPlanEnabled(true);
+      await state.play();
+      final flags =
+          calls.firstWhere((c) => c.method == 'configureSongPlanRows').arguments
+              as Map;
+      expect((flags['muteMasks'] as List).take(5), [
+        0x8001,
+        0x8001,
+        0x8001,
+        0x8001,
+        0,
+      ]);
+      expect(
+        (flags['muteMasks'] as List).length,
+        rowsFor('enqueueAllPlaybackRows').length,
+      );
+      final pending =
+          calls.lastWhere((c) => c.method == 'configureSongPlanRows').arguments
+              as Map;
+      expect(
+        (pending['muteMasks'] as List).length,
+        rowsFor('scheduleNextLoopRows').length,
+      );
+      expect(state.song.patterns[0].tracks[0].mixerMute, isFalse);
+      expect(state.song.patterns[0].tracks[2].mixerMute, isTrue);
+      expect(state.song.patterns[0].tracks[3].mixerSolo, isTrue);
+      expect(() => state.toggleSongPlanTrackMute(1), throwsStateError);
+      state.stop();
+      expect(state.song.patterns[0].tracks[2].mixerMute, isTrue);
+      expect(state.song.patterns[0].tracks[3].mixerSolo, isTrue);
+      expect(
+        calls.where((c) => c.method == 'clearQueuedPlaybackRows'),
+        isNotEmpty,
+      );
+    },
+  );
+
+  testWidgets(
+    'mute row follows selection and playback and toggles only while stopped',
+    (tester) async {
+      state.song.patterns = [pattern(40, lines: 2)];
+      state.setSongPlanStep(1, SongPlanStep(patternIndex: 0, muteMask: 2));
+      state.setSongPlanEnabled(true);
+      await show(tester);
+      final trackOne = find.byKey(const ValueKey('song-plan-mute-0'));
+      final trackTwo = find.byKey(const ValueKey('song-plan-mute-1'));
+      String? text(Finder track) => tester
+          .widget<Text>(find.descendant(of: track, matching: find.byType(Text)))
+          .data;
+      expect(text(trackOne), '1');
+      await tester.tap(trackOne);
+      await tester.pump();
+      expect(text(trackOne), 'M');
+      expect(state.song.planStepAt(0).muteMask, 1);
+      await tester.tap(trackOne);
+      await tester.pump();
+      expect(text(trackOne), '1');
+      await tester.tap(cell(2, 0));
+      await tester.pump();
+      expect(find.text('STEP 02 MUTES'), findsOneWidget);
+      expect(text(trackTwo), 'M');
+      await tester.tap(cell(1, 0));
+      await tester.pump();
+      await tester.tap(find.text('PLAY'));
+      await tester.pump();
+      advances = 2;
+      await tester.pump(const Duration(milliseconds: 32));
+      await tester.pump();
+      expect(find.text('STEP 02 MUTES'), findsOneWidget);
+      expect(text(trackTwo), 'M');
+      await tester.tap(trackTwo);
+      await tester.pump();
+      expect(state.song.planStepAt(1).muteMask, 2);
+      await tester.tap(find.text('STOP'));
+      await tester.pump();
+      expect(find.text('STEP 01 MUTES'), findsOneWidget);
+      expect(text(trackTwo), '2');
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets('narrow mute row scrolls to track 16 without overflow', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(320, 640));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await show(tester);
+    final lastTrack = find.byKey(const ValueKey('song-plan-mute-15'));
+    final muteScroll = find.ancestor(
+      of: lastTrack,
+      matching: find.byType(SingleChildScrollView),
+    );
+    await tester.drag(muteScroll, const Offset(-400, 0));
+    await tester.pumpAndSettle();
+    await tester.tap(lastTrack);
+    await tester.pump();
+    expect(state.song.planStepAt(0).muteMask, 0x8000);
+    expect(tester.takeException(), isNull);
+  });
+
+  test(
     '999 repeats remain bounded and chance is evaluated per occurrence',
     () async {
       final music = pattern(49, lines: 1);
@@ -442,7 +705,10 @@ void main() {
         PatternModel(name: 'Separator'),
         pattern(60),
       ];
-      state.setSongPlanStep(0, SongPlanStep(patternIndex: 3, repeats: 64));
+      state.setSongPlanStep(
+        0,
+        SongPlanStep(patternIndex: 3, repeats: 64, muteMask: 0xffff),
+      );
       state.setLoopPlaybackEnabled(true);
       await state.play();
       expect(state.playingSongPlan, isFalse);

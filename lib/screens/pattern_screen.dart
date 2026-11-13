@@ -138,7 +138,7 @@ class _PatternScreenState extends State<PatternScreen> {
                 const SizedBox(width: 8),
                 _MuteSoloBtn(
                   soloed: state.currentPattern.tracks[trackIdx].mixerSolo,
-                  muted: state.currentPattern.tracks[trackIdx].mixerMute,
+                  muted: state.isTrackEffectivelyMuted(trackIdx),
                   onTap: () => state.handleTrackLiveTap(trackIdx),
                 ),
               ] else ...[
