@@ -5231,7 +5231,13 @@ class AppState extends ChangeNotifier {
   bool _isSongPlanAction(String? label) =>
       label == 'edit song plan' ||
       label == 'reset song plan' ||
-      label == 'switch song plan';
+      label == 'switch song plan' ||
+      _isSongPlanStructureAction(label);
+
+  bool _isSongPlanStructureAction(String? label) =>
+      label == 'move song plan step' ||
+      label == 'insert song plan step' ||
+      label == 'delete song plan step';
 
   bool get canUndoSong => _songUndo.canUndo &&
       (canEditSongPlan || !_isSongPlanAction(_songUndo.undoLabel));
@@ -5261,6 +5267,83 @@ class AppState extends ChangeNotifier {
     song.songPlan = null;
     _songStateVersion++;
     notifyListeners();
+  }
+
+  bool _isEmptyPlanPattern(int index) =>
+      index >= song.patterns.length || song.patterns[index].isEmpty;
+
+  int? get _emptySongPlanPattern {
+    if (_isEmptyPlanPattern(kMaxSongPatterns - 1)) return kMaxSongPatterns - 1;
+    for (var index = 0; index < kMaxSongPatterns; index++) {
+      if (_isEmptyPlanPattern(index)) return index;
+    }
+    return null;
+  }
+
+  String? get songPlanInsertError {
+    if (_selectedSongPlanStep == kMaxSongPatterns - 1) {
+      return 'Cannot insert after step 99.';
+    }
+    final last = song.planStepAt(kMaxSongPatterns - 1);
+    if (!_isEmptyPlanPattern(last.patternIndex) ||
+        last != SongPlanStep(patternIndex: last.patternIndex)) {
+      return 'Cannot insert: step 99 contains music or custom settings. '
+          'Move or delete it first.';
+    }
+    return null;
+  }
+
+  String? get songPlanDeleteError => _emptySongPlanPattern == null
+      ? 'Cannot delete: all 99 patterns contain music. '
+          'An empty pattern is needed for the final plan row.'
+      : null;
+
+  void _applySongPlanStructure(
+    List<SongPlanStep> plan,
+    int selected,
+    String label,
+  ) {
+    _pushSongUndo(label);
+    song.songPlan = List.unmodifiable(plan);
+    _selectedSongPlanStep = selected;
+    _songStateVersion++;
+    notifyListeners();
+  }
+
+  void moveSongPlanStep(int direction) {
+    if (!canEditSongPlan) throw StateError('Stop playback before editing Song Plan.');
+    if (direction != -1 && direction != 1) {
+      throw ArgumentError.value(direction, 'direction', 'Must be -1 or 1.');
+    }
+    final from = _selectedSongPlanStep;
+    final to = from + direction;
+    RangeError.checkValueInInterval(to, 0, kMaxSongPatterns - 1, 'destination');
+    final plan = List.generate(kMaxSongPatterns, song.planStepAt);
+    final step = plan[from];
+    plan[from] = plan[to];
+    plan[to] = step;
+    _applySongPlanStructure(plan, to, 'move song plan step');
+  }
+
+  void insertSongPlanStepAfter(SongPlanStep step) {
+    if (!canEditSongPlan) throw StateError('Stop playback before editing Song Plan.');
+    final error = songPlanInsertError;
+    if (error != null) throw StateError(error);
+    final index = _selectedSongPlanStep + 1;
+    final plan = List.generate(kMaxSongPatterns, song.planStepAt);
+    plan.removeLast();
+    plan.insert(index, step);
+    _applySongPlanStructure(plan, index, 'insert song plan step');
+  }
+
+  void deleteSongPlanStep() {
+    if (!canEditSongPlan) throw StateError('Stop playback before editing Song Plan.');
+    final emptyPattern = _emptySongPlanPattern;
+    if (emptyPattern == null) throw StateError(songPlanDeleteError!);
+    final plan = List.generate(kMaxSongPatterns, song.planStepAt);
+    plan.removeAt(_selectedSongPlanStep);
+    plan.add(SongPlanStep(patternIndex: emptyPattern));
+    _applySongPlanStructure(plan, _selectedSongPlanStep, 'delete song plan step');
   }
 
   void toggleSongPlanTrackMute(int trackIndex) {
@@ -5294,6 +5377,7 @@ class AppState extends ChangeNotifier {
     'patterns': song.patterns.map((p) => p.toJson()).toList(),
     'songPlan': song.songPlan?.map((step) => step.toJson()).toList(),
     'songPlanEnabled': song.songPlanEnabled,
+    'selectedSongPlanStep': _selectedSongPlanStep,
     'inserts': _insertSnapshot,
     'trackInsertOccupied': _trackInsertOccupied,
     'trackInsertEffectNames': _trackInsertEffectNames,
@@ -5310,7 +5394,11 @@ class AppState extends ChangeNotifier {
   /// [json], clamp indices, and re-sync the native engine's insert slots
   /// (cleared first, since the restored rack may have fewer/more active
   /// effects than what's currently loaded).
-  void _restoreArrangementFromJson(String json, {bool planOnly = false}) {
+  void _restoreArrangementFromJson(
+    String json, {
+    bool planOnly = false,
+    bool restorePlanSelection = false,
+  }) {
     final raw = jsonDecode(json) as Map<String, dynamic>;
     final restoredPlan = SongModel.readSongPlan(raw['songPlan']);
     if (jsonEncode(song.songPlan?.map((step) => step.toJson()).toList()) !=
@@ -5321,6 +5409,9 @@ class AppState extends ChangeNotifier {
     final restoredEnabled = (raw['songPlanEnabled'] as bool?) ?? false;
     if (song.songPlanEnabled != restoredEnabled) _songStateVersion++;
     song.songPlanEnabled = restoredEnabled;
+    if (restorePlanSelection) {
+      _selectedSongPlanStep = raw['selectedSongPlanStep'] as int;
+    }
     if (planOnly) return;
     final patternsRaw = raw['patterns'] as List<dynamic>;
     song.patterns = patternsRaw
@@ -5362,7 +5453,11 @@ class AppState extends ChangeNotifier {
     final entry = _songUndo.popUndoSwap(_songArrangementJson());
     if (entry == null) return;
     final planOnly = _isSongPlanAction(entry.label);
-    _restoreArrangementFromJson(entry.json, planOnly: planOnly);
+    _restoreArrangementFromJson(
+      entry.json,
+      planOnly: planOnly,
+      restorePlanSelection: _isSongPlanStructureAction(entry.label),
+    );
     // Mixer fields (volume/pan/mute/solo/send) may have changed as part of
     // the restored arrangement (e.g. full-track swap/move) — re-sync the
     // native audio engine so live playback matches immediately.
@@ -5376,7 +5471,11 @@ class AppState extends ChangeNotifier {
     final entry = _songUndo.popRedoSwap(_songArrangementJson());
     if (entry == null) return;
     final planOnly = _isSongPlanAction(entry.label);
-    _restoreArrangementFromJson(entry.json, planOnly: planOnly);
+    _restoreArrangementFromJson(
+      entry.json,
+      planOnly: planOnly,
+      restorePlanSelection: _isSongPlanStructureAction(entry.label),
+    );
     if (!planOnly) _queueCurrentMixerSnapshotToEngine();
     notifyListeners();
   }

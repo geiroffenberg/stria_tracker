@@ -16,6 +16,7 @@ enum _SongMenuAction {
   newSong,
   saveSong,
   loadSong,
+  editName,
   songPlan,
   chooseProjectFolder,
   showProjectPath,
@@ -635,18 +636,20 @@ class _SongScreenState extends State<SongScreen> {
                   ),
                 ),
                 if (state.song.songPlanEnabled)
-                  Padding(
-                    padding: const EdgeInsets.only(right: 4),
-                    child: Tooltip(
-                      message: 'Song Plan ON: planned song playback',
-                      child: Icon(Icons.route, size: 20, color: kColAccent),
+                  IconButton(
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(
+                      minWidth: 32,
+                      minHeight: 32,
+                    ),
+                    tooltip: 'Song Plan ON: open Song Plan',
+                    icon: Icon(Icons.route, size: 20, color: kColAccent),
+                    onPressed: () => _handleSongMenuAction(
+                      ctx,
+                      state,
+                      _SongMenuAction.songPlan,
                     ),
                   ),
-                GestureDetector(
-                  onTap: () => _startRename(state),
-                  child: Icon(Icons.edit, size: 22, color: kColInactive),
-                ),
-                const SizedBox(width: 4),
                 IconButton(
                   padding: EdgeInsets.zero,
                   constraints: const BoxConstraints(
@@ -698,6 +701,10 @@ class _SongScreenState extends State<SongScreen> {
                     const PopupMenuItem(
                       value: _SongMenuAction.loadSong,
                       child: Text('Load Song', style: TextStyle(fontSize: 16)),
+                    ),
+                    const PopupMenuItem(
+                      value: _SongMenuAction.editName,
+                      child: Text('Edit name', style: TextStyle(fontSize: 16)),
                     ),
                     const PopupMenuItem(
                       value: _SongMenuAction.songPlan,
@@ -989,6 +996,9 @@ class _SongScreenState extends State<SongScreen> {
         break;
       case _SongMenuAction.loadSong:
         _handleLoadMenu(ctx, state);
+        break;
+      case _SongMenuAction.editName:
+        _startRename(state);
         break;
       case _SongMenuAction.songPlan:
         Navigator.of(ctx).push<void>(

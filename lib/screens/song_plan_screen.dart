@@ -50,6 +50,9 @@ class SongPlanScreen extends StatelessWidget {
                   'START/END apply to every pattern. Automatic END follows each pattern length; '
                   'the table shows the first pattern end. Empty patterns stop the run. '
                   'While stopped, tap STEP to select, or tap another value to select and edit. '
+                  'The fixed UP/DOWN/INS/DEL bar moves, inserts after, or deletes the selected step. '
+                  'All step settings move together. Insert opens an editor; Delete asks for confirmation. '
+                  'These actions support Song View undo/redo. Long press has no action. '
                   'Switching mode, editing, and selecting are disabled during playback. '
                   'The mute row shows the selected step when stopped and the playing step when running. '
                   'Tap a track number to mute it (M); tap M to clear it. '
@@ -183,6 +186,7 @@ class SongPlanScreen extends StatelessWidget {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
+                _stepActions(context, state),
                 _muteRow(state),
                 SizedBox(
                   height: 76,
@@ -210,6 +214,130 @@ class SongPlanScreen extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  Widget _stepActions(BuildContext context, AppState state) {
+    final selected = state.selectedSongPlanStep;
+    return Container(
+      height: 56,
+      color: kBgTrackHeader,
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
+      child: Row(
+        children: [
+          _stepAction(
+            'UP',
+            'Move selected step up',
+            state.canEditSongPlan && selected > 0
+                ? () => state.moveSongPlanStep(-1)
+                : null,
+          ),
+          _stepAction(
+            'DOWN',
+            'Move selected step down',
+            state.canEditSongPlan && selected < kMaxSongPatterns - 1
+                ? () => state.moveSongPlanStep(1)
+                : null,
+          ),
+          _stepAction(
+            'INS',
+            state.songPlanInsertError ?? 'Insert after selected step',
+            state.canEditSongPlan && state.songPlanInsertError == null
+                ? () => _editStep(context, state, selected, insert: true)
+                : null,
+          ),
+          _stepAction(
+            'DEL',
+            state.songPlanDeleteError ?? 'Delete selected step',
+            state.canEditSongPlan && state.songPlanDeleteError == null
+                ? () => _deleteStep(context, state)
+                : null,
+            color: kColStopBtn,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _stepAction(
+    String label,
+    String tooltip,
+    VoidCallback? onTap, {
+    Color? color,
+  }) {
+    final foreground = onTap == null ? kColInactive : color ?? kColAccent;
+    return Expanded(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 2),
+        child: Tooltip(
+          message: tooltip,
+          child: Semantics(
+            button: true,
+            enabled: onTap != null,
+            child: GestureDetector(
+              key: ValueKey('song-plan-action-$label'),
+              onTap: onTap,
+              child: Container(
+                height: 44,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: foreground.withAlpha(20),
+                  border: Border.all(color: foreground),
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Text(
+                    label,
+                    style: kStyleBase.copyWith(
+                      color: foreground,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 0.5,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _deleteStep(BuildContext context, AppState state) async {
+    final song = state.song;
+    final index = state.selectedSongPlanStep;
+    final version = state.songStateVersion;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Delete step ${(index + 1).toString().padLeft(2, '0')}?'),
+        content: const Text(
+          'Later steps shift up. The final row will reference an empty pattern. '
+          'Patterns and notes are not deleted.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !context.mounted) return;
+    if (!_canApplyStepDialog(context, state, song, index, version)) return;
+    final error = state.songPlanDeleteError;
+    if (error != null) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(error)));
+      return;
+    }
+    state.deleteSongPlanStep();
   }
 
   Widget _muteRow(AppState state) {
@@ -280,32 +408,59 @@ class SongPlanScreen extends StatelessWidget {
   Future<void> _editStep(
     BuildContext context,
     AppState state,
-    int index,
-  ) async {
+    int index, {
+    bool insert = false,
+  }) async {
     if (!state.canEditSongPlan) return;
     final song = state.song;
+    final version = state.songStateVersion;
     final step = await showDialog<SongPlanStep>(
       context: context,
-      builder: (_) => _SongPlanStepDialog(song: song, index: index),
+      builder: (_) =>
+          _SongPlanStepDialog(song: song, index: index, insert: insert),
     );
     if (step == null || !context.mounted) return;
+    if (!_canApplyStepDialog(context, state, song, index, version)) return;
+    if (insert) {
+      final error = state.songPlanInsertError;
+      if (error != null) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(error)));
+        return;
+      }
+      state.insertSongPlanStepAfter(step);
+    } else {
+      state.setSongPlanStep(index, step);
+    }
+  }
+
+  bool _canApplyStepDialog(
+    BuildContext context,
+    AppState state,
+    SongModel song,
+    int index,
+    int version,
+  ) {
     if (!state.canEditSongPlan) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Stop playback before editing Song Plan.'),
         ),
       );
-      return;
+      return false;
     }
-    if (!identical(song, state.song)) {
+    if (!identical(song, state.song) ||
+        state.selectedSongPlanStep != index ||
+        state.songStateVersion != version) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Song changed. Reopen the step to edit it.'),
+          content: Text('Song or step changed. Reopen the step action.'),
         ),
       );
-      return;
+      return false;
     }
-    state.setSongPlanStep(index, step);
+    return true;
   }
 
   Future<void> _resetPlan(BuildContext context, AppState state) async {
@@ -372,8 +527,13 @@ class SongPlanScreen extends StatelessWidget {
 class _SongPlanStepDialog extends StatefulWidget {
   final SongModel song;
   final int index;
+  final bool insert;
 
-  const _SongPlanStepDialog({required this.song, required this.index});
+  const _SongPlanStepDialog({
+    required this.song,
+    required this.index,
+    this.insert = false,
+  });
 
   @override
   State<_SongPlanStepDialog> createState() => _SongPlanStepDialogState();
@@ -388,11 +548,17 @@ class _SongPlanStepDialogState extends State<_SongPlanStepDialog> {
   late final TextEditingController _repeat;
   late bool _followEnd;
   int? _fixedEnd;
+  late final SongPlanStep _initialStep;
 
   @override
   void initState() {
     super.initState();
-    final step = widget.song.planStepAt(widget.index);
+    final step = widget.insert
+        ? SongPlanStep(
+            patternIndex: widget.song.planStepAt(widget.index).patternIndex,
+          )
+        : widget.song.planStepAt(widget.index);
+    _initialStep = step;
     final lines = widget.song.planPatternLines(step);
     _pattern = TextEditingController(text: '${step.patternIndex + 1}');
     _count = TextEditingController(text: '${step.count}');
@@ -431,7 +597,9 @@ class _SongPlanStepDialogState extends State<_SongPlanStepDialog> {
     return AlertDialog(
       backgroundColor: kBgTrackHeader,
       title: Text(
-        'Edit step ${(widget.index + 1).toString().padLeft(2, '0')}',
+        widget.insert
+            ? 'Insert after step ${(widget.index + 1).toString().padLeft(2, '0')}'
+            : 'Edit step ${(widget.index + 1).toString().padLeft(2, '0')}',
         style: kStyleHeader.copyWith(color: kColAccent, fontSize: 16),
       ),
       content: SingleChildScrollView(
@@ -531,7 +699,7 @@ class _SongPlanStepDialogState extends State<_SongPlanStepDialog> {
                 count: int.parse(_count.text),
                 startLine: int.parse(_start.text),
                 endLine: _fixedEnd,
-                muteMask: widget.song.planStepAt(widget.index).muteMask,
+                muteMask: _initialStep.muteMask,
                 repeats: int.parse(_repeat.text),
               ),
             );

@@ -113,7 +113,7 @@ Track numbers (1–16) are fixed and cannot be reordered — tapping or double-t
 
 ## Undo / Redo
 
-The Song screen header contains two arrow buttons — **undo** (left) and **redo** (right) — next to the edit and menu icons.
+The Song screen header contains two arrow buttons — **undo** (left) and **redo** (right) — next to the menu icon.
 
 - Up to **50 undo steps** are stored per session.
 - Every song-level mutation is tracked: append pattern, insert pattern, move up/down, duplicate, merge, double, and delete.
@@ -131,6 +131,7 @@ The top-right menu provides:
 | New Song | Clear everything and start fresh |
 | Save Song | Write the project to the project folder |
 | Load Song | Open a scrollable list of saved projects in a bottom sheet; tap a name to load |
+| Edit name | Edit the song name in the header; confirm with the check mark or cancel with the cross |
 | Song Plan | Edit a saved playback plan and switch planned playback ON/OFF |
 | Choose Project Folder | Set the root folder where projects are saved |
 | Export WAV | Bounce the full song to a stereo WAV file |
@@ -159,7 +160,8 @@ automatically enable it.
   looping islands separated by empty pattern rows. An edited plan is ignored.
 - **ON** plays the plan's patterns, line ranges, and repeats. Song View follows
   the plan; Song View row taps cannot override it during playback. A route icon
-  beside the song name indicates that planned song playback is enabled.
+  beside the song name indicates that planned song playback is
+  enabled. Tap this icon to open Song Plan directly.
 - Pattern View's own Play still plays the current pattern/range. Song Plan's
   Play uses the enabled plan regardless of which tab was previously active.
 
@@ -194,6 +196,32 @@ Use **Save Song** in the Song screen menu to save the whole song, including its
 plan. Autosave also includes the plan; there is no separate Song Plan save button.
 The reset icon restores the automatic sequential default after confirmation.
 Plan edits and resets participate in Song View's undo/redo.
+
+### Moving, inserting, and deleting steps
+
+The permanent action bar above the mute row uses the same button style as
+Song View. It acts on the selected step and is disabled during playback.
+Long press has no assigned action.
+
+- **UP / DOWN** swap the selected step with its neighbour. Selection follows
+  the moved step. Moving beyond step 01 or 99 is disabled.
+- **INS** opens the step editor to insert **after** the selected step. Pattern
+  starts at the selected step's pattern; all other fields and mutes use their
+  defaults. **Apply** inserts and selects the new step, shifting later steps
+  down; **Cancel** changes nothing.
+- **DEL** asks for confirmation, then removes the selected step and shifts later
+  steps up. Selection stays at the same row. The final row becomes a default
+  step referencing an empty pattern (preferably pattern 99). Delete is disabled
+  if all 99 patterns contain music.
+
+The plan always retains 99 steps. Insert is disabled at step 99, or if the last
+step references music or has custom settings: it never silently discards them.
+Disabled Insert/Delete buttons explain the restriction in their tooltips.
+Move or delete the protected last step first to make room.
+Each action is one Song View undo/redo operation, including restoring selection.
+All step fields, including count, repeats, line limits, and mutes, move together.
+Pattern references do not change, and no pattern notes or live mixer settings
+are modified. Save Song and autosave preserve the resulting plan as usual.
 
 If a pattern becomes shorter than a step's start line, that step is shown in
 the palette's stop colour. Edit it to choose a valid range; the start is not

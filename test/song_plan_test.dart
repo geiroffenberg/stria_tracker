@@ -739,6 +739,8 @@ void main() {
     );
     await tester.pumpAndSettle();
     final before = jsonEncode(state.song.toJson());
+    expect(find.byIcon(Icons.route), findsNothing);
+    expect(find.byIcon(Icons.edit), findsNothing);
 
     await tester.tap(find.byTooltip('Song actions'));
     await tester.pumpAndSettle();
@@ -752,6 +754,43 @@ void main() {
     expect(find.byTooltip('Song actions'), findsOneWidget);
     expect(jsonEncode(state.song.toJson()), before);
     expect(state.isPlaying, isFalse);
+
+    state.setSongPlanEnabled(true);
+    await tester.pumpAndSettle();
+    final enabledSong = jsonEncode(state.song.toJson());
+    final shortcut = find.byTooltip('Song Plan ON: open Song Plan');
+    expect(shortcut, findsOneWidget);
+    expect(find.byIcon(Icons.edit), findsNothing);
+    await tester.tap(shortcut);
+    await tester.pumpAndSettle();
+    expect(find.byType(SongPlanScreen), findsOneWidget);
+    await tester.pageBack();
+    await tester.pumpAndSettle();
+    expect(find.byType(SongPlanScreen), findsNothing);
+    expect(jsonEncode(state.song.toJson()), enabledSong);
+    expect(state.isPlaying, isFalse);
+
+    await tester.tap(find.byTooltip('Song actions'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Edit name'));
+    await tester.pumpAndSettle();
+    final nameField = find.widgetWithText(TextField, 'Song name');
+    expect(nameField, findsOneWidget);
+    await tester.enterText(nameField, 'Cancelled name');
+    await tester.tap(find.byIcon(Icons.close));
+    await tester.pumpAndSettle();
+    expect(jsonEncode(state.song.toJson()), enabledSong);
+
+    await tester.tap(find.byTooltip('Song actions'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Edit name'));
+    await tester.pumpAndSettle();
+    await tester.enterText(nameField, 'Renamed Song');
+    await tester.tap(find.byIcon(Icons.check));
+    await tester.pumpAndSettle();
+    expect(state.song.name, 'Renamed Song');
+    expect(find.text('Renamed Song'), findsOneWidget);
+    expect(find.byType(TextField), findsNothing);
     expect(tester.takeException(), isNull);
   });
 }
