@@ -393,6 +393,18 @@ The master strip sits at the far right. It has volume and mute controls and shar
 
 The Sampler plays an audio file loaded from storage.
 
+#### Loading Samples
+
+The browser keeps per-row **LOAD** for loading one sample into the current
+sampler and play buttons for previewing. Check samples to show
+**LOAD SELECTED (N)** at the bottom. Selected samples load in browser-list
+order: first into the current sampler, then into empty slots, searching
+forward and wrapping around. Other occupied instruments are never overwritten.
+Selection clears when changing folders. Insufficient space loads nothing;
+a file error stops the batch and reports the loaded count and failed file.
+Successful loads remain. Closing and browser controls are disabled while
+loading; use Close or Back when idle.
+
 #### Parameters
 
 | Parameter | Range | Description |

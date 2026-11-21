@@ -6,6 +6,23 @@
 
 The Sampler plays an audio file loaded from storage.
 
+### Loading Samples
+
+- Tap **SAMPLE** to open the sample browser. The play button previews a sample
+  in the current sampler, as before.
+- Each row's **LOAD** loads only that sample into the current sampler,
+  regardless of any checked boxes.
+- Check samples and tap **LOAD SELECTED (N)** at the bottom to load them in
+  browser-list order. The first replaces the current sampler's sample; the
+  rest fill empty instrument slots, searching forward and wrapping around.
+  Other occupied instruments are never overwritten.
+- Selection applies to the current folder and clears when changing folders.
+- If there are not enough slots, nothing is loaded. If a file fails during
+  loading, the batch stops and reports how many samples loaded and which file
+  failed. Successfully loaded samples remain in their slots.
+- Browser controls and closing are disabled while loading. Use the close
+  button or Back to leave the browser when idle.
+
 ### Parameters
 
 | Parameter | Range | Description |

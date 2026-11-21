@@ -7224,34 +7224,86 @@ class AppState extends ChangeNotifier {
   Future<String?> loadSamplerSampleFromPath(
     String path, {
     String? displayName,
+    int? slot,
   }) async {
+    final targetSlot = slot ?? currentInstrumentIndex;
+    if (targetSlot < 0 || targetSlot >= instruments.length) {
+      return 'Invalid instrument slot';
+    }
+    final instrument = instruments[targetSlot];
     try {
       final file = File(path);
       if (!file.existsSync()) return 'File not found';
 
-      if (isPreviewingCurrentSampler) {
+      if (_previewSamplerSlot == targetSlot) {
         await stopPreviewCurrentSampler();
       }
 
       final ok = await AudioEngine.instance.setSamplerSample(
-        currentInstrumentIndex,
+        targetSlot,
         file.path,
       );
       if (!ok) {
         return 'Unsupported audio format (need WAV 8/16/24-bit PCM or 32-bit float)';
       }
 
-      final sp = currentInstrument.sampler;
+      final sp = instrument.sampler;
       sp.sampleName =
           displayName ?? file.path.split(Platform.pathSeparator).last;
       sp.samplePath = file.path;
       // Ensure the instrument type is set to sampler when a sample is loaded.
-      currentInstrument.type = InstrumentType.sampler;
+      instrument.type = InstrumentType.sampler;
       notifyListeners();
       return null;
     } catch (e) {
       return e.toString();
     }
+  }
+
+  /// Load the first sample into the current slot and the rest into empty slots.
+  /// Stop on the first error, preserving samples already loaded successfully.
+  Future<({int loaded, String? error})> loadSamplerSamplesFromPaths(
+    List<String> paths,
+  ) async {
+    if (paths.isEmpty) {
+      return (loaded: 0, error: 'No samples selected');
+    }
+    final targetSlots = <int>[currentInstrumentIndex];
+    for (var offset = 1; offset < instruments.length; offset++) {
+      final slot = (targetSlots.first + offset) % instruments.length;
+      if (instruments[slot].type == InstrumentType.empty) {
+        targetSlots.add(slot);
+      }
+    }
+    if (paths.length > targetSlots.length) {
+      return (
+        loaded: 0,
+        error:
+            '${paths.length} samples selected, but only ${targetSlots.length} '
+            'slots available (including the current sampler). Nothing loaded.',
+      );
+    }
+    for (var i = 0; i < paths.length; i++) {
+      final slot = targetSlots[i];
+      if (i > 0 && instruments[slot].type != InstrumentType.empty) {
+        return (
+          loaded: i,
+          error:
+              'Loaded $i of ${paths.length} samples. '
+              'Stopped: instrument slot ${slot + 1} is no longer empty.',
+        );
+      }
+      final error = await loadSamplerSampleFromPath(paths[i], slot: slot);
+      if (error != null) {
+        final name = paths[i].split(Platform.pathSeparator).last;
+        return (
+          loaded: i,
+          error:
+              'Loaded $i of ${paths.length} samples. Stopped at $name: $error',
+        );
+      }
+    }
+    return (loaded: paths.length, error: null);
   }
 
   /// Bake (or un-bake) time-stretching for the current instrument's sampler slot.

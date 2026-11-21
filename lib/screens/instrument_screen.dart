@@ -1780,219 +1780,393 @@ class _SamplerEditorState extends State<_SamplerEditor>
       context: context,
       backgroundColor: kBgTrackHeader,
       isScrollControlled: true,
+      isDismissible: false,
+      enableDrag: false,
       builder: (ctx) {
         // Start at last remembered folder, else user default folder, else
         // internal storage root.
         String currentFolder = _lastBrowserFolder ?? startFolder;
+        final selectedPaths = <String>{};
+        bool browserBusy = false;
         return StatefulBuilder(
           builder: (context, setSheetState) {
-            return SafeArea(
-              child: SizedBox(
-                height: MediaQuery.of(ctx).size.height * 0.7,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(12, 10, 12, 4),
-                      child: Row(
-                        children: [
-                          IconButton(
-                            onPressed: () {
-                              final parent = Directory(
-                                currentFolder,
-                              ).parent.path;
-                              if (parent == currentFolder ||
-                                  parent.isEmpty ||
-                                  currentFolder == internalRoot) {
-                                Navigator.of(ctx).pop();
-                                return;
-                              }
-                              currentFolder = parent;
-                              setSheetState(() {});
-                            },
-                            icon: const Icon(Icons.arrow_upward),
-                          ),
-                          Expanded(
-                            child: Text(
-                              currentFolder == internalRoot
-                                  ? 'INTERNAL STORAGE'
-                                  : currentFolder,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: kStyleHeader.copyWith(color: kColAccent),
+            return PopScope(
+              canPop: !browserBusy,
+              child: SafeArea(
+                child: SizedBox(
+                  height: MediaQuery.of(ctx).size.height * 0.7,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(12, 10, 12, 4),
+                        child: Row(
+                          children: [
+                            IconButton(
+                              onPressed: browserBusy
+                                  ? null
+                                  : () {
+                                      final parent = Directory(
+                                        currentFolder,
+                                      ).parent.path;
+                                      if (parent == currentFolder ||
+                                          parent.isEmpty ||
+                                          currentFolder == internalRoot) {
+                                        Navigator.of(ctx).pop();
+                                        return;
+                                      }
+                                      currentFolder = parent;
+                                      selectedPaths.clear();
+                                      setSheetState(() {});
+                                    },
+                              icon: const Icon(Icons.arrow_upward),
                             ),
-                          ),
-                          Text(
-                            'Default',
-                            style: kStyleHeader.copyWith(
-                              color: state.defaultSampleFolder == currentFolder
-                                  ? kColAccent
-                                  : kColHeader,
+                            Expanded(
+                              child: Text(
+                                currentFolder == internalRoot
+                                    ? 'INTERNAL STORAGE'
+                                    : currentFolder,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: kStyleHeader.copyWith(color: kColAccent),
+                              ),
                             ),
-                          ),
-                          IconButton(
-                            tooltip:
-                                'Set current folder as default sample folder',
-                            onPressed: () async {
-                              await state.setDefaultSampleFolder(currentFolder);
-                              _lastBrowserFolder = currentFolder;
-                              if (!mounted) return;
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                  content: Text(
-                                    'Default sample folder updated.',
-                                  ),
-                                  duration: Duration(seconds: 2),
-                                ),
-                              );
-                              setSheetState(() {});
-                            },
-                            icon: Icon(
-                              state.defaultSampleFolder == currentFolder
-                                  ? Icons.bookmark
-                                  : Icons.bookmark_border,
+                            Text(
+                              'Default',
+                              style: kStyleHeader.copyWith(
+                                color:
+                                    state.defaultSampleFolder == currentFolder
+                                    ? kColAccent
+                                    : kColHeader,
+                              ),
                             ),
-                          ),
-                        ],
+                            IconButton(
+                              tooltip:
+                                  'Set current folder as default sample folder',
+                              onPressed: browserBusy
+                                  ? null
+                                  : () async {
+                                      await state.setDefaultSampleFolder(
+                                        currentFolder,
+                                      );
+                                      _lastBrowserFolder = currentFolder;
+                                      if (!context.mounted) return;
+                                      ScaffoldMessenger.of(
+                                        context,
+                                      ).showSnackBar(
+                                        const SnackBar(
+                                          content: Text(
+                                            'Default sample folder updated.',
+                                          ),
+                                          duration: Duration(seconds: 2),
+                                        ),
+                                      );
+                                      setSheetState(() {});
+                                    },
+                              icon: Icon(
+                                state.defaultSampleFolder == currentFolder
+                                    ? Icons.bookmark
+                                    : Icons.bookmark_border,
+                              ),
+                            ),
+                            IconButton(
+                              tooltip: 'Close sample browser',
+                              onPressed: browserBusy
+                                  ? null
+                                  : () => Navigator.of(ctx).pop(),
+                              icon: const Icon(Icons.close),
+                            ),
+                          ],
+                        ),
                       ),
-                    ),
-                    const Divider(height: 1, color: Color(0xFF1A1A1A)),
-                    Expanded(
-                      child: Builder(
-                        builder: (_) {
-                          final activeFolder = currentFolder;
-                          final folders = _collectSubFolders(activeFolder);
-                          final samples = _collectPlayableSamples(activeFolder);
+                      const Divider(height: 1, color: Color(0xFF1A1A1A)),
+                      Expanded(
+                        child: Builder(
+                          builder: (_) {
+                            final activeFolder = currentFolder;
+                            final folders = _collectSubFolders(activeFolder);
+                            final samples = _collectPlayableSamples(
+                              activeFolder,
+                            );
 
-                          return ListView(
-                            children: [
-                              for (final folderPath in folders)
-                                ListTile(
-                                  dense: true,
-                                  leading: const Icon(Icons.folder),
-                                  title: Text(
-                                    _folderDisplayName(folderPath),
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: kStyleBase.copyWith(
-                                      color: kColHeader,
+                            return ListView(
+                              children: [
+                                for (final folderPath in folders)
+                                  ListTile(
+                                    dense: true,
+                                    leading: const Icon(Icons.folder),
+                                    title: Text(
+                                      _folderDisplayName(folderPath),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: kStyleBase.copyWith(
+                                        color: kColHeader,
+                                      ),
+                                    ),
+                                    onTap: browserBusy
+                                        ? null
+                                        : () {
+                                            currentFolder = folderPath;
+                                            selectedPaths.clear();
+                                            _lastBrowserFolder = folderPath;
+                                            setSheetState(() {});
+                                          },
+                                  ),
+                                if (samples.isEmpty)
+                                  Padding(
+                                    padding: const EdgeInsets.all(12),
+                                    child: Text(
+                                      'No playable samples in this folder.',
+                                      style: kStyleBase.copyWith(
+                                        color: kColInactive,
+                                        fontSize: 12,
+                                      ),
                                     ),
                                   ),
-                                  onTap: () {
-                                    currentFolder = folderPath;
-                                    _lastBrowserFolder = folderPath;
-                                    setSheetState(() {});
-                                  },
-                                ),
-                              if (samples.isEmpty)
-                                Padding(
-                                  padding: const EdgeInsets.all(12),
-                                  child: Text(
-                                    'No playable samples in this folder.',
-                                    style: kStyleBase.copyWith(
-                                      color: kColInactive,
-                                      fontSize: 12,
-                                    ),
-                                  ),
-                                ),
-                              for (final samplePath in samples)
-                                Builder(
-                                  builder: (_) {
-                                    final name = _sampleDisplayName(samplePath);
-                                    final isLoaded =
-                                        state
-                                            .currentInstrument
-                                            .sampler
-                                            .samplePath ==
-                                        samplePath;
-                                    final isPlaying =
-                                        isLoaded &&
-                                        state.isPreviewingCurrentSampler;
-                                    return ListTile(
-                                      dense: true,
-                                      leading: IconButton(
-                                        icon: Icon(
-                                          isPlaying
-                                              ? Icons.stop
-                                              : Icons.play_arrow,
-                                        ),
-                                        color: isPlaying
-                                            ? kColAccent
-                                            : kColHeader,
-                                        onPressed: () async {
-                                          String? err;
-                                          if (isPlaying) {
-                                            await state
-                                                .stopPreviewCurrentSampler();
-                                          } else {
-                                            err = await state
-                                                .loadSamplerSampleFromPath(
-                                                  samplePath,
-                                                  displayName: name,
-                                                );
-                                            err ??= await state
-                                                .startPreviewCurrentSampler();
-                                          }
-                                          setSheetState(() {});
-                                          if (!mounted || err == null) return;
-                                          ScaffoldMessenger.of(
-                                            context,
-                                          ).showSnackBar(
-                                            SnackBar(
-                                              content: Text(err),
-                                              duration: const Duration(
-                                                seconds: 2,
-                                              ),
-                                            ),
-                                          );
-                                        },
-                                      ),
-                                      title: Text(
-                                        name,
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: kStyleBase.copyWith(
-                                          color: isLoaded
-                                              ? kColAccent
-                                              : kColHeader,
-                                          fontWeight: isLoaded
-                                              ? FontWeight.w700
-                                              : FontWeight.normal,
-                                        ),
-                                      ),
-                                      trailing: TextButton(
-                                        onPressed: () async {
-                                          final err = await state
-                                              .loadSamplerSampleFromPath(
+                                for (final samplePath in samples)
+                                  Builder(
+                                    builder: (_) {
+                                      final name = _sampleDisplayName(
+                                        samplePath,
+                                      );
+                                      final isLoaded =
+                                          state
+                                              .currentInstrument
+                                              .sampler
+                                              .samplePath ==
+                                          samplePath;
+                                      final isPlaying =
+                                          isLoaded &&
+                                          state.isPreviewingCurrentSampler;
+                                      return ListTile(
+                                        dense: true,
+                                        leading: Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            Checkbox(
+                                              value: selectedPaths.contains(
                                                 samplePath,
-                                                displayName: name,
+                                              ),
+                                              activeColor: kColAccent,
+                                              onChanged: browserBusy
+                                                  ? null
+                                                  : (checked) {
+                                                      setSheetState(() {
+                                                        if (checked == true) {
+                                                          selectedPaths.add(
+                                                            samplePath,
+                                                          );
+                                                        } else {
+                                                          selectedPaths.remove(
+                                                            samplePath,
+                                                          );
+                                                        }
+                                                      });
+                                                    },
+                                            ),
+                                            IconButton(
+                                              icon: Icon(
+                                                isPlaying
+                                                    ? Icons.stop
+                                                    : Icons.play_arrow,
+                                              ),
+                                              color: isPlaying
+                                                  ? kColAccent
+                                                  : kColHeader,
+                                              onPressed: browserBusy
+                                                  ? null
+                                                  : () async {
+                                                      setSheetState(
+                                                        () =>
+                                                            browserBusy = true,
+                                                      );
+                                                      String? err;
+                                                      try {
+                                                        if (isPlaying) {
+                                                          await state
+                                                              .stopPreviewCurrentSampler();
+                                                        } else {
+                                                          err = await state
+                                                              .loadSamplerSampleFromPath(
+                                                                samplePath,
+                                                                displayName:
+                                                                    name,
+                                                              );
+                                                          err ??= await state
+                                                              .startPreviewCurrentSampler();
+                                                        }
+                                                      } catch (e) {
+                                                        err = e.toString();
+                                                      } finally {
+                                                        if (ctx.mounted) {
+                                                          setSheetState(
+                                                            () => browserBusy =
+                                                                false,
+                                                          );
+                                                        }
+                                                      }
+                                                      if (!context.mounted) {
+                                                        return;
+                                                      }
+                                                      if (!mounted ||
+                                                          err == null) {
+                                                        return;
+                                                      }
+                                                      ScaffoldMessenger.of(
+                                                        context,
+                                                      ).showSnackBar(
+                                                        SnackBar(
+                                                          content: Text(err),
+                                                          duration:
+                                                              const Duration(
+                                                                seconds: 2,
+                                                              ),
+                                                        ),
+                                                      );
+                                                    },
+                                            ),
+                                          ],
+                                        ),
+                                        title: Text(
+                                          name,
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: kStyleBase.copyWith(
+                                            color: isLoaded
+                                                ? kColAccent
+                                                : kColHeader,
+                                            fontWeight: isLoaded
+                                                ? FontWeight.w700
+                                                : FontWeight.normal,
+                                          ),
+                                        ),
+                                        trailing: TextButton(
+                                          onPressed: browserBusy
+                                              ? null
+                                              : () async {
+                                                  setSheetState(
+                                                    () => browserBusy = true,
+                                                  );
+                                                  final err = await state
+                                                      .loadSamplerSampleFromPath(
+                                                        samplePath,
+                                                        displayName: name,
+                                                      );
+                                                  if (!ctx.mounted) return;
+                                                  setSheetState(
+                                                    () => browserBusy = false,
+                                                  );
+                                                  if (err == null) {
+                                                    Navigator.of(ctx).pop();
+                                                    return;
+                                                  }
+                                                  ScaffoldMessenger.of(
+                                                    context,
+                                                  ).showSnackBar(
+                                                    SnackBar(
+                                                      content: Text(err),
+                                                      duration: const Duration(
+                                                        seconds: 2,
+                                                      ),
+                                                    ),
+                                                  );
+                                                },
+                                          child: const Text('LOAD'),
+                                        ),
+                                      );
+                                    },
+                                  ),
+                              ],
+                            );
+                          },
+                        ),
+                      ),
+                      if (selectedPaths.isNotEmpty) ...[
+                        const Divider(height: 1, color: Color(0xFF1A1A1A)),
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
+                          child: Column(
+                            children: [
+                              Text(
+                                'First sample: current sampler. Others: empty slots.',
+                                style: kStyleBase.copyWith(
+                                  color: kColInactive,
+                                  fontSize: 11,
+                                ),
+                                textAlign: TextAlign.center,
+                              ),
+                              const SizedBox(height: 8),
+                              Material(
+                                color: Colors.transparent,
+                                child: InkWell(
+                                  onTap: browserBusy
+                                      ? null
+                                      : () async {
+                                          final paths = selectedPaths.toList()
+                                            ..sort(
+                                              (a, b) => a
+                                                  .toLowerCase()
+                                                  .compareTo(b.toLowerCase()),
+                                            );
+                                          setSheetState(
+                                            () => browserBusy = true,
+                                          );
+                                          final result = await state
+                                              .loadSamplerSamplesFromPaths(
+                                                paths,
                                               );
-                                          if (!mounted || err == null) {
+                                          if (!ctx.mounted) return;
+                                          setSheetState(
+                                            () => browserBusy = false,
+                                          );
+                                          if (result.error == null ||
+                                              result.loaded > 0) {
                                             Navigator.of(ctx).pop();
-                                            return;
                                           }
+                                          if (!mounted) return;
                                           ScaffoldMessenger.of(
-                                            context,
+                                            this.context,
                                           ).showSnackBar(
                                             SnackBar(
-                                              content: Text(err),
-                                              duration: const Duration(
-                                                seconds: 2,
+                                              content: Text(
+                                                result.error ??
+                                                    'Loaded ${result.loaded} samples.',
+                                              ),
+                                              duration: Duration(
+                                                seconds: result.error == null
+                                                    ? 2
+                                                    : 5,
                                               ),
                                             ),
                                           );
                                         },
-                                        child: const Text('LOAD'),
+                                  child: Padding(
+                                    padding: const EdgeInsets.symmetric(
+                                      vertical: 12,
+                                    ),
+                                    child: Center(
+                                      child: Text(
+                                        browserBusy
+                                            ? 'LOADING...'
+                                            : 'LOAD SELECTED (${selectedPaths.length})',
+                                        style: kStyleHeader.copyWith(
+                                          color: browserBusy
+                                              ? kColInactive
+                                              : kColAccent,
+                                          fontSize: 13,
+                                          letterSpacing: 1.2,
+                                        ),
                                       ),
-                                    );
-                                  },
+                                    ),
+                                  ),
                                 ),
+                              ),
                             ],
-                          );
-                        },
-                      ),
-                    ),
-                  ],
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
                 ),
               ),
             );
