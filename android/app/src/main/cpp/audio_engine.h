@@ -195,6 +195,7 @@ struct Voice {
     int    sampleSlot        = -1;
     double samplePos         = 0.0;
     double sampleStep        = 1.0;
+    bool   samplerGlideActive = false;
     // Linear sampleStep ramp for SLU/SLD on sampler tracks.
     float  sampleStepRampPerSample = 0.0f; ///< sampleStep delta per sample (signed)
     float  sampleStepTarget        = 1.0f; ///< target sampleStep at ramp end
@@ -527,7 +528,8 @@ public:
     ///  filterAttack, filterDecay, filterSustain, filterRelease, filterEnvAmt,
     ///  attack, decay, sustain, release, glide, instVol, ...]
     /// note: 0-127 MIDI, -1 = hold/empty, -2 = note off,
-    ///       <= -1000 = pitch-only update, midi = -1000 - note.
+    ///       -1000..-1127 = pitch-only update, midi = -1000 - note.
+    ///       -2000..-2127 = sampler note-column pitch update with glide.
     /// volume: 0-255 sets voice level, -1 = no change.
     /// pan: 0-255 sets stereo position, -1 = no change.
     /// wave: 0=sine,1=tri,2=saw,3=square,4=pulse,5=noise.

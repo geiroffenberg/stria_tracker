@@ -1326,9 +1326,12 @@ void AudioEngine::triggerRowLocked(const std::vector<int>& rowData) {
         //  0..127   = note-on
         //  -1       = hold
         //  -2       = note-off
-        //  <= -1000 = pitch-only update, midi = -1000 - note
+        //  -1000..-1127 = pitch-only update, midi = -1000 - note
+        //  -2000..-2127 = sampler note-column pitch update with glide
         const bool pitchOnly = (n <= -1000);
-        const int pitchMidi = pitchOnly ? std::clamp(-1000 - n, 0, 127) : n;
+        const bool samplerNoteGlide = (n <= -2000);
+        const int pitchMidi = pitchOnly
+            ? std::clamp((samplerNoteGlide ? -2000 : -1000) - n, 0, 127) : n;
 
         const bool isSampler = (instrumentType == 1);
         const bool isKarplus = (instrumentType == 2);
@@ -1495,6 +1498,7 @@ void AudioEngine::triggerRowLocked(const std::vector<int>& rowData) {
             }
 
             if (n >= 0) {
+                v.samplerGlideActive = false;
                 // Only update the playback region on note-on.
                 // Hold rows must not overwrite the slice boundaries set by the
                 // triggering row's SL command.
@@ -1569,7 +1573,15 @@ void AudioEngine::triggerRowLocked(const std::vector<int>& rowData) {
                     v.midiNote = pitchMidi;
                     const float detuneSemitones = (v.detuneNorm - 0.5f) * 24.0f;
                     const float semis = static_cast<float>(pitchMidi - 60) + detuneSemitones;
-                    v.sampleStep = std::pow(2.0f, semis / 12.0f);
+                    const float targetStep = std::pow(2.0f, semis / 12.0f);
+                    if (samplerNoteGlide && v.glideSec > 0.0f) {
+                        v.pitchRampSamplesLeft = 0;
+                        v.sampleStepTarget = targetStep;
+                        v.samplerGlideActive = true;
+                    } else {
+                        v.samplerGlideActive = false;
+                        v.sampleStep = targetStep;
+                    }
                 }
             } else if (n == -2) {
                 // Note-off: always fade out over the release setting instead of
@@ -1912,6 +1924,7 @@ void AudioEngine::applyPitchRampsLocked(const std::vector<int>& data) {
         if (v.samplerMode) {
             // Sampler: ramp sampleStep (playback speed ratio) rather than currentFreq.
             if (!v.sampleActive) continue;
+            v.samplerGlideActive = false;
             const float semis = static_cast<float>(targetNote - 60) + detuneSemitones;
             const float targetStep = std::pow(2.0f, semis / 12.0f);
             v.sampleStepTarget        = targetStep;
@@ -3124,6 +3137,7 @@ void AudioEngine::renderAudio(
                 v.level = static_cast<float>(ev.volume) / 255.0f;
             }
             if (v.samplerMode) {
+                v.samplerGlideActive = false;
                 v.midiNote = ev.note;
                 if (v.sampleSlot >= 0 &&
                     v.sampleSlot < static_cast<int>(mSamplerSlots.size())) {
@@ -3232,6 +3246,7 @@ void AudioEngine::renderAudio(
             const float detuneSemitones = (v.detuneNorm - 0.5f) * 24.0f;
             if (v.samplerMode) {
                 // Pitch-only ARP for sampler: retune sample speed only.
+                v.samplerGlideActive = false;
                 const float semis = static_cast<float>(ev.note - 60) + detuneSemitones;
                 v.sampleStep = std::pow(2.0f, semis / 12.0f);
             } else if (v.karplusMode) {
@@ -3278,6 +3293,7 @@ void AudioEngine::renderAudio(
             }
             if (v.samplerMode) {
                 // Sampler retrigger: restart sample playback from region start/end.
+                v.samplerGlideActive = false;
                 v.midiNote = ev.note;
                 if (v.sampleSlot >= 0 &&
                     v.sampleSlot < static_cast<int>(mSamplerSlots.size())) {
@@ -3605,6 +3621,8 @@ void AudioEngine::renderAudio(
             }
 
             const double srRatio = static_cast<double>(s.sampleRate) / sampleRate;
+            const float samplerGlideK = v.glideSec > 0.0f
+                ? poleK(static_cast<float>(sampleRate), v.glideSec) : 1.0f;
             const double trePhaseInc = 2.0 * M_PI * normToLfoHz(v.treSpeedNorm) / sampleRate;
 
             // ── Sampler LFO setup (note-synced, BPM-relative) ──────────────
@@ -3686,6 +3704,12 @@ void AudioEngine::renderAudio(
                     v.sampleStep += static_cast<double>(v.sampleStepRampPerSample);
                     if (--v.pitchRampSamplesLeft == 0) {
                         v.sampleStep = static_cast<double>(v.sampleStepTarget);
+                    }
+                } else if (v.samplerGlideActive) {
+                    v.sampleStep += samplerGlideK * (v.sampleStepTarget - v.sampleStep);
+                    if (std::abs(v.sampleStepTarget - v.sampleStep) < 1e-7) {
+                        v.sampleStep = v.sampleStepTarget;
+                        v.samplerGlideActive = false;
                     }
                 }
                 double ratio = srRatio * v.sampleStep;

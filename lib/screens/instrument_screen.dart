@@ -4328,6 +4328,24 @@ class _SamplerEditorState extends State<_SamplerEditor>
                     ),
                   ],
                 ),
+                Row(
+                  children: [
+                    Expanded(
+                      child: _Knob(
+                        label: 'GLIDE',
+                        value: p.glide,
+                        display: '${(p.glide * 100).round()}%',
+                        onChanged: (v) {
+                          p.glide = v;
+                          state.instrumentParamsChanged();
+                        },
+                      ),
+                    ),
+                    const Expanded(child: SizedBox()),
+                    const Expanded(child: SizedBox()),
+                    const Expanded(child: SizedBox()),
+                  ],
+                ),
                 const SizedBox(height: 10),
               ],
             ),

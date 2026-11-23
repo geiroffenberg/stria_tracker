@@ -34,12 +34,15 @@ The Sampler plays an audio file loaded from storage.
 | End | 0–99% | Playback end point |
 | Attack | 0–1 | Fade-in length |
 | Release | 0–1 | Fade-out length |
+| Glide | 0–100% | Smooth pitch changes on NOTE rows with an empty IN (or 00); 0 is instant |
 | Loop Mode | Off / Forward / Ping-pong | Looping behaviour |
 
 Every new sampler note restarts the Attack fade-in, including notes triggered
 when the pattern loops, with or without a preceding OFF. Empty/hold rows let the
 existing note continue; the sample's own Forward/Ping-pong loop does not restart
 the attack.
+Glide does not retrigger the sample or affect notes with an instrument number.
+As with normal sampler pitch changes, playback speed changes with pitch.
 
 ### Filter (HP → LP)
 

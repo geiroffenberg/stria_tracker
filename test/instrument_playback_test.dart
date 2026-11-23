@@ -117,4 +117,43 @@ void main() {
     expect((rows[1]['rowData'] as List)[0], -1000 - cells[1].note.midiNote);
     expect((rows[2]['rowData'] as List)[0], -2);
   });
+
+  test(
+    'sampler note-column glide is saved, copied and sent on pitch-only rows',
+    () async {
+      final sampler = state.instruments[0].sampler;
+      state.instruments[0].type = InstrumentType.sampler;
+      sampler.glide = 0.6;
+      expect(SamplerParams.fromJson({}).glide, 0);
+      expect(SamplerParams.fromJson(sampler.toJson()).glide, 0.6);
+      expect(sampler.copy().glide, 0.6);
+
+      final cells = state.currentTrack.cells;
+      cells[0].note = NoteValue.fromScrollIndex(49);
+      cells[0].instrument = 1;
+      cells[1].note = NoteValue.fromScrollIndex(53);
+      cells[2].note = NoteValue.fromScrollIndex(56);
+      cells[2].instrument = 0;
+      cells[3].note = NoteValue.fromScrollIndex(49);
+      cells[3].instrument = 1;
+      final rows = await playbackRows();
+      expect((rows[0]['rowData'] as List)[18], 153);
+      expect((rows[1]['rowData'] as List)[0], -2000 - cells[1].note.midiNote);
+      expect((rows[2]['rowData'] as List)[0], -2000 - cells[2].note.midiNote);
+      expect((rows[3]['rowData'] as List)[0], cells[3].note.midiNote);
+    },
+  );
+
+  test('sampler arpeggio pitch-only rows do not use note glide', () async {
+    state.instruments[0].type = InstrumentType.sampler;
+    state.instruments[0].sampler.glide = 0.6;
+    final cells = state.currentTrack.cells;
+    cells[0].note = NoteValue.fromScrollIndex(49);
+    cells[0].instrument = 1;
+    cells[1].fxSlots[0].command = kFxARP;
+    cells[1].fxSlots[0].value = 0x37;
+    final rows = await playbackRows();
+    expect((rows[1]['rowData'] as List)[0], -1000 - cells[0].note.midiNote);
+    expect(rows[1]['arpData'], isNotEmpty);
+  });
 }

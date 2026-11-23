@@ -94,6 +94,27 @@ void main() {
     await tester.pumpAndSettle();
   }
 
+  testWidgets('sampler Glide knob changes the saved parameter', (tester) async {
+    tester.view.physicalSize = const Size(420, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await tester.pumpWidget(
+      AppStateScope(
+        state: state,
+        child: const MaterialApp(home: Scaffold(body: InstrumentScreen())),
+      ),
+    );
+    await tester.pumpAndSettle();
+    final glide = find.text('GLIDE');
+    await tester.ensureVisible(glide);
+    await tester.pumpAndSettle();
+    await tester.drag(glide, const Offset(0, -30));
+    await tester.pumpAndSettle();
+    expect(state.currentInstrument.sampler.glide, greaterThan(0));
+    expect(tester.takeException(), isNull);
+  });
+
   test(
     'single loading preserves parameters and updates only the target',
     () async {

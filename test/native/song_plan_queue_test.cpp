@@ -97,6 +97,80 @@ class SongPlanQueueTest {
         }
     }
 
+    static void checkSamplerGlide() {
+        auto owner = std::make_unique<AudioEngine>();
+        auto& engine = *owner;
+        auto& sample = engine.mSamplerSlots[0];
+        sample.sampleRate = 48000;
+        sample.mono.assign(480000, 0.25f);
+        std::vector<int> row(49, 0);
+        row[0] = 60;
+        row[1] = 255;
+        row[2] = 128;
+        row[4] = 1;
+        row[5] = 128;
+        row[5 + 13] = 128;
+        row[5 + 14] = 255;
+        row[5 + 16] = 255;
+        row[5 + 38] = 255;
+        engine.triggerRowLocked(row);
+        auto& voice = engine.mVoices[0];
+        require(voice.sampleActive, "Sampler note did not start");
+        const double initial = voice.sampleStep;
+        const double position = voice.samplePos;
+        row[0] = -2000 - 72;
+        engine.triggerRowLocked(row);
+        require(voice.samplerGlideActive && voice.sampleStep == initial &&
+                voice.samplePos == position, "Pitch-only glide retriggered or jumped");
+        std::vector<float> audio(4800 * 2);
+        engine.renderAudio(audio.data(), 4800, 48000, false);
+        const double rising = voice.sampleStep;
+        require(rising > initial && rising < voice.sampleStepTarget,
+                "Glide did not advance gradually toward the target");
+        const float glideK = 1.0f - std::exp(-1.0f / (48000.0f * voice.glideSec));
+        const double expectedRising = initial + (voice.sampleStepTarget - initial) *
+            (1.0 - std::pow(1.0 - glideK, 4800));
+        require(std::abs(rising - expectedRising) < 1e-4,
+                "Sampler glide does not match the synth glide time constant");
+
+        row[0] = -2000 - 48;
+        engine.triggerRowLocked(row);
+        require(voice.sampleStep == rising && voice.sampleStepTarget < rising,
+                "A new pitch did not redirect the running glide");
+        engine.renderAudio(audio.data(), 4800, 48000, false);
+        require(voice.sampleStep < rising && voice.sampleStep > voice.sampleStepTarget,
+                "Downward glide did not advance gradually");
+
+        row[0] = -1000 - 67;
+        engine.triggerRowLocked(row);
+        require(!voice.samplerGlideActive &&
+                std::abs(voice.sampleStep - voice.sampleStepTarget) > 0.01,
+                "Arpeggio pitch-only update incorrectly used glide");
+        row[0] = -2000 - 72;
+        row[5 + 13] = 0;
+        engine.triggerRowLocked(row);
+        require(!voice.samplerGlideActive &&
+                std::abs(voice.sampleStep - initial * 2.0) < 1e-5,
+                "Zero glide did not change pitch instantly");
+
+        row[5 + 13] = 128;
+        row[0] = -2000 - 48;
+        engine.triggerRowLocked(row);
+        engine.applyPitchRampsLocked({0, 67, 4800});
+        require(!voice.samplerGlideActive && voice.pitchRampSamplesLeft == 4800,
+                "Explicit slide did not take precedence over glide");
+        engine.renderAudio(audio.data(), 4800, 48000, false);
+        const double expected = std::pow(2.0, (7.0 + (128.0 / 255.0 - 0.5) * 24.0) / 12.0);
+        require(std::abs(voice.sampleStep - expected) < 1e-5,
+                "Explicit slide did not reach its target");
+
+        row[0] = -2000 - 48;
+        engine.triggerRowLocked(row);
+        row[0] = 72;
+        engine.triggerRowLocked(row);
+        require(!voice.samplerGlideActive, "Retrigger retained note glide");
+    }
+
 public:
     static void run() {
         // No stream is opened: exercise only row selection and queue boundaries.
@@ -187,6 +261,7 @@ public:
         engine.setQueuedPlaybackLooping(false);
         require(!engine.primeNextQueuedPlaybackRowLocked(), "Legacy stop changed");
         checkAudioMutes();
+        checkSamplerGlide();
         std::cout << "Song Plan native queue tests passed\n";
     }
 };

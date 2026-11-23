@@ -4097,7 +4097,7 @@ class AppState extends ChangeNotifier {
         _norm01ToAudio255(0.30), // dec
         _norm01ToAudio255(0.80), // sus
         _norm01ToAudio255(sp.release), // rel  ← sampler release
-        _norm01ToAudio255(0.00), // glide
+        _norm01ToAudio255(sp.glide), // sampler pitch-only glide
         _norm01ToAudio255(sp.volume), // sampler volume / synth instVol
         _norm01ToAudio255(startNorm), // lfoRate reused as sampler start
         _norm01ToAudio255(endNorm), // lfoDepth reused as sampler end
@@ -6461,7 +6461,9 @@ class AppState extends ChangeNotifier {
           // respected. Empty must be treated the same as '00' here, not
           // left unhandled — otherwise noteCmd stays at its default (hold)
           // and the pitch silently never updates.
-          noteCmd = pitchOnlyNoteCmd(note.midiNote);
+          noteCmd = instruments[currentSlot].type == InstrumentType.sampler
+              ? -2000 - note.midiNote.clamp(0, 127)
+              : pitchOnlyNoteCmd(note.midiNote);
         }
 
         if (noteCmd == -2) {

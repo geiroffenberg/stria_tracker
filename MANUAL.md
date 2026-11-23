@@ -342,7 +342,11 @@ loading; use Close or Back when idle.
 | End | 0–99% | Playback end point |
 | Attack | 0–1 | Fade-in length |
 | Release | 0–1 | Fade-out length |
+| Glide | 0–100% | Smooth pitch changes on NOTE rows with an empty IN (or 00); 0 is instant |
 | Loop Mode | Off / Forward / Ping-pong | Looping behaviour |
+
+Glide does not retrigger the sample or affect notes with an instrument number.
+Changing sample pitch also changes playback speed.
 
 #### Filter (HP → LP)
 

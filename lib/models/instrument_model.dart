@@ -867,6 +867,7 @@ class SamplerParams {
   double end; // 0..1
   double attack; // 0..1  (fade-in length, 0 = instant)
   double release; // 0..1  (fade-out length, 0 = instant)
+  double glide; // 0..1  (pitch-only note glide, 0 = instant)
   List<int> sliceStarts; // 9 x 0..999, where 0 = unused
 
   // ── Stretch ────────────────────────────────────────────────────────────────
@@ -937,6 +938,7 @@ class SamplerParams {
     this.end = 1.0,
     this.attack = 0.0,
     this.release = 0.05,
+    this.glide = 0.0,
     List<int>? sliceStarts,
     this.stretchEnabled = false,
     this.stretchBeats = 4,
@@ -1038,6 +1040,7 @@ class SamplerParams {
     'end': end,
     'attack': attack,
     'release': release,
+    'glide': glide,
     'sliceStarts': sliceStarts,
     'sliceVersion': 2, // 2 = range 0-999; 1 (absent) = legacy 0-99
     'stretchEnabled': stretchEnabled,
@@ -1071,6 +1074,7 @@ class SamplerParams {
     end: (j['end'] as num?)?.toDouble() ?? 1.0,
     attack: (j['attack'] as num?)?.toDouble() ?? 0.0,
     release: (j['release'] as num?)?.toDouble() ?? 0.05,
+    glide: ((j['glide'] as num?)?.toDouble() ?? 0.0).clamp(0.0, 1.0),
     sliceStarts: (j['sliceStarts'] as List<dynamic>?)?.map((e) {
       final v = (e as num?)?.toInt() ?? 0;
       // Migrate legacy saves (sliceVersion absent = old 0-99 range → multiply by 10)
@@ -1118,6 +1122,7 @@ class SamplerParams {
     end: end,
     attack: attack,
     release: release,
+    glide: glide,
     sliceStarts: List<int>.from(sliceStarts),
     stretchEnabled: stretchEnabled,
     stretchBeats: stretchBeats,
